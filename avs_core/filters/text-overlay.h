@@ -148,7 +148,7 @@ class Subtitle : public GenericVideoFilter
 public:
   Subtitle( PClip _child, const char _text[], int _x, int _y, int _firstframe, int _lastframe, 
             const char _fontname[], int _size, int _textcolor, int _halocolor, int _align, 
-            int _spc, bool _multiline, int _lsp, int _font_width, int _font_angle, bool _interlaced );
+            int _spc, bool _multiline, int _lsp, int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], IScriptEnvironment* env);
   virtual ~Subtitle(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
   
@@ -167,6 +167,7 @@ private:
   const int textcolor, halocolor, align, spc;
   const char* const fontname;
   const char* const text;
+  const char* const font_filename;
   Antialiaser* antialiaser;  
 };
 

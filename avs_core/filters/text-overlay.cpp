@@ -74,7 +74,7 @@ extern const AVSFunction Text_filters[] = {
 
   { "Subtitle",BUILTIN_FUNC_PREFIX,
 	"cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
-	"[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b",
+	"[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s",
     Subtitle::Create },       // see docs!
 
   { "Compare",BUILTIN_FUNC_PREFIX,
@@ -126,7 +126,6 @@ Antialiaser::Antialiaser(int width, int height, const char fontname[], int size,
 		0 );
 	if (hbmAntialias) {
 	  hbmDefault = (HBITMAP)SelectObject(hdcAntialias, hbmAntialias);
-
 	  HFONT newfont = LoadFont(fontname, size, true, false, font_width, font_angle);
 	  hfontDefault = newfont ? (HFONT)SelectObject(hdcAntialias, newfont) : 0;
 
@@ -1310,14 +1309,24 @@ AVSValue __cdecl ShowSMPTE::CreateTime(AVSValue args, void*, IScriptEnvironment*
 Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _firstframe,
                     int _lastframe, const char _fontname[], int _size, int _textcolor,
                     int _halocolor, int _align, int _spc, bool _multiline, int _lsp,
-					int _font_width, int _font_angle, bool _interlaced )
+					int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], IScriptEnvironment* env)
  : GenericVideoFilter(_child), antialiaser(0), text(_text), x(_x), y(_y),
    firstframe(_firstframe), lastframe(_lastframe), fontname(_fontname), size(_size),
    textcolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV(_textcolor) : _textcolor),
    halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV(_halocolor) : _halocolor),
    align(_align), spc(_spc), multiline(_multiline), lsp(_lsp),
-   font_width(_font_width), font_angle(_font_angle), interlaced(_interlaced)
+   font_width(_font_width), font_angle(_font_angle), interlaced(_interlaced), font_filename(_font_filename)
 {
+  if (*font_filename) {
+    int added_font_count = AddFontResourceEx(
+      font_filename, // font file name
+      FR_PRIVATE,    // font characteristics
+      NULL);
+    // If the function succeeds, the return value specifies the number of fonts added.
+    if (added_font_count == 0) {
+      env->ThrowError("SubTitle: font %s not found", font_filename);
+    }
+  }
 }
 
 
@@ -1325,6 +1334,17 @@ Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _first
 Subtitle::~Subtitle(void)
 {
   delete antialiaser;
+  if (font_filename) {
+    // same as in AddFontResourceEx
+    BOOL b = RemoveFontResourceEx(
+      font_filename, // name of font file
+      FR_PRIVATE,    // font characteristics
+      NULL           // Reserved.
+    );
+    if (!b) {
+      // we can't do anything
+    }
+  }
 }
 
 
@@ -1371,6 +1391,7 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
 	const int font_width = int(args[13].AsFloat(0)*8+0.5);
 	const int font_angle = int(args[14].AsFloat(0)*10+0.5);
 	const bool interlaced = args[15].AsBool(false);
+    const char* font_filename = args[16].AsString("");
 
     if ((align < 1) || (align > 9))
      env->ThrowError("Subtitle: Align values are 1 - 9 mapped to your numeric pad");
@@ -1391,7 +1412,7 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
     const int y = int(args[3].AsDblDef(defy)*8+0.5);
 
     return new Subtitle(clip, text, x, y, first_frame, last_frame, font, size, text_color,
-	                    halo_color, align, spc, multiline, lsp, font_width, font_angle, interlaced);
+	                    halo_color, align, spc, multiline, lsp, font_width, font_angle, interlaced, font_filename, env);
 }
 
 
