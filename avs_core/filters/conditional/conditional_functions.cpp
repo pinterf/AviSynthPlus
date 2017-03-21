@@ -41,7 +41,8 @@
 #include <emmintrin.h>
 #include <limits>
 #include <algorithm>
-#include "filters/focus.h" // sad
+#include <cmath>
+#include "../focus.h" // sad
 
 extern const AVSFunction Conditional_funtions_filters[] = {
   {  "AverageLuma",    BUILTIN_FUNC_PREFIX, "c[offset]i", AveragePlane::Create, (void *)PLANAR_Y },
@@ -285,7 +286,7 @@ static double get_sad_c(const BYTE* c_plane8, const BYTE* t_plane8, size_t heigh
 
   for (size_t y = 0; y < height; y++) {
     for (size_t x = 0; x < width; x++) {
-      accum += abs(t_plane[x] - c_plane[x]);
+      accum += std::abs(t_plane[x] - c_plane[x]);
     }
     c_plane += c_pitch;
     t_plane += t_pitch;
@@ -303,9 +304,9 @@ static double get_sad_rgb_c(const BYTE* c_plane8, const BYTE* t_plane8, size_t h
   __int64 accum = 0; // packed rgb: integer type only
   for (size_t y = 0; y < height; y++) {
     for (size_t x = 0; x < width; x+=4) {
-      accum += abs(t_plane[x] - c_plane[x]);
-      accum += abs(t_plane[x+1] - c_plane[x+1]);
-      accum += abs(t_plane[x+2] - c_plane[x+2]);
+      accum += std::abs(t_plane[x] - c_plane[x]);
+      accum += std::abs(t_plane[x+1] - c_plane[x+1]);
+      accum += std::abs(t_plane[x+2] - c_plane[x+2]);
     }
     c_plane += c_pitch;
     t_plane += t_pitch;
@@ -421,7 +422,7 @@ static size_t get_sad_isse(const BYTE* src_ptr, const BYTE* other_ptr, size_t he
     }
 
     for (size_t x = mod8_width; x < width; ++x) {
-      result += abs(src_ptr[x] - other_ptr[x]);
+      result += std::abs(src_ptr[x] - other_ptr[x]);
     }
 
     src_ptr += src_pitch;
@@ -449,7 +450,7 @@ static size_t get_sad_rgb_isse(const BYTE* src_ptr, const BYTE* other_ptr, size_
     }
 
     for (size_t x = mod8_width; x < width; ++x) {
-      result += abs(src_ptr[x] - other_ptr[x]);
+      result += std::abs(src_ptr[x] - other_ptr[x]);
     }
 
     src_ptr += src_pitch;
