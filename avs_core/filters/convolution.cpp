@@ -40,7 +40,7 @@
 // by Richard Berg (avisynth-dev@richardberg.net)
 // adapted from General Convolution 3D for VDub by Gunnar Thalin (guth@home.se)
 
-#include "Convolution.h"
+#include "convolution.h"
 #include "../core/internal.h"
 
 
