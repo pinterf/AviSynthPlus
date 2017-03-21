@@ -61,6 +61,7 @@ class OverlayFunction {
 public:
   OverlayFunction() {
   }
+  virtual ~OverlayFunction() {};
   void setOpacity(int _opacity, float _opacity_f) { opacity = clamp(_opacity, 0, 256); inv_opacity = 256 - opacity; opacity_f = _opacity_f; inv_opacity_f = 1.0f - _opacity_f; }
   void setEnv(IScriptEnvironment *_env) { env = _env;}
   void setBitsPerPixel(int _bits_per_pixel) { bits_per_pixel = _bits_per_pixel; }
