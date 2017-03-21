@@ -2,12 +2,14 @@
 # "Target Usage Requirements" and "Generator Toolset selection"
 CMAKE_MINIMUM_REQUIRED( VERSION 2.8.11 )
 
-project("AvsMod")
+project("avisynth+")
 
 # Avoid uselessly linking to unused libraries
 set(CMAKE_STANDARD_LIBRARIES "" CACHE STRING "" FORCE)
 set(CMAKE_C_STANDARD_LIBRARIES "" CACHE STRING "" FORCE)
 set(CMAKE_CXX_STANDARD_LIBRARIES "" CACHE STRING "" FORCE)
+
+option(ENABLE_PLUGINS "Build set of default external plugins" ON)
 
 if(CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_CONFIGURATION_TYPES Debug Release RelWithDebInfo)
@@ -63,4 +65,15 @@ ELSE()
 ENDIF()
 
 add_subdirectory("avs_core")
-add_subdirectory("plugins")
+if(ENABLE_PLUGINS)
+  add_subdirectory("plugins")
+endif()
+
+# uninstall target
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+    IMMEDIATE @ONLY)
+
+add_custom_target(uninstall
+COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
