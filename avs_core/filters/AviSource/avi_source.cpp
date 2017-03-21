@@ -118,7 +118,7 @@ ICDecompressEx(HIC hic,DWORD dwFlags,LPBITMAPINFOHEADER lpbiSrc,LPVOID lpSrc,INT
 	ic.yDst = yDst;
 	ic.dxDst = dxDst;
 	ic.dyDst = dyDst;
-	return ICSendMessage(hic,ICM_DECOMPRESSEX,(DWORD)&ic,sizeof(ic));
+	return ICSendMessage(hic,ICM_DECOMPRESSEX,(DWORD_PTR)&ic,sizeof(ic));
 }
 
 static __inline LRESULT
@@ -138,7 +138,7 @@ ICDecompressExBegin(HIC hic,DWORD dwFlags,LPBITMAPINFOHEADER lpbiSrc,LPVOID lpSr
 	ic.yDst = yDst;
 	ic.dxDst = dxDst;
 	ic.dyDst = dyDst;
-	return ICSendMessage(hic,ICM_DECOMPRESSEX_BEGIN,(DWORD)&ic,sizeof(ic));
+	return ICSendMessage(hic,ICM_DECOMPRESSEX_BEGIN,(DWORD_PTR)&ic,sizeof(ic));
 }
 #endif // MSVC
 
@@ -261,7 +261,7 @@ void AVISource::LocateVideoCodec(const char fourCC[], IScriptEnvironment* env) {
 
     pbiSrc->biPlanes      = 1;
     pbiSrc->biBitCount    = 24;
-    pbiSrc->biCompression   = 'dsvd';
+    pbiSrc->biCompression = MAKEFOURCC('d','v','s','d'); // 'dsvd';
     pbiSrc->biSizeImage   = asi.dwSuggestedBufferSize;
     pbiSrc->biXPelsPerMeter = 0;
     pbiSrc->biYPelsPerMeter = 0;
@@ -316,18 +316,18 @@ void AVISource::LocateVideoCodec(const char fourCC[], IScriptEnvironment* env) {
   // otherwise, find someone who will decompress it
   } else {
     switch(pbiSrc->biCompression) {
-    case '34PM':    // Microsoft MPEG-4 V3
-    case '3VID':    // "DivX Low-Motion" (4.10.0.3917)
-    case '4VID':    // "DivX Fast-Motion" (4.10.0.3920)
-    case '14PA':    // "AngelPotion Definitive" (4.0.00.3688)
+    case MAKEFOURCC('M','P','4','3'):    // Microsoft MPEG-4 V3 '34PM'
+    case MAKEFOURCC('D','I','V','3'):    // "DivX Low-Motion" (4.10.0.3917) '3VID'
+    case MAKEFOURCC('D','I','V','4'):    // "DivX Fast-Motion" (4.10.0.3920) 4VID'
+    case MAKEFOURCC('A','P','4','1'):    // "AngelPotion Definitive" (4.0.00.3688) '14PA'
       if (AttemptCodecNegotiation(asi.fccHandler, pbiSrc)) return;
-      pbiSrc->biCompression = '34PM';
+      pbiSrc->biCompression = MAKEFOURCC('M', 'P', '4', '3');
       if (AttemptCodecNegotiation(asi.fccHandler, pbiSrc)) return;
-      pbiSrc->biCompression = '3VID';
+      pbiSrc->biCompression = MAKEFOURCC('D', 'I', 'V', '3');
       if (AttemptCodecNegotiation(asi.fccHandler, pbiSrc)) return;
-      pbiSrc->biCompression = '4VID';
+      pbiSrc->biCompression = MAKEFOURCC('D', 'I', 'V', '4');
       if (AttemptCodecNegotiation(asi.fccHandler, pbiSrc)) return;
-      pbiSrc->biCompression = '14PA';
+      pbiSrc->biCompression = MAKEFOURCC('A', 'P', '4', '1');
     default:
       if (AttemptCodecNegotiation(asi.fccHandler, pbiSrc)) return;
     }
@@ -364,7 +364,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
       }
       unsigned int buf[3];
       DWORD bytes_read;
-      if (ReadFile(h, buf, 12, &bytes_read, NULL) && bytes_read == 12 && buf[0] == 'FFIR' && buf[2] == ' IVA')
+      if (ReadFile(h, buf, 12, &bytes_read, NULL) && bytes_read == 12 && buf[0] == MAKEFOURCC('R','I','F','F') && buf[2] == MAKEFOURCC('A','V','I',' '))
         mode = MODE_OPENDML;
       else
         mode = MODE_AVIFILE;
@@ -392,7 +392,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
       pvideo = pfile->GetStream(streamtypeVIDEO, vtrack);
 
       if (!pvideo) { // Attempt DV type 1 video.
-        pvideo = pfile->GetStream('svai', vtrack);
+        pvideo = pfile->GetStream(MAKEFOURCC('i','a','v','s'), vtrack);
         bIsType1 = true;
       }
 
