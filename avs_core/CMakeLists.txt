@@ -7,6 +7,10 @@ project("AvsCore")
 Include("Files.cmake")
 add_library("AvsCore" SHARED ${AvsCore_Sources})
 set_target_properties("AvsCore" PROPERTIES "OUTPUT_NAME" "AviSynth")
+if (MINGW)
+  set_target_properties("AvsCore" PROPERTIES PREFIX "")
+  set_target_properties("AvsCore" PROPERTIES IMPORT_PREFIX "")
+endif()
 
 # Automatically group source files according to directory structure
 foreach(FILE ${AvsCore_Sources}) 
@@ -25,13 +29,23 @@ foreach(FILE ${AvsCore_Sources})
   source_group("${GROUP}" FILES "${FILE}")
 endforeach()
 
-# special AVX option for source files with *_avx.cpp pattern
-file(GLOB_RECURSE SRCS_AVX "*_avx.cpp")
-set_source_files_properties(${SRCS_AVX} PROPERTIES COMPILE_FLAGS " /arch:AVX ")
+if (MSVC_IDE)
+  # special AVX option for source files with *_avx.cpp pattern
+  file(GLOB_RECURSE SRCS_AVX "*_avx.cpp")
+  set_source_files_properties(${SRCS_AVX} PROPERTIES COMPILE_FLAGS " /arch:AVX ")
 
-# special AVX2 option for source files with *_avx2.cpp pattern
-file(GLOB_RECURSE SRCS_AVX2 "*_avx2.cpp")
-set_source_files_properties(${SRCS_AVX2} PROPERTIES COMPILE_FLAGS " /arch:AVX2 ")
+  # special AVX2 option for source files with *_avx2.cpp pattern
+  file(GLOB_RECURSE SRCS_AVX2 "*_avx2.cpp")
+  set_source_files_properties(${SRCS_AVX2} PROPERTIES COMPILE_FLAGS " /arch:AVX2 ")
+elseif (MINGW)
+  # special AVX option for source files with *_avx.cpp pattern
+  file(GLOB_RECURSE SRCS_AVX "*_avx.cpp")
+  set_source_files_properties(${SRCS_AVX} PROPERTIES COMPILE_FLAGS -mavx )
+
+  # special AVX2 option for source files with *_avx2.cpp pattern
+  file(GLOB_RECURSE SRCS_AVX2 "*_avx2.cpp")
+  set_source_files_properties(${SRCS_AVX2} PROPERTIES COMPILE_FLAGS -mavx2 )
+endif()
 
 # Specify include directories
 target_include_directories("AvsCore" PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -39,9 +53,10 @@ target_include_directories("AvsCore" PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions("AvsCore" PRIVATE BUILDING_AVSCORE)
 
 # Windows DLL dependencies 
-target_link_libraries("AvsCore" "Winmm.lib" "Vfw32.lib" "Msacm32.lib" "Gdi32.lib" "User32.lib" "Advapi32.lib" "Ole32.lib")
-if (NOT MSVC_IDE)
-  target_link_libraries("AvsCore" "libuuid.lib")
+if (MSVC_IDE)
+  target_link_libraries("AvsCore" "Winmm.lib" "Vfw32.lib" "Msacm32.lib" "Gdi32.lib" "User32.lib" "Advapi32.lib" "Ole32.lib")
+elseif (MINGW)
+  target_link_libraries("AvsCore" "uuid" "winmm" "vfw32" "msacm32" "gdi32" "user32" "advapi32" "ole32")
 endif()
 
 if (MSVC_IDE)    
