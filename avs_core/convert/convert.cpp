@@ -1376,7 +1376,7 @@ static void convert_uint16_to_8_dither_sse2(const BYTE *srcp8, BYTE *dstp, int s
       const int BITDIFF_BETWEEN_DITHER_AND_TARGET = DITHER_BIT_DIFF - (sourcebits - TARGET_BITDEPTH);
       if (BITDIFF_BETWEEN_DITHER_AND_TARGET != 0) { //==0 when dither and target are both 8
         // scale back, when e.g. 10 bit data is dithered down to 4,6,8 bits but the target bit depth is still 8 bit.
-        new_pixel = _mm_and_si128(_mm_set1_epi8(0xFF << BITDIFF_BETWEEN_DITHER_AND_TARGET), _mm_slli_epi32(new_pixel, BITDIFF_BETWEEN_DITHER_AND_TARGET));
+        new_pixel = _mm_and_si128(_mm_set1_epi8((0xFF << BITDIFF_BETWEEN_DITHER_AND_TARGET) & 0xFF), _mm_slli_epi32(new_pixel, BITDIFF_BETWEEN_DITHER_AND_TARGET));
         // non-existant _mm_slli_epi8. closest in palette: simple shift
       }
 
