@@ -39,6 +39,7 @@
 #include <avs/minmax.h>
 
 #include <stdint.h>
+#include <type_traits>
 
 void OL_DifferenceImage::DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask) {
   if (bits_per_pixel == 8)
