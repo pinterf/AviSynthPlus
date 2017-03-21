@@ -23,7 +23,7 @@
 //#include "ProgressDialog.h"
 #include "AVIIndex.h"
 #include "Error.h"
-#include "List.h"
+#include "list.h"
 #include "Fixes.h"
 #include "File64.h"
 
@@ -969,7 +969,7 @@ HRESULT AVIReadStream::Read(long lStart, long lSamples, void *lpBuffer, long cbB
 
 						if (!parent->isStreaming() || streamptr<0 || (fptrdiff<4194304 && fptrdiff>-4194304)) {
 							if (!psnData->cache)
-								psnData->cache = new AVIReadCache(psnData->hdr.fccType == 'sdiv' ? 131072 : 16384, streamno, parent, psnData);
+								psnData->cache = new AVIReadCache(psnData->hdr.fccType == MAKEFOURCC('v','i','d','s') ? 131072 : 16384, streamno, parent, psnData);
 							else
 								psnData->cache->ResetStatistics();
 
@@ -1069,7 +1069,7 @@ HRESULT AVIReadStream::Read(long lStart, long lSamples, void *lpBuffer, long cbB
 
 						if (!parent->isStreaming() || streamptr<0 || (fptrdiff<4194304 && fptrdiff>-4194304)) {
 							if (!psnData->cache)
-								psnData->cache = new AVIReadCache(psnData->hdr.fccType == 'sdiv' ? 131072 : 16384, streamno, parent, psnData);
+								psnData->cache = new AVIReadCache(psnData->hdr.fccType == MAKEFOURCC('v','i','d','s') ? 131072 : 16384, streamno, parent, psnData);
 							else
 								psnData->cache->ResetStatistics();
 
@@ -1393,7 +1393,7 @@ bool AVIReadHandler::AppendFile(const char *pszFile) {
 			switch(pasn_old->hdr.fccType) {
 			case streamtypeAUDIO:	szPrefix = "Cannot append segment: The audio streams "; break;
 			case streamtypeVIDEO:	szPrefix = "Cannot append segment: The video streams "; break;
-			case 'savi':			szPrefix = "Cannot append segment: The DV streams "; break;
+			case MAKEFOURCC('i', 'v', 'a', 's'):			szPrefix = "Cannot append segment: The DV streams "; break;
 			default:				szPrefix = ""; break;
 			}
 
@@ -1548,7 +1548,7 @@ void AVIReadHandler::_parseFile(List2<AVIStreamNode>& streamlist) {
 
 	_readFile2(&fccType, 4);
 
-	if (fccType != ' IVA')
+	if (fccType != MAKEFOURCC('A', 'V', 'I', ' '))
 		throw MyError("Invalid AVI file: RIFF type is not 'AVI'");
 
 	// Aggressive mode recovery does extensive validation and searching to attempt to
@@ -1589,7 +1589,7 @@ void AVIReadHandler::_parseFile(List2<AVIStreamNode>& streamlist) {
 //			_RPT1(0,"\tList type '%-4s'\n", &fccType);
 
 			switch(fccType) {
-			case 'ivom':
+      case MAKEFOURCC('m','o','v','i'):
 
 				if (dwLength < 8) {
 					i64ChunkMoviPos = _posFile();
@@ -1630,7 +1630,7 @@ void AVIReadHandler::_parseFile(List2<AVIStreamNode>& streamlist) {
 		case ckidAVIPADDING:	// JUNK
 			break;
 
-		case 'mges':			// VirtualDub segment hint block
+		case MAKEFOURCC('s', 'e', 'g', 'm'):			// VirtualDub segment hint block
 			delete [] pSegmentHint;
 			if (!(pSegmentHint = new(std::nothrow) char[dwLength]))
 				throw MyMemoryError();
@@ -1764,13 +1764,13 @@ terminate_scan:
 			// LIST chunks of type 'movi'.
 
 			if (dwLength) {
-				if (fccType == 'FFIR' || fccType == 'TSIL') {
+				if (fccType == MAKEFOURCC('R','I','F','F') || fccType == MAKEFOURCC('L','I','S','T')) {
 					FOURCC fccType2;
 
 					if (!_readFile(&fccType2, 4))
 						break;
 
-					if (fccType2 != 'XIVA' && fccType2 != 'ivom') {
+					if (fccType2 != MAKEFOURCC('A','V','I','X') && fccType2 != MAKEFOURCC('m','o','v','i')) {
 						if (!_skipFile2(dwLength + (dwLength&1) - 4))
 							break;
 					}
@@ -1903,26 +1903,26 @@ bool AVIReadHandler::_parseStreamHeader(List2<AVIStreamNode>& streamlist, DWORD 
 				if (pasn->hdr.fccType == streamtypeVIDEO) {
 					switch(((BITMAPINFOHEADER *)pasn->pFormat)->biCompression) {
 						case NULL:
-						case ' WAR':
-						case ' BID':
-						case '1bmd':
-						case 'gpjm':
-						case 'GPJM':
-						case 'YUYV':
-						case '2YUY':
-						case 'YVYU':
-						case 'UYVY':
-						case '21VY':
-						case '61VY':
-						case '42VY':
-						case 'B14Y':
-						case '008Y':
-						case '  8Y':
-						case '024I':
-						case 'P14Y':
-						case 'vuyc':
-						case 'UYFH':
-						case '02tb':
+						case MAKEFOURCC('R', 'A', 'W', ' '): // ' WAR'
+						case MAKEFOURCC('D', 'I', 'B', ' '): // ' BID'
+            case MAKEFOURCC('d', 'm', 'b', '1'): // '1bmd'
+            case MAKEFOURCC('m', 'j', 'p', 'g'): // 'gpjm'
+            case MAKEFOURCC('M', 'J', 'P', 'G'): // 'GPJM'
+            case MAKEFOURCC('V', 'Y', 'U', 'Y'): // 'YUYV'
+            case MAKEFOURCC('Y', 'U', 'Y', '2'): // '2YUY'
+            case MAKEFOURCC('U', 'Y', 'V', 'Y'): // 'YVYU'
+            case MAKEFOURCC('Y', 'V', 'Y', 'U'): // 'UYVY'
+            case MAKEFOURCC('Y', 'V', '1', '2'): // '21VY'
+            case MAKEFOURCC('Y', 'V', '1', '6'): // '61VY'
+            case MAKEFOURCC('Y', 'V', '2', '4'): // '42VY'
+            case MAKEFOURCC('Y', '4', '1', 'B'): // 'B14Y'
+            case MAKEFOURCC('Y', '8', '0', '0'): // '008Y'
+            case MAKEFOURCC('Y', '8', ' ', ' '): // '  8Y'
+            case MAKEFOURCC('I', '4', '2', '0'): // '024I'
+            case MAKEFOURCC('Y', '4', '1', 'P'): // 'P14Y'
+            case MAKEFOURCC('c', 'y', 'u', 'v'): // 'vuyc'
+            case MAKEFOURCC('H', 'F', 'Y', 'U'): // 'UYFH'
+            case MAKEFOURCC('b', 't', '2', '0'): // '02tb'
 							pasn->keyframe_only = true;
 					}
 				}
@@ -1932,7 +1932,7 @@ bool AVIReadHandler::_parseStreamHeader(List2<AVIStreamNode>& streamlist, DWORD 
 				dwLength = 0;
 				break;
 
-			case 'xdni':			// OpenDML extended index
+			case MAKEFOURCC('i', 'n', 'd', 'x'):			// OpenDML extended index
 				{
 					__int64 posFileSave = _posFile();
 
