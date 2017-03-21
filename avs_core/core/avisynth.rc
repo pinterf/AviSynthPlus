@@ -66,5 +66,5 @@ END
 
 
 LANGUAGE LANG_NEUTRAL, SUBLANG_SYS_DEFAULT
-AVS_ICON   ICON  "..\\..\\distrib\\Icons\\Ico\\AvsDocWindows.ico"
-AVSI_ICON  ICON  "..\\..\\distrib\\Icons\\Ico\\AvsiDocWindows.ico"
+AVS_ICON   ICON  "../../distrib/Icons/Ico/AvsDocWindows.ico"
+AVSI_ICON  ICON  "../../distrib/Icons/Ico/AvsiDocWindows.ico"
