@@ -52,7 +52,7 @@ class ScriptParser
  **/
 {
 public:
-  ScriptParser(IScriptEnvironment* _env, const char* _code, const char* _filename);
+  ScriptParser(IScriptEnvironment* _env, const char* _code, const char* _filename, int _frame_number);
 
   PExpression Parse(void);
 
@@ -64,6 +64,7 @@ private:
   const char* const code;
   const char* const filename;
   int loopDepth;    // how many loops are we in during parsing
+  int frame_number; // for per-frame expressions
 
   void Expect(int op, const char* msg);
 
@@ -81,9 +82,9 @@ private:
   PExpression ParseUnary(void);
   PExpression ParseOOP(void);
 #ifdef NEW_AVSVALUE
-  PExpression ParseFunction(PExpression context, char context_char);
+  PExpression ParseFunction(PExpression context, int frame_number, char context_char);
 #else
-  PExpression ParseFunction(PExpression context);
+  PExpression ParseFunction(PExpression context, int frame_number);
 #endif
   PExpression ParseAtom(void);
 

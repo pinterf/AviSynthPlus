@@ -40,14 +40,14 @@ class AveragePlane {
 
 public:
   static AVSValue Create(AVSValue args, void* user_data, IScriptEnvironment* env);
-  static AVSValue AvgPlane(AVSValue clip, void* user_data, int plane, int offset, IScriptEnvironment* env);
+  static AVSValue AvgPlane(AVSValue clip, int n, void* user_data, int plane, int offset, IScriptEnvironment* env);
 };
 
 class ComparePlane {
 
 public:
-  static AVSValue CmpPlane(AVSValue clip, AVSValue clip2, void* user_data, int plane, IScriptEnvironment* env);
-  static AVSValue CmpPlaneSame(AVSValue clip, void* user_data, int offset, int plane, IScriptEnvironment* env);
+  static AVSValue CmpPlane(AVSValue clip, int n, AVSValue clip2, void* user_data, int plane, IScriptEnvironment* env);
+  static AVSValue CmpPlaneSame(AVSValue clip, int n, void* user_data, int offset, int plane, IScriptEnvironment* env);
 
   static AVSValue Create(AVSValue args, void* user_data, IScriptEnvironment* env);
   static AVSValue Create_prev(AVSValue args, void* user_data, IScriptEnvironment* env);
@@ -58,7 +58,7 @@ public:
 class MinMaxPlane {
 
 public:
-  static AVSValue MinMax(AVSValue clip, void* user_data, double threshold, int offset, int plane, int mode, IScriptEnvironment* env);
+  static AVSValue MinMax(AVSValue clip, int n, void* user_data, double threshold, int offset, int plane, int mode, IScriptEnvironment* env);
 
   static AVSValue Create_max(AVSValue args, void* user_data, IScriptEnvironment* env);
   static AVSValue Create_min(AVSValue args, void* user_data, IScriptEnvironment* env);

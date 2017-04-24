@@ -458,15 +458,20 @@ AVSValue ExpVariableReference::Evaluate(IScriptEnvironment* env)
   else {
     // Swap order to match ::Call below -- Gavino Jan 2010
 
-    // next look for an argless function
+    // look for an argless function
     if (!env2->Invoke(&result, name, AVSValue(0,0)))
     {
-      // finally look for a single-arg function taking implicit "last"
+      // look for a single-arg function taking implicit "last"
       AVSValue last;
       if (!env2->GetVar("last", &last) || !env2->Invoke(&result, name, last))
       {
-        env->ThrowError("I don't know what '%s' means.", name);
-        return 0;
+        // look for function taking last and frame_number for per-frame expressions
+        AVSValue sargs[2] = { last, frame_number };
+        const char *nargs[2] = { 0, 0 };
+        if (frame_number < 0 || !env2->Invoke(&result, name, AVSValue(sargs, 2), nargs)) {
+          env->ThrowError("I don't know what '%s' means.", name);
+          return 0;
+        }
       }
     }
   }
@@ -489,17 +494,18 @@ AVSValue ExpGlobalAssignment::Evaluate(IScriptEnvironment* env)
 }
 
 
-ExpFunctionCall::ExpFunctionCall( const char* _name, PExpression* _arg_exprs,
-                   const char** _arg_expr_names, int _arg_expr_count, bool _oop_notation )
-  : name(_name), arg_expr_count(_arg_expr_count), oop_notation(_oop_notation)
+ExpFunctionCall::ExpFunctionCall(const char* _name, PExpression* _arg_exprs,
+  const char** _arg_expr_names, int _arg_expr_count, bool _oop_notation, int _frame_number)
+  : name(_name), arg_expr_count(_arg_expr_count), oop_notation(_oop_notation), frame_number(_frame_number)
 {
+  // arg_expr_names has 2 extra item at the beginning, for implicit "last" and for "current_frame"
   arg_exprs = new PExpression[arg_expr_count];
-  // arg_expr_names has an extra elt at the beginning, for implicit "last"
-  arg_expr_names = new const char*[arg_expr_count+1];
+  arg_expr_names = new const char*[arg_expr_count+2];
   arg_expr_names[0] = 0;
-  for (int i=0; i<arg_expr_count; ++i) {
+  arg_expr_names[1] = 0;
+  for (int i = 0; i<arg_expr_count; ++i) {
     arg_exprs[i] = _arg_exprs[i];
-    arg_expr_names[i+1] = _arg_expr_names[i];
+    arg_expr_names[i+2] = _arg_expr_names[i];
   }
 }
 
@@ -514,25 +520,38 @@ AVSValue ExpFunctionCall::Evaluate(IScriptEnvironment* env)
   AVSValue result;
   IScriptEnvironment2 *env2 = static_cast<IScriptEnvironment2*>(env);
 
-  std::vector<AVSValue> args(arg_expr_count+1, AVSValue());
+  std::vector<AVSValue> args(arg_expr_count+2, AVSValue());
   for (int a=0; a<arg_expr_count; ++a)
-    args[a+1] = arg_exprs[a]->Evaluate(env);
+    args[a+2] = arg_exprs[a]->Evaluate(env);
 
   // first try without implicit "last"
   try
   { // Invoke can always throw by calling a constructor of a filter that throws
-    if (env2->Invoke(&result, name, AVSValue(args.data()+1, arg_expr_count), arg_expr_names+1))
+    if (env2->Invoke(&result, name, AVSValue(args.data()+2, arg_expr_count), arg_expr_names+2))
       return result;
   } catch(const IScriptEnvironment::NotFound&){}
 
   // if that fails, try with implicit "last" (except when OOP notation was used)
-  if (!oop_notation) 
+  if (!oop_notation && env2->GetVar("last", &args[1]))
   {
     try
     {
-      if (env2->GetVar("last", args.data()) && env2->Invoke(&result, name, AVSValue(args.data(), arg_expr_count+1), arg_expr_names))
+      if (env2->Invoke(&result, name, AVSValue(args.data()+1, arg_expr_count+1), arg_expr_names+1))
         return result;
     } catch(const IScriptEnvironment::NotFound&){}
+
+    // for per-frame expressions, try with implicit "last" and "frame_number"
+    if (frame_number >= 0)
+    {
+      args[0] = args[1]; // "last"
+      args[1] = AVSValue(frame_number);
+      try
+      {
+        if (env2->Invoke(&result, name, AVSValue(args.data(), arg_expr_count+2), arg_expr_names))
+          return result;
+      }
+      catch (const IScriptEnvironment::NotFound&) {}
+    }
   }
 
   env->ThrowError(env->FunctionExists(name) ?
