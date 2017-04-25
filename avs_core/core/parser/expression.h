@@ -36,10 +36,7 @@
 #define __Expression_H__
 
 #include <avisynth.h>
-
-#ifdef NEW_AVSVALUE
 #include <vector>
-#endif
 
 /********************************************************************
 ********************************************************************/
@@ -416,8 +413,10 @@ public:
   ~ExpFunctionCall(void);
   
   virtual AVSValue Evaluate(IScriptEnvironment* env);
-  
+  bool EvaluateSyntax(AVSValue* result, const char* name, std::vector<AVSValue>* args, int extra, IScriptEnvironment2* env2);
+
 private:
+
   const char* const name;
   PExpression* arg_exprs;
   const char** arg_expr_names;

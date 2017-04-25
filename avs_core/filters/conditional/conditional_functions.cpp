@@ -45,78 +45,78 @@
 #include "../focus.h" // sad
 
 extern const AVSFunction Conditional_funtions_filters[] = {
-  {  "AverageLuma",    BUILTIN_FUNC_PREFIX, "ci[offset]i", AveragePlane::Create, (void *)PLANAR_Y },
-  {  "AverageChromaU", BUILTIN_FUNC_PREFIX, "ci[offset]i", AveragePlane::Create, (void *)PLANAR_U },
-  {  "AverageChromaV", BUILTIN_FUNC_PREFIX, "ci[offset]i", AveragePlane::Create, (void *)PLANAR_V },
-  {  "AverageR", BUILTIN_FUNC_PREFIX, "ci[offset]i", AveragePlane::Create, (void *)PLANAR_R },
-  {  "AverageG", BUILTIN_FUNC_PREFIX, "ci[offset]i", AveragePlane::Create, (void *)PLANAR_G },
-  {  "AverageB", BUILTIN_FUNC_PREFIX, "ci[offset]i", AveragePlane::Create, (void *)PLANAR_B },
-  //{  "AverageSat","ci[offset]i", AverageSat::Create }, Sum(SatLookup[U,V])/N, SatLookup[U,V]=1.4087*sqrt((U-128)**2+(V-128)**2)
-//{  "AverageHue","ci[offset]i", AverageHue::Create }, Sum(HueLookup[U,V])/N, HueLookup[U,V]=40.5845*Atan2(U-128,V-128)
+  {  "AverageLuma",    BUILTIN_FUNC_PREFIX, "ic[offset]i", AveragePlane::Create, (void *)PLANAR_Y },
+  {  "AverageChromaU", BUILTIN_FUNC_PREFIX, "ic[offset]i", AveragePlane::Create, (void *)PLANAR_U },
+  {  "AverageChromaV", BUILTIN_FUNC_PREFIX, "ic[offset]i", AveragePlane::Create, (void *)PLANAR_V },
+  {  "AverageR", BUILTIN_FUNC_PREFIX, "ic[offset]i", AveragePlane::Create, (void *)PLANAR_R },
+  {  "AverageG", BUILTIN_FUNC_PREFIX, "ic[offset]i", AveragePlane::Create, (void *)PLANAR_G },
+  {  "AverageB", BUILTIN_FUNC_PREFIX, "ic[offset]i", AveragePlane::Create, (void *)PLANAR_B },
+  //{  "AverageSat","ic[offset]i", AverageSat::Create }, Sum(SatLookup[U,V])/N, SatLookup[U,V]=1.4087*sqrt((U-128)**2+(V-128)**2)
+//{  "AverageHue","ic[offset]i", AverageHue::Create }, Sum(HueLookup[U,V])/N, HueLookup[U,V]=40.5845*Atan2(U-128,V-128)
 
-  {  "RGBDifference",     BUILTIN_FUNC_PREFIX, "cic", ComparePlane::Create, (void *)-1 },
-  {  "LumaDifference",    BUILTIN_FUNC_PREFIX, "cic", ComparePlane::Create, (void *)PLANAR_Y },
-  {  "ChromaUDifference", BUILTIN_FUNC_PREFIX, "cic", ComparePlane::Create, (void *)PLANAR_U },
-  {  "ChromaVDifference", BUILTIN_FUNC_PREFIX, "cic", ComparePlane::Create, (void *)PLANAR_V },
-  {  "RDifference", BUILTIN_FUNC_PREFIX, "cic", ComparePlane::Create, (void *)PLANAR_R },
-  {  "GDifference", BUILTIN_FUNC_PREFIX, "cic", ComparePlane::Create, (void *)PLANAR_G },
-  {  "BDifference", BUILTIN_FUNC_PREFIX, "cic", ComparePlane::Create, (void *)PLANAR_B },
-  //{  "SatDifference","cic", CompareSat::Create }, Sum(Abs(SatLookup[U1,V1]-SatLookup[U2,V2]))/N
-//{  "HueDifference","cic", CompareHue::Create }, Sum(Abs(HueLookup[U1,V1]-HueLookup[U2,V2]))/N
+  {  "RGBDifference",     BUILTIN_FUNC_PREFIX, "icc", ComparePlane::Create, (void *)-1 },
+  {  "LumaDifference",    BUILTIN_FUNC_PREFIX, "icc", ComparePlane::Create, (void *)PLANAR_Y },
+  {  "ChromaUDifference", BUILTIN_FUNC_PREFIX, "icc", ComparePlane::Create, (void *)PLANAR_U },
+  {  "ChromaVDifference", BUILTIN_FUNC_PREFIX, "icc", ComparePlane::Create, (void *)PLANAR_V },
+  {  "RDifference", BUILTIN_FUNC_PREFIX, "icc", ComparePlane::Create, (void *)PLANAR_R },
+  {  "GDifference", BUILTIN_FUNC_PREFIX, "icc", ComparePlane::Create, (void *)PLANAR_G },
+  {  "BDifference", BUILTIN_FUNC_PREFIX, "icc", ComparePlane::Create, (void *)PLANAR_B },
+  //{  "SatDifference","icc", CompareSat::Create }, Sum(Abs(SatLookup[U1,V1]-SatLookup[U2,V2]))/N
+//{  "HueDifference","icc", CompareHue::Create }, Sum(Abs(HueLookup[U1,V1]-HueLookup[U2,V2]))/N
 
-  {  "YDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ci", ComparePlane::Create_prev, (void *)PLANAR_Y },
-  {  "UDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ci", ComparePlane::Create_prev, (void *)PLANAR_U },
-  {  "VDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ci", ComparePlane::Create_prev, (void *)PLANAR_V },
-  {  "RGBDifferenceFromPrevious", BUILTIN_FUNC_PREFIX, "ci", ComparePlane::Create_prev, (void *)-1 },
-  {  "RDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ci", ComparePlane::Create_prev, (void *)PLANAR_R },
-  {  "GDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ci", ComparePlane::Create_prev, (void *)PLANAR_G },
-  {  "BDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ci", ComparePlane::Create_prev, (void *)PLANAR_B },
-  //{  "SatDifferenceFromPrevious","ci", CompareSat::Create_prev },
-//{  "HueDifferenceFromPrevious","ci", CompareHue::Create_prev },
+  {  "YDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ic", ComparePlane::Create_prev, (void *)PLANAR_Y },
+  {  "UDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ic", ComparePlane::Create_prev, (void *)PLANAR_U },
+  {  "VDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ic", ComparePlane::Create_prev, (void *)PLANAR_V },
+  {  "RGBDifferenceFromPrevious", BUILTIN_FUNC_PREFIX, "ic", ComparePlane::Create_prev, (void *)-1 },
+  {  "RDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ic", ComparePlane::Create_prev, (void *)PLANAR_R },
+  {  "GDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ic", ComparePlane::Create_prev, (void *)PLANAR_G },
+  {  "BDifferenceFromPrevious",   BUILTIN_FUNC_PREFIX, "ic", ComparePlane::Create_prev, (void *)PLANAR_B },
+  //{  "SatDifferenceFromPrevious","ic", CompareSat::Create_prev },
+//{  "HueDifferenceFromPrevious","ic", CompareHue::Create_prev },
 
-  {  "YDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ci[offset]i", ComparePlane::Create_next, (void *)PLANAR_Y },
-  {  "UDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ci[offset]i", ComparePlane::Create_next, (void *)PLANAR_U },
-  {  "VDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ci[offset]i", ComparePlane::Create_next, (void *)PLANAR_V },
-  {  "RGBDifferenceToNext", BUILTIN_FUNC_PREFIX, "ci[offset]i", ComparePlane::Create_next, (void *)-1 },
-  {  "RDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ci[offset]i", ComparePlane::Create_next, (void *)PLANAR_R },
-  {  "GDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ci[offset]i", ComparePlane::Create_next, (void *)PLANAR_G },
-  {  "BDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ci[offset]i", ComparePlane::Create_next, (void *)PLANAR_B },
-  //{  "SatDifferenceFromNext","ci[offset]i", CompareSat::Create_next },
-//{  "HueDifferenceFromNext","ci[offset]i", CompareHue::Create_next },
-  {  "YPlaneMax",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_Y },
-  {  "YPlaneMin",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_Y },
-  {  "YPlaneMedian", BUILTIN_FUNC_PREFIX, "ci[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_Y },
-  {  "UPlaneMax",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_U },
-  {  "UPlaneMin",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_U },
-  {  "UPlaneMedian", BUILTIN_FUNC_PREFIX, "ci[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_U },
-  {  "VPlaneMax",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_V }, // AVS+! was before: missing offset parameter
-  {  "VPlaneMin",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_V }, // AVS+! was before: missing offset parameter
-  {  "VPlaneMedian", BUILTIN_FUNC_PREFIX, "ci[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_V },
-  {  "RPlaneMax",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_R },
-  {  "RPlaneMin",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_R },
-  {  "RPlaneMedian", BUILTIN_FUNC_PREFIX, "ci[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_R },
-  {  "GPlaneMax",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_G },
-  {  "GPlaneMin",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_G },
-  {  "GPlaneMedian", BUILTIN_FUNC_PREFIX, "ci[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_G },
-  {  "BPlaneMax",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_B },
-  {  "BPlaneMin",    BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_B },
-  {  "BPlaneMedian", BUILTIN_FUNC_PREFIX, "ci[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_B },
-  {  "YPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_Y },
-  {  "UPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_U }, // AVS+! was before: missing offset parameter
-  {  "VPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_V }, // AVS+! was before: missing offset parameter
-  {  "RPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_R },
-  {  "GPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_G },
-  {  "BPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ci[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_B },
+  {  "YDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ic[offset]i", ComparePlane::Create_next, (void *)PLANAR_Y },
+  {  "UDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ic[offset]i", ComparePlane::Create_next, (void *)PLANAR_U },
+  {  "VDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ic[offset]i", ComparePlane::Create_next, (void *)PLANAR_V },
+  {  "RGBDifferenceToNext", BUILTIN_FUNC_PREFIX, "ic[offset]i", ComparePlane::Create_next, (void *)-1 },
+  {  "RDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ic[offset]i", ComparePlane::Create_next, (void *)PLANAR_R },
+  {  "GDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ic[offset]i", ComparePlane::Create_next, (void *)PLANAR_G },
+  {  "BDifferenceToNext",   BUILTIN_FUNC_PREFIX, "ic[offset]i", ComparePlane::Create_next, (void *)PLANAR_B },
+  //{  "SatDifferenceFromNext","ic[offset]i", CompareSat::Create_next },
+//{  "HueDifferenceFromNext","ic[offset]i", CompareHue::Create_next },
+  {  "YPlaneMax",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_Y },
+  {  "YPlaneMin",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_Y },
+  {  "YPlaneMedian", BUILTIN_FUNC_PREFIX, "ic[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_Y },
+  {  "UPlaneMax",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_U },
+  {  "UPlaneMin",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_U },
+  {  "UPlaneMedian", BUILTIN_FUNC_PREFIX, "ic[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_U },
+  {  "VPlaneMax",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_V }, // AVS+! was before: missing offset parameter
+  {  "VPlaneMin",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_V }, // AVS+! was before: missing offset parameter
+  {  "VPlaneMedian", BUILTIN_FUNC_PREFIX, "ic[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_V },
+  {  "RPlaneMax",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_R },
+  {  "RPlaneMin",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_R },
+  {  "RPlaneMedian", BUILTIN_FUNC_PREFIX, "ic[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_R },
+  {  "GPlaneMax",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_G },
+  {  "GPlaneMin",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_G },
+  {  "GPlaneMedian", BUILTIN_FUNC_PREFIX, "ic[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_G },
+  {  "BPlaneMax",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_max, (void *)PLANAR_B },
+  {  "BPlaneMin",    BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_min, (void *)PLANAR_B },
+  {  "BPlaneMedian", BUILTIN_FUNC_PREFIX, "ic[offset]i", MinMaxPlane::Create_median, (void *)PLANAR_B },
+  {  "YPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_Y },
+  {  "UPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_U }, // AVS+! was before: missing offset parameter
+  {  "VPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_V }, // AVS+! was before: missing offset parameter
+  {  "RPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_R },
+  {  "GPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_G },
+  {  "BPlaneMinMaxDifference", BUILTIN_FUNC_PREFIX, "ic[threshold]f[offset]i", MinMaxPlane::Create_minmax, (void *)PLANAR_B },
 
-//{  "SatMax","ci[threshold]f[offset]i", MinMaxPlane::Create_maxsat },  ++accum[SatLookup[U,V]]
-//{  "SatMin","ci[threshold]f[offset]i", MinMaxPlane::Create_minsat },
-//{  "SatMedian","ci[offset]i", MinMaxPlane::Create_mediansat },
-//{  "SatMinMaxDifference","ci[threshold]f[offset]i", MinMaxPlane::Create_minmaxsat },
+//{  "SatMax","ic[threshold]f[offset]i", MinMaxPlane::Create_maxsat },  ++accum[SatLookup[U,V]]
+//{  "SatMin","ic[threshold]f[offset]i", MinMaxPlane::Create_minsat },
+//{  "SatMedian","ic[offset]i", MinMaxPlane::Create_mediansat },
+//{  "SatMinMaxDifference","ic[threshold]f[offset]i", MinMaxPlane::Create_minmaxsat },
 
-//{  "HueMax","ci[threshold]f[offset]i", MinMaxPlane::Create_maxhue },  ++accum[HueLookup[U,V]]
-//{  "HueMin","ci[threshold]f[offset]i", MinMaxPlane::Create_minhue },
-//{  "HueMedian","ci[offset]i", MinMaxPlane::Create_medianhue },
-//{  "HueMinMaxDifference","ci[threshold]f[offset]i", MinMaxPlane::Create_minmaxhue },
+//{  "HueMax","ic[threshold]f[offset]i", MinMaxPlane::Create_maxhue },  ++accum[HueLookup[U,V]]
+//{  "HueMin","ic[threshold]f[offset]i", MinMaxPlane::Create_minhue },
+//{  "HueMedian","ic[offset]i", MinMaxPlane::Create_medianhue },
+//{  "HueMinMaxDifference","ic[threshold]f[offset]i", MinMaxPlane::Create_minmaxhue },
 
   { 0 }
 };
@@ -124,7 +124,7 @@ extern const AVSFunction Conditional_funtions_filters[] = {
 
 AVSValue AveragePlane::Create(AVSValue args, void* user_data, IScriptEnvironment* env) {
   int plane = (int)reinterpret_cast<intptr_t>(user_data);
-  return AvgPlane(args[0], args[1].AsInt(-1), user_data, plane, args[2].AsInt(0), env);
+  return AvgPlane(args[0].AsInt(-1), args[1], user_data, plane, args[2].AsInt(0), env);
 }
 
 // Average plane
@@ -197,7 +197,7 @@ static double get_sum_of_pixels_isse(const BYTE* srcp, size_t height, size_t wid
 
 
 
-AVSValue AveragePlane::AvgPlane(AVSValue clip, int n, void* user_data, int plane, int offset, IScriptEnvironment* env)
+AVSValue AveragePlane::AvgPlane(int n, AVSValue clip, void* user_data, int plane, int offset, IScriptEnvironment* env)
 {
   if (!clip.IsClip())
     env->ThrowError("Average Plane: No clip supplied!");
@@ -258,17 +258,17 @@ AVSValue AveragePlane::AvgPlane(AVSValue clip, int n, void* user_data, int plane
 
 AVSValue ComparePlane::Create(AVSValue args, void* user_data, IScriptEnvironment* env) {
   int plane = (int)reinterpret_cast<intptr_t>(user_data);
-  return CmpPlane(args[0], args[1].AsInt(-1), args[2], user_data, plane, env);
+  return CmpPlane(args[0].AsInt(-1), args[1], args[2], user_data, plane, env);
 }
 
 AVSValue ComparePlane::Create_prev(AVSValue args, void* user_data, IScriptEnvironment* env) {
   int plane = (int)reinterpret_cast<intptr_t>(user_data);
-  return CmpPlaneSame(args[0], args[1].AsInt(-1), user_data, -1, plane, env);
+  return CmpPlaneSame(args[0].AsInt(-1), args[1], user_data, -1, plane, env);
 }
 
 AVSValue ComparePlane::Create_next(AVSValue args, void* user_data, IScriptEnvironment* env) {
   int plane = (int)reinterpret_cast<intptr_t>(user_data);
-  return CmpPlaneSame(args[0], args[1].AsInt(-1), user_data, args[2].AsInt(1), plane, env);
+  return CmpPlaneSame(args[0].AsInt(-1), args[1], user_data, args[2].AsInt(1), plane, env);
 }
 
 
@@ -462,7 +462,7 @@ static size_t get_sad_rgb_isse(const BYTE* src_ptr, const BYTE* other_ptr, size_
 
 
 
-AVSValue ComparePlane::CmpPlane(AVSValue clip, int n, AVSValue clip2, void* user_data, int plane, IScriptEnvironment* env)
+AVSValue ComparePlane::CmpPlane(int n, AVSValue clip, AVSValue clip2, void* user_data, int plane, IScriptEnvironment* env)
 {
   if (!clip.IsClip())
     env->ThrowError("Plane Difference: No clip supplied!");
@@ -579,7 +579,7 @@ AVSValue ComparePlane::CmpPlane(AVSValue clip, int n, AVSValue clip2, void* user
 }
 
 
-AVSValue ComparePlane::CmpPlaneSame(AVSValue clip, int n, void* user_data, int offset, int plane, IScriptEnvironment* env)
+AVSValue ComparePlane::CmpPlaneSame(int n, AVSValue clip, void* user_data, int offset, int plane, IScriptEnvironment* env)
 {
   if (!clip.IsClip())
     env->ThrowError("Plane Difference: No clip supplied!");
@@ -678,26 +678,26 @@ AVSValue ComparePlane::CmpPlaneSame(AVSValue clip, int n, void* user_data, int o
 
 AVSValue MinMaxPlane::Create_max(AVSValue args, void* user_data, IScriptEnvironment* env) {
   int plane = (int)reinterpret_cast<intptr_t>(user_data);
-  return MinMax(args[0], args[1].AsInt(-1), user_data, args[2].AsDblDef(0.0), args[3].AsInt(0), plane, MAX, env);
+  return MinMax(args[0].AsInt(-1), args[1], user_data, args[2].AsDblDef(0.0), args[3].AsInt(0), plane, MAX, env);
 }
 
 AVSValue MinMaxPlane::Create_min(AVSValue args, void* user_data, IScriptEnvironment* env) {
   int plane = (int)reinterpret_cast<intptr_t>(user_data);
-  return MinMax(args[0], args[1].AsInt(-1), user_data, args[2].AsDblDef(0.0), args[3].AsInt(0), plane, MIN, env);
+  return MinMax(args[0].AsInt(-1), args[1], user_data, args[2].AsDblDef(0.0), args[3].AsInt(0), plane, MIN, env);
 }
 
 AVSValue MinMaxPlane::Create_median(AVSValue args, void* user_data, IScriptEnvironment* env) {
   int plane = (int)reinterpret_cast<intptr_t>(user_data);
-  return MinMax(args[0], args[1].AsInt(-1), user_data, 50.0, args[2].AsInt(0), plane, MIN, env);
+  return MinMax(args[0].AsInt(-1), args[1], user_data, 50.0, args[2].AsInt(0), plane, MIN, env);
 }
 
 AVSValue MinMaxPlane::Create_minmax(AVSValue args, void* user_data, IScriptEnvironment* env) {
   int plane = (int)reinterpret_cast<intptr_t>(user_data);
-  return MinMax(args[0], args[1].AsInt(-1), user_data, args[2].AsDblDef(0.0), args[3].AsInt(0), plane, MINMAX_DIFFERENCE, env);
+  return MinMax(args[0].AsInt(-1), args[1], user_data, args[2].AsDblDef(0.0), args[3].AsInt(0), plane, MINMAX_DIFFERENCE, env);
 }
 
 
-AVSValue MinMaxPlane::MinMax(AVSValue clip, int n, void* user_data, double threshold, int offset, int plane, int mode, IScriptEnvironment* env) {
+AVSValue MinMaxPlane::MinMax(int n, AVSValue clip, void* user_data, double threshold, int offset, int plane, int mode, IScriptEnvironment* env) {
 
   if (!clip.IsClip())
     env->ThrowError("MinMax: No clip supplied!");
