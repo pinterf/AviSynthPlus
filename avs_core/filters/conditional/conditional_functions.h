@@ -69,3 +69,10 @@ private:
   enum { MIN = 1, MAX = 2, MEDIAN = 3, MINMAX_DIFFERENCE = 4 };
 
 };
+
+class CurrentFrame {
+public:
+  static AVSValue Create(AVSValue args, void* user_data, IScriptEnvironment* env) {
+    return AVSValue(args[0].AsInt(-1));
+  }
+};

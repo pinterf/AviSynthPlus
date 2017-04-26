@@ -118,6 +118,7 @@ extern const AVSFunction Conditional_funtions_filters[] = {
 //{  "HueMedian","ic[offset]i", MinMaxPlane::Create_medianhue },
 //{  "HueMinMaxDifference","ic[threshold]f[offset]i", MinMaxPlane::Create_minmaxhue },
 
+  { "current_frame", BUILTIN_FUNC_PREFIX, "ic", CurrentFrame::Create },
   { 0 }
 };
 

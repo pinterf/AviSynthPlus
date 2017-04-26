@@ -456,27 +456,26 @@ AVSValue ExpVariableReference::Evaluate(IScriptEnvironment* env)
 
   // Try various function syntaxes.
 
-  // Per-frame syntax
-  if (frame_number >= 0)
-  {
-    // Try function starting with "n,clip". Only per-frame functions start with "ic".
-    AVSValue sargs[2] = { frame_number };
-    const char *nargs[2] = { 0, 0 };
-    if (env2->GetVar("last", &sargs[1])) {
-      if (env2->Invoke(&result, name, AVSValue(sargs, 2), nargs))
-        return result;
-    }
-  }
-
-  // Regular syntax
   // look for an argless function
   if (env2->Invoke(&result, name, AVSValue(0, 0)))
     return result;
 
-  // look for a single-arg function taking implicit "last"
   AVSValue last;
-  if (env2->GetVar("last", &last) && env2->Invoke(&result, name, last))
-    return result;
+  if (env2->GetVar("last", &last))
+  {
+    // look for a single-arg function taking implicit "last"
+    if (env2->Invoke(&result, name, last))
+      return result;
+
+    // Per-frame syntax
+    if (frame_number >= 0)
+    {
+      // Try function starting with "n,clip". Only per-frame functions start with "ic".
+      AVSValue sargs[2] = { frame_number, last };
+      if (env2->Invoke(&result, name, AVSValue(sargs, 2)))
+        return result;
+    }
+  }
 
   env->ThrowError("I don't know what '%s' means.", name);
   return 0;
