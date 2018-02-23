@@ -404,7 +404,7 @@ AVSValue Eval(AVSValue args, void*, IScriptEnvironment* env)
 {
   const char *filename = args[1].AsString(0);
   if (filename) filename = env->SaveString(filename);
-  ScriptParser parser(env, args[0].AsString(), filename);
+  ScriptParser parser(env, args[0].AsString(), filename, -1);
   PExpression exp = parser.Parse();
   return exp->Evaluate(env);
 }

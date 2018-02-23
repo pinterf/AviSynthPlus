@@ -41,8 +41,8 @@
  *******************************/
  
 
-ScriptParser::ScriptParser(IScriptEnvironment* _env, const char* _code, const char* _filename)
-   : env(static_cast<IScriptEnvironment2*>(_env)), tokenizer(_code, _env), code(_code), filename(_filename), loopDepth(0) {}
+ScriptParser::ScriptParser(IScriptEnvironment* _env, const char* _code, const char* _filename, int _frame_number)
+   : env(static_cast<IScriptEnvironment2*>(_env)), tokenizer(_code, _env), code(_code), filename(_filename), loopDepth(0), frame_number(_frame_number) {}
 
 PExpression ScriptParser::Parse(void) 
 {
@@ -525,10 +525,10 @@ PExpression ScriptParser::ParseUnary(void) {
 PExpression ScriptParser::ParseOOP(void) 
 {
 #ifndef NEW_AVSVALUE
-  PExpression left = ParseFunction(0);
+  PExpression left = ParseFunction(0, frame_number);
   while (tokenizer.IsOperator('.')) {
     tokenizer.NextToken();
-    left = ParseFunction(left);
+    left = ParseFunction(left, frame_number);
   }
 #else
   PExpression left = ParseFunction(0, '\0');
@@ -543,9 +543,9 @@ PExpression ScriptParser::ParseOOP(void)
 }
 
 #ifndef NEW_AVSVALUE
-PExpression ScriptParser::ParseFunction(PExpression context)
+PExpression ScriptParser::ParseFunction(PExpression context, int frame_number)
 #else
-PExpression ScriptParser::ParseFunction(PExpression context, char context_char)
+PExpression ScriptParser::ParseFunction(PExpression context, int frame_number, char context_char)
 #endif
 {
 #ifndef NEW_AVSVALUE
@@ -585,7 +585,7 @@ PExpression ScriptParser::ParseFunction(PExpression context, char context_char)
   if (!context && !tokenizer.IsOperator('(') && !isArraySpecifier) {
 #endif
     // variable
-    return new ExpVariableReference(name);
+    return new ExpVariableReference(name, frame_number);
   }
   // function
   PExpression args[max_args];
@@ -655,7 +655,7 @@ PExpression ScriptParser::ParseFunction(PExpression context, char context_char)
     env->ThrowError("Script error: array indexing must have at least one index");
   }
 #endif
-  return new ExpFunctionCall(name, args, arg_names, i, !!context);
+  return new ExpFunctionCall(name, args, arg_names, i, !!context, frame_number);
 }
 
 PExpression ScriptParser::ParseAtom(void)

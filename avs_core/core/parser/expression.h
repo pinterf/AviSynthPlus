@@ -36,10 +36,7 @@
 #define __Expression_H__
 
 #include <avisynth.h>
-
-#ifdef NEW_AVSVALUE
 #include <vector>
-#endif
 
 /********************************************************************
 ********************************************************************/
@@ -373,13 +370,14 @@ private:
 class ExpVariableReference : public Expression 
 {
 public:
-  ExpVariableReference(const char* _name) : name(_name) {}
+  ExpVariableReference(const char* _name, const int _frame_number) : name(_name), frame_number(_frame_number) {}
   virtual AVSValue Evaluate(IScriptEnvironment* env);
   
   virtual const char* GetLvalue() { return name; }
 
 private:
   const char* const name;
+  const int frame_number; // for per-frame expressions
 };
 
 
@@ -411,17 +409,20 @@ class ExpFunctionCall : public Expression
 {
 public:
   ExpFunctionCall( const char* _name, PExpression* _arg_exprs,
-                   const char** _arg_expr_names, int _arg_expr_count, bool _oop_notation );  
+                   const char** _arg_expr_names, int _arg_expr_count, bool _oop_notation, int _frame_number );  
   ~ExpFunctionCall(void);
   
   virtual AVSValue Evaluate(IScriptEnvironment* env);
-  
+  bool EvaluateSyntax(AVSValue* result, const char* name, std::vector<AVSValue>* args, int extra, IScriptEnvironment2* env2);
+
 private:
+
   const char* const name;
   PExpression* arg_exprs;
   const char** arg_expr_names;
-  const int arg_expr_count;
+  int arg_expr_count;
   const bool oop_notation;
+  const int frame_number;
 };
 
 

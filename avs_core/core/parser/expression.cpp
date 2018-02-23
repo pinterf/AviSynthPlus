@@ -38,7 +38,6 @@
 #include "../internal.h"
 #include <avs/win.h>
 #include <cassert>
-#include <vector>
 
 
 class BreakStmtException
@@ -445,33 +444,41 @@ AVSValue ExpNot::Evaluate(IScriptEnvironment* env)
 }
 
 
-AVSValue ExpVariableReference::Evaluate(IScriptEnvironment* env) 
+AVSValue ExpVariableReference::Evaluate(IScriptEnvironment* env)
 {
   AVSValue result;
   IScriptEnvironment2 *env2 = static_cast<IScriptEnvironment2*>(env);
 
   // first look for a genuine variable
   // Don't add a cache to this one, it's a Var
-  if (env2->GetVar(name, &result)) {
+  if (env2->GetVar(name, &result))
     return result;
-  }
-  else {
-    // Swap order to match ::Call below -- Gavino Jan 2010
 
-    // next look for an argless function
-    if (!env2->Invoke(&result, name, AVSValue(0,0)))
+  // Try various function syntaxes.
+
+  // look for an argless function
+  if (env2->Invoke(&result, name, AVSValue(0, 0)))
+    return result;
+
+  AVSValue last;
+  if (env2->GetVar("last", &last))
+  {
+    // look for a single-arg function taking implicit "last"
+    if (env2->Invoke(&result, name, last))
+      return result;
+
+    // Per-frame syntax
+    if (frame_number >= 0)
     {
-      // finally look for a single-arg function taking implicit "last"
-      AVSValue last;
-      if (!env2->GetVar("last", &last) || !env2->Invoke(&result, name, last))
-      {
-        env->ThrowError("I don't know what '%s' means.", name);
-        return 0;
-      }
+      // Try function starting with "n,clip". Only per-frame functions start with "ic".
+      AVSValue sargs[2] = { frame_number, last };
+      if (env2->Invoke(&result, name, AVSValue(sargs, 2)))
+        return result;
     }
   }
 
-  return result;
+  env->ThrowError("I don't know what '%s' means.", name);
+  return 0;
 }
 
 
@@ -489,17 +496,18 @@ AVSValue ExpGlobalAssignment::Evaluate(IScriptEnvironment* env)
 }
 
 
-ExpFunctionCall::ExpFunctionCall( const char* _name, PExpression* _arg_exprs,
-                   const char** _arg_expr_names, int _arg_expr_count, bool _oop_notation )
-  : name(_name), arg_expr_count(_arg_expr_count), oop_notation(_oop_notation)
+ExpFunctionCall::ExpFunctionCall(const char* _name, PExpression* _arg_exprs,
+  const char** _arg_expr_names, int _arg_expr_count, bool _oop_notation, int _frame_number)
+  : name(_name), arg_expr_count(_arg_expr_count), oop_notation(_oop_notation), frame_number(_frame_number)
 {
+  // arg_expr_names has 2 extra item at the beginning, for implicit "last" and for "current_frame"
   arg_exprs = new PExpression[arg_expr_count];
-  // arg_expr_names has an extra elt at the beginning, for implicit "last"
-  arg_expr_names = new const char*[arg_expr_count+1];
+  arg_expr_names = new const char*[arg_expr_count+2];
   arg_expr_names[0] = 0;
-  for (int i=0; i<arg_expr_count; ++i) {
+  arg_expr_names[1] = 0;
+  for (int i = 0; i<arg_expr_count; ++i) {
     arg_exprs[i] = _arg_exprs[i];
-    arg_expr_names[i+1] = _arg_expr_names[i];
+    arg_expr_names[i+2] = _arg_expr_names[i];
   }
 }
 
@@ -514,25 +522,47 @@ AVSValue ExpFunctionCall::Evaluate(IScriptEnvironment* env)
   AVSValue result;
   IScriptEnvironment2 *env2 = static_cast<IScriptEnvironment2*>(env);
 
-  std::vector<AVSValue> args(arg_expr_count+1, AVSValue());
+  std::vector<AVSValue> args(arg_expr_count+2, AVSValue());
   for (int a=0; a<arg_expr_count; ++a)
-    args[a+1] = arg_exprs[a]->Evaluate(env);
+    args[a+2] = arg_exprs[a]->Evaluate(env);
+  int HasLast = 0; // Only read if needed. 0=not loaded, 1=loaded, -1=failed
 
-  // first try without implicit "last"
-  try
-  { // Invoke can always throw by calling a constructor of a filter that throws
-    if (env2->Invoke(&result, name, AVSValue(args.data()+1, arg_expr_count), arg_expr_names+1))
-      return result;
-  } catch(const IScriptEnvironment::NotFound&){}
-
-  // if that fails, try with implicit "last" (except when OOP notation was used)
-  if (!oop_notation) 
+  // Per-frame syntax
+  if (frame_number >= 0)
   {
-    try
-    {
-      if (env2->GetVar("last", args.data()) && env2->Invoke(&result, name, AVSValue(args.data(), arg_expr_count+1), arg_expr_names))
+    // Try "n,args" if first arg is a clip. Only per-frame functions start with "ic".
+    if (arg_expr_count > 0 && args[2].IsClip()) {
+      args[1] = AVSValue(frame_number);
+      if (EvaluateSyntax(&result, name, &args, 1, env2))
         return result;
-    } catch(const IScriptEnvironment::NotFound&){}
+    }
+
+    // Try "n,last,args" (except when OOP notation was used)
+    if (!oop_notation) {
+      if (HasLast == 0) // Only read if needed
+        HasLast = env2->GetVar("last", &args[1]) ? 1 : -1;
+      if (HasLast == 1) {
+        args[0] = AVSValue(frame_number);
+        if (EvaluateSyntax(&result, name, &args, 2, env2))
+          return result;
+      }
+    }
+  }
+
+  // Regular syntax
+  // Try "args"
+  if (EvaluateSyntax(&result, name, &args, 0, env2))
+    return result;
+
+  // Try "last,args" (except when OOP notation was used)
+  if (!oop_notation) {
+    if (HasLast == 0) // Only read if needed
+      HasLast = env2->GetVar("last", &args[1]) ? 1 : -1;
+    if (HasLast == 1) {
+      args[0] = AVSValue(frame_number);
+      if (EvaluateSyntax(&result, name, &args, 1, env2))
+        return result;
+    }
   }
 
   env->ThrowError(env->FunctionExists(name) ?
@@ -541,4 +571,14 @@ AVSValue ExpFunctionCall::Evaluate(IScriptEnvironment* env)
 
   assert(0);  // we should never get here
   return 0;
+}
+
+bool ExpFunctionCall::EvaluateSyntax(AVSValue* result, const char* name, std::vector<AVSValue>* args, int extra, IScriptEnvironment2* env2) {
+  try
+  {
+    if (env2->Invoke(result, name, AVSValue(args->data() + 2 - extra, arg_expr_count + extra), arg_expr_names + 2 - extra))
+      return true;
+  }
+  catch (const IScriptEnvironment::NotFound&) {}
+  return false;
 }
