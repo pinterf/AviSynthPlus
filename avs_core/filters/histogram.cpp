@@ -68,7 +68,7 @@ constexpr double PI = 3.14159265358979323846;
 ***** Declare index of new filters for Avisynth's filter engine *****
 ********************************************************************/
 extern const AVSFunction Histogram_filters[] = {
-  { "Histogram", BUILTIN_FUNC_PREFIX, "c[mode]s[factor]f[bits]i[keepsource]b[markers]b[matrix]s[graticule]s[targets]b[axes]b[iq]b[iq_lines]b[circle]b", Histogram::Create },
+  { "Histogram", BUILTIN_FUNC_PREFIX, "c[mode]s[factor]f[bits]i[keepsource]b[markers]b[matrix]s[graticule]s[targets]b[axes]b[iq]b[iq_lines]b[circle]b[targets100]b", Histogram::Create },
   { 0 }
 };
 
@@ -1369,6 +1369,14 @@ static void Draw_VectorScope_circle_targets_axes(int bits_per_pixel,
       { "Red",     0.75, 0.0,  0.0  },
       { "Blue",    0.0,  0.0,  0.75 },
   };
+  static const RGBEntry bar100_rgb[] = {
+      { "Yellow",  1.0, 1.0, 0.0  },
+      { "Cyan",    0.0, 1.0, 1.0 },
+      { "Green",   0.0, 1.0, 0.0  },
+      { "Magenta", 1.0, 0.0, 1.0 },
+      { "Red",     1.0, 0.0, 0.0  },
+      { "Blue",    0.0, 0.0, 1.0 },
+  };
 
   static const RGBEntry iq_rgb_yuv_targeted[] = {
       { "-I", MINUS_I_R_YUV, MINUS_I_G_YUV, MINUS_I_B_YUV }, // YUV-targeted (zero-luma)
@@ -1406,6 +1414,33 @@ static void Draw_VectorScope_circle_targets_axes(int bits_per_pixel,
 
     // ---- Draw colorbar target boxes ----
     for (auto& e : bar_rgb) {
+      double dY, dU, dV;
+      GetYUVFromMatrix(matrix, e.r, e.g, e.b, dY, dU, dV);
+      int cx;
+      int cy;
+      if constexpr (std::is_integral<pixel_t>::value) {
+        cx = uv_to_px_float(dU);
+        cy = uv_to_px_float(dV);
+      }
+      else {
+        cx = uv_to_px_float(dU);
+        cy = uv_to_px_float(dV);
+      }
+
+      DrawModeColor2_DrawRect<pixel_t>(
+        dstp, pitch, dstp_u, dstp_v, pitchUV,
+        cx, cy, half_box, half_box,
+        swidth, sheight,
+        box_luma, box_u, box_v,
+        limit_showwidth);
+
+    }
+  }
+
+  if (params.targets100) {
+
+    // ---- Draw colorbar target boxes ----
+    for (auto& e : bar100_rgb) {
       double dY, dU, dV;
       GetYUVFromMatrix(matrix, e.r, e.g, e.b, dY, dU, dV);
       int cx;
