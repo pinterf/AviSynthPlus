@@ -1952,7 +1952,9 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
   // ConvertToPlanarGeneric's GetFrame will recognize if alpha copy or fill-with-defaults needed
   AVSValue dummy_for_to_y;
 
-  return new ConvertToPlanarGeneric(clip, pixel_type, args[1].AsBool(false), ChromaLocation_In, 
+  return new ConvertToPlanarGeneric(clip, pixel_type,
+    to_y ? false : args[1].AsBool(false), // interlaced
+    ChromaLocation_In, 
     to_y ? dummy_for_to_y : args[4], // chromaresample
     param1, param2, param3,
     ChromaLocation_Out,
