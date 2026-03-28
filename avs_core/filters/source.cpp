@@ -1810,7 +1810,14 @@ static void draw_colorbarsUHD_444_rgb(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8,
   // Full range:   full->full rational rescale via luma_c constants.
   // Float:        normalised via luma_c.mul_factor + luma_c.dst_offset.
   auto scale_y = [&](int code10) -> pixel_t {
-    if constexpr (is_float_output) {
+    XP_LAMBDA_CAPTURE_FIX(is_float_output);
+    XP_LAMBDA_CAPTURE_FIX(is_full_range);
+#ifdef XP_TLS
+    if (is_float_output)
+#else
+    if constexpr (is_float_output)
+#endif
+    {
       return (pixel_t)((code10 - luma_c.src_offset_i) * luma_c.mul_factor + luma_c.dst_offset);
     }
     else {
@@ -1836,7 +1843,12 @@ static void draw_colorbarsUHD_444_rgb(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8,
   // This ensures ITU-specified 10 and 12-bit values are reproduced exactly,
   // while other depths get the best approximation from the 12-bit reference.
   auto fr_native12 = [&](int code10, int code12) -> pixel_t {
-    if constexpr (is_float_output) {
+#ifdef XP_TLS
+    if (is_float_output)
+#else
+    if constexpr (is_float_output)
+#endif
+    {
       return scale_y(code10); // float always uses 10-bit ref via scale_y
     }
     else {
@@ -1910,6 +1922,7 @@ static void draw_colorbarsUHD_444_rgb(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8,
   // -- Helper: write a solid luma+neutral-chroma span (grey) ----------------
   // All grey fills use pre-computed pixel_t values — no per-pixel scaling.
   auto fill_grey_px = [&](int x0, int x1, pixel_t luma) {
+    XP_LAMBDA_CAPTURE_FIX(t_chroma_mid);
     for (int x = x0; x < x1 && x < w; ++x) {
       if constexpr (is_rgb) { pYG[x] = luma; pUB[x] = luma; pVR[x] = luma; }
       else { pYG[x] = luma; pUB[x] = t_chroma_mid; pVR[x] = t_chroma_mid; }
@@ -1956,7 +1969,11 @@ static void draw_colorbarsUHD_444_rgb(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8,
     double dY, dU, dV;
     GetYUVBT2020fromRGB(R, G, B, dY, dU, dV);
     pixel_t sy, scb, scr;
+#ifdef XP_TLS
+    if (is_float_output) {
+#else
     if constexpr (is_float_output) {
+#endif
       sy = (pixel_t)(dY * luma_c_from_float.mul_factor + luma_c_from_float.dst_offset);
       scb = (pixel_t)(dU * chroma_c_from_float.mul_factor);
       scr = (pixel_t)(dV * chroma_c_from_float.mul_factor);
@@ -1986,6 +2003,7 @@ static void draw_colorbarsUHD_444_rgb(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8,
   // make_bar_from_px: build BarEntry from native pixel_t R/G/B values.
   // Always computes r/g/b. Derives y/cb/cr via make_yuv if !is_rgb.
   auto make_bar_from_px = [&](pixel_t r_px, pixel_t g_px, pixel_t b_px) -> BarEntry {
+    XP_LAMBDA_CAPTURE_FIX(make_yuv);
     BarEntry e{};
     e.r = r_px; e.g = g_px; e.b = b_px;
     if constexpr (!is_rgb) {
