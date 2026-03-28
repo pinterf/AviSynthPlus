@@ -726,8 +726,9 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
   // RGB values with double precision RGB to YUV conversion.
   */
 
-  // Define in double precision RGB and convert to rec.709 YUV later for target bitdepth
-
+  // Define as double-precision gamma-encoded signal levels (E'R, E'G, E'B).
+  // 0.75 = 75% of encoded signal swing, not a linear-light value.
+  // Convert to Rec.709 YUV for target bitdepth and limited/full range later.
   static const double pattern1R[] = { 0.4, 0.75, 0.75, 0.00, 0.00, 0.75, 0.75, 0.00 };
   static const double pattern1G[] = { 0.4, 0.75, 0.75, 0.75, 0.75, 0.00, 0.00, 0.00 };
   static const double pattern1B[] = { 0.4, 0.75, 0.00, 0.75, 0.00, 0.75, 0.00, 0.75 };
@@ -946,9 +947,10 @@ static const int top_two_thirds[] =
                { 0xb4b4b4, 0xb4b410, 0x10b4b4, 0x10b410, 0xb410b4, 0xb41010, 0x1010b4 };
 */
 
-// Ground truth linear RGB for ColorBars (Rec. ITU-R BT.801-1)
-// Values are normalised linear RGB [0.0 .. 1.0], limited range reference.
-// Reproduce 8-bit studio values via: (int)(R * 219.0 + 16.0 + 0.5)
+// Ground truth gamma-encoded RGB for ColorBars (Rec. ITU-R BT.801-1).
+// Normalised limited-range signal levels [0.0..1.0]: 0.0 = code 16, 1.0 = code 235.
+// 0.75 = 75% encoded signal swing (E'R/G'B, not linear light).
+// 8-bit studio value: (int)(R * 219.0 + 16.0 + 0.5)
 
 // Top 2/3: LtGrey, Yellow, Cyan, Green, Magenta, Red, Blue
 static const double top_two_thirdsR[] = { 0.75, 0.75, 0.0,  0.0,  0.75, 0.75, 0.0 };
@@ -981,9 +983,9 @@ static const double two_thirds_to_three_quartersB[] = { 0.75, 0.0, 0.75, 0.0, 0.
    Both signals contain out-of-range (negative) RGB components. Three
    interpretations exist in the literature:
 
-   ───────────────────────────────────────────────────────────────────────────
+   ---------------------------------------------------------------------------
    OPTION 1 — Zero-luma, lift to studio black (legacy YUV implementation)
-   ───────────────────────────────────────────────────────────────────────────
+   ---------------------------------------------------------------------------
    Y = 16 (studio black). The most negative RGB component is left negative
    and will encode to a super-black code (0-15 range), or must be clipped
    when rendering as RGB, distorting the color.
@@ -1005,9 +1007,9 @@ static const double two_thirds_to_three_quartersB[] = { 0.75, 0.0, 0.75, 0.0, 0.
      YUV path used zero-luma calculation:  -I = Y16 Cb158 Cr95
      These two specifications are fundamentally incompatible.
 
-   ───────────────────────────────────────────────────────────────────────────
+   ---------------------------------------------------------------------------
    OPTION 2 — Luma-corrected to studio black (CURRENT RGB IMPLEMENTATION)
-   ───────────────────────────────────────────────────────────────────────────
+   ---------------------------------------------------------------------------
    Luma is raised until the most negative component reaches code 16
    (studio black). The lift calculation:
 
@@ -1049,8 +1051,8 @@ static const double two_thirds_to_three_quartersB[] = { 0.75, 0.0, 0.75, 0.0, 0.
 // ===== RGB-NATIVE GROUND TRUTH =====
 // For RGB output formats only.
 // Luma-corrected: most negative component lifted to studio black (code 16).
-// -I: R lifted to code 16  →  RGB(16, 90, 130) at 8-bit
-// +Q: G lifted to code 16  →  RGB(92, 16, 143) at 8-bit
+// -I: R lifted to code 16  ->  RGB(16, 90, 130) at 8-bit
+// +Q: G lifted to code 16  ->  RGB(92, 16, 143) at 8-bit
 // Convention: 0.0 = code 16 (studio black), 1.0 = code 235 (studio white)
 static const double bottom_quarterR[] = { MINUS_I_R, 1.0, PLUS_Q_R, 0.0, -0.04, 0.0, 0.04, 0.0 };
 static const double bottom_quarterG[] = { MINUS_I_G, 1.0, PLUS_Q_G, 0.0, -0.04, 0.0, 0.04, 0.0 };
@@ -1090,7 +1092,7 @@ static void GetYUVBT601fromRGB(double R, double G, double B, double& dY, double&
 // always fall on chroma-aligned luma positions (a multiple of the horizontal
 // subsampling factor). This satisfies the requirement from Rec. ITU-R BT.801-1
 // that transitions occur on chroma-aligned boundaries.
-// Note: due to integer rounding, boundary positions may differ by ±1 luma pixel
+// Note: due to integer rounding, boundary positions may differ by +/-1 luma pixel
 // compared to a 4:4:4 or RGB rendering of the same width, which is unavoidable
 // when 7 bars do not divide evenly into the frame width.
 template<typename pixel_t, bool is420, bool is422, bool is411>
@@ -1126,6 +1128,8 @@ static void draw_colorbars_yuv(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8, int pit
   struct YUV3 { pixel_t y, u, v; };
 
   // Helper to process and write a pixel based on RGB input
+  // Convention: encoded signal levels; 0.0 = code 16 (studio black), 1.0 = code 235 (studio white)
+
   auto make_yuv = [&](double r, double g, double b) -> YUV3 {
     XP_LAMBDA_CAPTURE_FIX(float_scale);
     XP_LAMBDA_CAPTURE_FIX(float_offset);
