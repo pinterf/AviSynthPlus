@@ -55,6 +55,7 @@ struct histogram_color2_params {
   bool iq; // paint +-I/+Q boxes on histogram
   bool iq_lines; // paint I/Q diagonal lines on histogram
   bool circle; // paint circle on histogram, originally only at "color2"
+  bool targets100; // the 6 color bar boxes at 100%
 };
 
 class Histogram : public GenericVideoFilter

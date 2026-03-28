@@ -2889,6 +2889,7 @@ AVSValue __cdecl Histogram::Create(AVSValue args, void*, IScriptEnvironment* env
   color2_params.iq = args[10].AsBool(false); // +/-I and +Q targets
   color2_params.iq_lines = args[11].AsBool(false); // 33 and 123 degree lines in the color2 mode
   color2_params.circle = args[12].AsBool(mode == ModeColor2 ? true : false); // circle in the color2 mode default
+  color2_params.targets100 = args[13].AsBool(false); // The 6 100% RGB squares
 
   if (mode == ModeLevels && vi_orig.IsRGB() && !vi_orig.IsPlanar()) {
     // as Levels can work for PlanarRGB, convert packed RGB to planar, then back
