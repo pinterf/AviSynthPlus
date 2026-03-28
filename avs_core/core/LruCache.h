@@ -204,29 +204,36 @@ public:
       {
         *g = LruGhostEntry(key, 0);
       }
-      else if (g->ghosted > 0) 
+      else if (g->ghosted > 1)
       {
-#ifdef CACHE_GROWTH_INFINITELY_TEST
-        // FIXME note! See Issue #270
-        // Inifinite cache growth when the requested frame number pattern from 
-        // source filter is something like that:
-        //   0,0, 0,1, 1,2, 1,3, 2,4, 2,5, 3,6, 3,7, 4,8,...
+        // Fix for Issues #270 and #379: require a frame to have been evicted
+        // at least twice (ghosted > 1) before triggering a cache resize.
+        //
+        // With the old condition (ghosted > 0), any single eviction + re-request
+        // caused a +1 resize.  This led to unbounded cache growth in two cases:
+        //
+        // 1. Backward seeking (Issue #379): frames played forward get evicted and
+        //    ghosted=1.  Every backstep hits a ghost (1 > 0 was true) → +1 on each
+        //    step.
+        //
+        // 2. Bob()/SeparateFields access pattern (Issue #270): the n, n/2 pattern
+        //    keeps evicting the same frames with ghosted=1, so every GetFrame call
+        //    triggered a resize.
+        //    Infinite cache growth occured when the requested frame number pattern from 
+        //    source filter is something like that:
+        //    0,0, 0,1, 1,2, 1,3, 2,4, 2,5, 3,6, 3,7, 4,8,...
         // Sample script:
         //   ConvertToY8()
         //   org = last
         //   Bob()
         //   Merge(last, org)
-        // The problem is caused by SeparateFields when it is actually requesting 
-        // the (n/2)th frame from source filter which is then combined with Nth frame.
-        // When changing: g->ghosted > 0 to 1: the leak/cache growth is stopped.
-        // We reach here again and again when Bob() because it is found in "ghosted"
-        // So when the sample script results in getting frame n and n/2
-        // alternately, then a ghost always exists (g->ghosted > 0, really it is 1)
-        // and the cache will grow continously, after each GetFrame
-        // Solution?: registering a cache hit rate?
-#endif
+        // With ghosted > 1: both cases are suppressed because frames evicted only
+        // once stay at ghosted=1 (1 > 1 is false).  An undersized cache
+        // still grows: frames that keep cycling will be evicted a second time,
+        // pushing ghosted to 2, and growth resumes from that point forward.
         if (mode != CACHE_NO_RESIZE) {
 #ifdef CACHE_GROWTH_INFINITELY_TEST
+          // When the above (g->ghosted > 1) was (g->ghosted > 0)
           _RPT1(0, "Not in cache but in ghost! g->ghosted > 0 => resize! MainCache.capacity()=%d -> += 1", MainCache.capacity() + 1);
 #endif
           MainCache.resize(MainCache.capacity() + 1);
