@@ -209,7 +209,7 @@ Syntax and Parameters
     Default: True
 
 Expressions
-------------
+-----------
 
 **Expr** accepts 1 to 26 **source clips**, up to four **expression** strings
 (one per color plane), an optional output format string, and some debug options.

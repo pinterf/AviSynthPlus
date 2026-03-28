@@ -8,7 +8,8 @@ Syntax and Parameters
 
     Histogram (clip, string "mode", float "factor", int "bits", bool "keepsource", bool "markers",
     string "matrix", 
-    string "graticule", bool "targets", bool "axes", bool "iq", bool "iq_lines", bool "circle")
+    string "graticule", bool "targets", bool "axes", bool "iq", bool "iq_lines", bool "circle", 
+    bool "targets100")
 
 .. describe:: clip
 
@@ -110,14 +111,66 @@ Syntax and Parameters
 
 .. describe:: targets
 
-    Applies only to Color and Color2 modes. If true, draw small target boxes on the
-    vectorscope at the expected U/V positions of the six 75%-amplitude
-    :doc:`ColorBars <colorbars>` colors (Yellow, Cyan, Green, Magenta, Red,
-    Blue). The positions are computed from ground-truth linear RGB values
-    converted through the active ``matrix``, and limited or full range property
-    of the clip; giving accurate targets for any supported matrix and bit depth.
+    Applies only to Color and Color2 modes. If true, draw small target boxes
+    on the vectorscope at the expected Cb/Cr positions of the six 75%-amplitude
+    colour bar colours (Yellow, Cyan, Green, Magenta, Red, Blue). The positions
+    are computed from ground-truth linear RGB values converted through the active
+    ``matrix``, and the limited or full range property of the clip, giving
+    accurate targets for any supported matrix and bit depth.
+
+    The target positions correspond to the 75% signal level as used by
+    :doc:`ColorBars <colorbars>` and :doc:`ColorBarsHD <colorbars>`. They are
+    also the correct reference positions for :doc:`ColorBarsUHD <colorbarsuhd>`
+    content after SDR conversion, since the three test patterns share the same
+    scene light level at their respective reference amplitudes:
+
+    * **ColorBarsHD** 75% bars → land on 75% targets directly.
+    * **ColorBarsUHD HLG** (mode=0) 75% BT.709-equivalent bars → land on 75%
+      targets after scene-referred HLG→SDR conversion (ITU Fig. 10).
+    * **ColorBarsUHD PQ** (mode=1) 58% BT.709-equivalent bars → land on 75%
+      targets after scene-referred PQ→SDR conversion at 1000 cd/m² reference,
+      because the 58% PQ signal level corresponds to the same scene light as
+      75% HLG at the 1000 cd/m² reference (203 cd/m² diffuse white).
+
+    For the **HLG/PQ source signal** (before SDR conversion), convert to YUV
+    first and set ``matrix`` to ``"709"`` (or ``"2020"`` all the same, drawing is
+    matrix-aware) to see the BT.709-equivalent bottom bars land on 75% targets::
+
+        src = ColorBarsUHD(pixel_type="RGBP10", mode=0)
+        src.ConvertToYUV444(matrix="709:same").Histogram("color2", targets=true)
 
     Default: false
+
+.. describe:: targets100
+
+    Applies only to Color and Color2 modes. If true, draw small target boxes
+    on the vectorscope at the expected Cb/Cr positions of the six **100%**-amplitude
+    colour bar colours. The positions are computed from the same ground-truth
+    linear RGB primaries as ``targets``, scaled to full saturation (100% signal
+    level), using the active ``matrix`` and colour range.
+
+    These targets are useful for validating HDR-to-SDR conversions where HDR
+    primary colour bars exceed the SDR gamut and are hard-clipped. Specifically,
+    after a **scene-referred** HLG→SDR or PQ→SDR conversion, the 75% HLG and
+    58% PQ primary colour bars (Row 2 of ColorBarsUHD) clip to exactly 100% SDR
+    amplitude and should land on these targets:
+
+    * fmtconv scene-referred: bars land **exactly** on the 100% targets —
+      confirming high numerical precision of the analytical conversion path.
+    * zimg/avsresize scene-referred (as of 20260317 patch needed): bars land 
+      approximately on the 100% targets with small scatter — due to LUT quantisation 
+      in the per-channel gamma path.
+    * Display-referred conversion: bars land approximately near the 100% targets
+      but with visible scatter between bars of the same hue group, because the
+      luminance-weighted OOTF scales each bar by a different factor depending on
+      its luminance content. This scatter is physically correct and expected —
+      the BT.709-equivalent bars were designed to hit targets for scene-referred
+      conversion only (per ITU-R BT.2111-3 Attachment 3).
+
+    Default: false
+
+    See also :ref:`ColorbarsUHD vectorscope example <ColorBarsUHD_vectorscope_example>`
+
 
 .. describe:: axes
 
@@ -293,12 +346,19 @@ BT.709, BT.2020 and other supported matrices at all bit depths.
 +=============+===================+===================+==========================================+
 | graticule   | ``"on"``          | ``"on"``          | Danger zone shading (Color) or valid     |
 |             |                   |                   | chroma boundary square (Color2).         |
-|             |                   |                   | ``"on"`` always draws it, ``"off"``      |
-|             |                   |                   | never draws it, ``"auto"`` draws it      |
-|             |                   |                   | only for limited-range clips.            |
+|             |                   |                   | ``"on"`` / ``"off"`` / ``"auto"``        |
+|             |                   |                   | (auto: limited-range only).              |
 +-------------+-------------------+-------------------+------------------------------------------+
-| targets     | false             | false             | Small boxes at the six 75% ColorBars     |
-|             |                   |                   | Cb/Cr positions.                         |
+| targets     | false             | false             | Target boxes at the six 75% colour bar   |
+|             |                   |                   | Cb/Cr positions. Matrix-aware. Useful    |
+|             |                   |                   | for ColorBars, ColorBarsHD, and          |
+|             |                   |                   | ColorBarsUHD after SDR conversion.       |
++-------------+-------------------+-------------------+------------------------------------------+
+| targets100  | false             | false             | Target boxes at the six 100% colour bar  |
+|             |                   |                   | Cb/Cr positions. Matrix-aware. Useful    |
+|             |                   |                   | for validating HDR primary bars after    |
+|             |                   |                   | SDR conversion where HLG/PQ primaries    |
+|             |                   |                   | clip to 100% SDR amplitude.              |
 +-------------+-------------------+-------------------+------------------------------------------+
 | axes        | false             | false             | Horizontal and vertical crosshair        |
 |             |                   |                   | through the scope center.                |
@@ -315,9 +375,29 @@ BT.709, BT.2020 and other supported matrices at all bit depths.
 
 **Example usage**::
 
-    # Show ColorBars with full vectorscope overlay (BT.601 auto-detected)
+    # ColorBars / ColorBarsHD: 75% targets with BT.601/BT.709 auto-detected
     ColorBars()
     Histogram("color2", targets=true, axes=true, iq=true, iq_lines=true)
+
+    # ColorBarsHD with explicit BT.709 matrix
+    # Here unnecessary, "color2" knows it from frame properties set to 709,limited
+    ColorBarsHD()
+    Histogram("color2", targets=true, matrix="709:l")
+
+    # ColorBarsUHD HLG source: view in BT.2020 Cb/Cr space
+    # BT.709-equivalent bottom bars land on BT.2020 75% targets
+    ColorBarsUHD(pixel_type="RGBP10", mode=0)
+    Histogram("color2", targets=true, targets100=true)
+
+    # ColorBarsUHD HLG after scene-referred SDR conversion:
+    # 75% HLG primary bars clip to 100% SDR → use targets100
+    # BT.709-equivalent bottom bars land on 75% targets → use targets
+    z_ConvertFormat(last, pixel_type="RGBP10",
+        \ colorspace_op="auto:auto:auto:l=>rgb:709:709:l",
+        \ nominal_luminance=203.15, use_props=1,
+        \ approximate_gamma=false, scene_referred=true)
+    ConvertToYUV444(matrix="709:same")
+    Histogram("color2", targets=true, targets100=true)
 
     # Override matrix interpretation to BT.709 for an SD clip tagged as 601
     Histogram("color2", matrix="709", targets=true, iq=true)
@@ -326,8 +406,11 @@ BT.709, BT.2020 and other supported matrices at all bit depths.
     Histogram("color2", graticule="auto")
 
     # Switch on all overlays in Color mode
-    Histogram("color", graticule="on", targets=true, axes=true, iq=true, iq_lines=true, circle=true)
+    Histogram("color", graticule="on", targets=true, targets100=true,
+        \ axes=true, iq=true, iq_lines=true, circle=true)
 
+See also
+:ref:`ColorbarsUHD vectorscope example <ColorBarsUHD_vectorscope_example>`
 
 |clearfloat|
 
