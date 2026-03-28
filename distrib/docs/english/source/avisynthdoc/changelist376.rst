@@ -55,6 +55,9 @@ Additions, changes
     (Yellow, Cyan, Green, Magenta, Red, Blue). Positions are computed from
     ground-truth linear RGB values through the active matrix, giving
     accurate coordinates at all bit depths.
+  * Added ``targets100`` parameter (Color and Color2, default false): draws
+    target boxes at the same six ColorBars Cb/Cr positions as ``targets``,
+    but placed at 100% luma level instead of 75%.
   * Added ``axes`` parameter (Color and Color2, default false): draws
     horizontal and vertical crosshair lines through the vectorscope center.
   * Added ``iq`` parameter (Color and Color2, default false): draws target
@@ -93,6 +96,8 @@ Additions, changes
   sources when ``bits=8`` is explicitly specified.
 - 8 bit packed RGB formats are converted to planar RGB before 444 conversion.
   Stop using direct rgb-yv24 conversions (16 bits were already converted for long time).
+- Add :doc:`ColorBarsUHD <./corefilters/colorbarsuhd>` ITU-R BT.2111-3 (05/2025) with three signal variants:
+  HLG narrow range (mode=0), PQ narrow range (mode=1) and PQ full range (mode=2)
 
 
 Build environment, Interface
@@ -167,7 +172,13 @@ Bugfixes
 - Fix: "ConvertToYUY2": SSE2 interlaced upsampling used wrong weighting
   direction for the lower line of each field pair (75%/25% toward current
   instead of 25%/75% toward next), differing from the C reference implementation.
-- Fix: memory leak in Subframe/MakePropertyWritable after static-frame sources (ColorBars, BlankClip)
+- Fix: memory leak and stability issue in frame recycling for static-frame sources (ColorBars, BlankClip):
+  subframes created by Subframe/MakePropertyWritable accumulated without bound in permanently-live
+  VFB buckets, and a race in frame property cleanup could cause access violations under multi-threaded use.
+- Fix: LruCache self-tuning cache resize: raised the ghost-hit threshold from ``ghosted > 0`` to
+  ``ghosted > 1``, preventing unbounded cache growth during backward seeking (Issue #379) and
+  Bob()/SeparateFields access patterns (Issue #270). Frames evicted only once no longer trigger
+  a resize; an undersized cache still grows once the same frame has been evicted twice.
 - Fix: "Histogram" Color2 mode to copy alpha channel from source for alpha-carrying formats
   (YUVA, RGBPA, RGB32, RGB64); initialize alpha to zero in the histogram panel area.
   (Was: garbage)
@@ -282,12 +293,13 @@ Documentation
   on legacy ``YUY2`` handling.
 - Add another Ubuntu->Windows DLL cross-compilation guide:
   See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
+- Add :doc:`ColorBarsUHD <./corefilters/colorbarsuhd>`
 
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/03/02 21:50:00 $
+$Date: 2026/03/28 15:31:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

@@ -8,6 +8,18 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
+20260328 3.7.5.r46xx (pre 3.7.6)
+--------------------------------
+- Add ColorbarsUHD
+- Fix: LruCache self-tuning cache resize: raised ghost-hit threshold from ghosted>0 to ghosted>1,
+  preventing unbounded cache growth during backward seeking (Issue #379) and Bob/SeparateFields
+  access patterns (Issue #270).
+- Fix: VideoFrame::Release() race condition in frame property cleanup under multi-threaded use
+  (stability fix for static-frame sources such as ColorBars, BlankClip).
+- Histogram "color"/"color2": add targets100 parameter: the 6 ColorBars target boxes at 100% luma scale.
+- Fix: YUV<->RGB conversion with quality=true at 10-14 bit sources (regression).
+- Fix: Histogram "color"/"color2": "target" parameter no longer acts as master switch for "axes".
+
 20260306 3.7.5.r45xx (pre 3.7.6)
 --------------------------------
 - Reenable YUY2 in planar target conversions as source (disabled in r4549)
