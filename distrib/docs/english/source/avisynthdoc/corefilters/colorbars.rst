@@ -1,9 +1,11 @@
 =======================
 ColorBars / ColorBarsHD
 =======================
-The `ColorBars`_ and `ColorBarsHD`_ filters generate a video clip containing
-`SMPTE color bars`_ scaled to any image size. Both filters also generate audio,
-see the `audio`_ section for details.
+The `ColorBars`_. `ColorBarsHD`_ and `ColorBarsUHD`_ filters generate a video clip containing
+`SMPTE color bars`_ scaled to any image size. 
+
+You can find `ColorBarsUHD`_ in a separate document, here we describe the first two version.
+Both filters also generate audio, see the `audio`_ section for details.
 
 .. _ColorBars:
 
