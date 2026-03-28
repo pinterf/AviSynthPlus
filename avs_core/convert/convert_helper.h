@@ -152,6 +152,7 @@ void matrix_parse_merge_with_props_def(bool rgb_in, bool rgb_out, const char* ma
 void chromaloc_parse_merge_with_props(VideoInfo& vi, const char* chromaloc_name, const AVSMap* props, int& _ChromaLocation, int _ChromaLocation_Default, IScriptEnvironment* env);
 
 void update_Matrix_and_ColorRange(AVSMap* props, int theMatrix, int theColorRange, IScriptEnvironment* env);
+void update_Transfer_and_Primaries(AVSMap* props, int theTransfer, int thePrimaries, IScriptEnvironment* env);
 void update_ColorRange(AVSMap* props, int theColorRange, IScriptEnvironment* env);
 void update_ChromaLocation(AVSMap* props, int theChromaLocation, IScriptEnvironment* env);
 

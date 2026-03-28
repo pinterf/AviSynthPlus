@@ -1468,12 +1468,779 @@ static void draw_colorbars_rgbp(uint8_t* pR8, uint8_t* pG8, uint8_t* pB8, int pi
   }
 }
 
+/*******************************************************************
+*
+* ColorBarsUHD for YUV 444 formats (BT.2100 / BT.2111-3)
+*
+* Implements Recommendation ITU-R BT.2111-3 (05/2025):
+* "Specification of color bar test pattern for HDR television systems"
+*
+* Three subtypes (BT.2111-3 Annex 1, §4):
+*   subtype 0: HLG narrow range  (Fig. 1, Table 2)
+*   subtype 1: PQ narrow range   (Fig. 2, Table 3)
+*   subtype 2: PQ full range     (Fig. 3, Table 4)
+*
+* ColorBarsUHD approach: BT.2111-3 hands you the exact 10-bit R'G'B' integer code values directly in Tables 2/3/4. You do not derive them from floating-point primaries. The flow is:
+* - Look up 10-bit R'G'B' from the table
+* - Scale to target bit depth (10->12 is << 2; 10->16 is << 6; 10->8 is >> 2 with rounding)
+* - Convert R'G'B' -> YCbCr using BT.2020 NCL matrix (Kr=0.2627, Kb=0.0593) for YUV output
+* - For float: normalise to limited-range float
+* Source code values are 10-bit integers taken directly from BT.2111-3 Tables 2/3/4.
+* 12-bit values are derived by left-shifting 10-bit values by 2 (BT.2111-3 §5).
+* Other bit depths are scaled proportionally from the 10-bit reference.
+*
+* Unlike ColorBars/ColorBarsHD, no floating-point RGB primaries are stored here.
+* BT.2111-3 specifies the signal levels directly as R'G'B' code values in the
+* transfer-function-encoded (non-linear) domain. There is no Kr/Kb matrix
+* derivation step — the standard pre-computes everything including the
+* BT.709-equivalent bars (via the proper linear-light BT.2407 matrix path).
+*
+* YCbCr output uses BT.2100 NCL matrix: Kr=0.2627, Kb=0.0593 (same as BT.2020).
+*
+* Layout dimensions (Table 1):
+*   a = frame width  (1920 / 3840 / 7680 for 2K/4K/8K)
+*   b = frame height (1080 / 2160 / 4320)
+*   c = a/8 = color bar unit width
+*   d = left/right optional grey pad (from Table 1)
+*   e,f,g,h,i,j,k = row heights and ramp geometry (from Table 1)
+*
+* Ramp (Tables 5/6): full sweep from -7%(min) to 109%(max) of the encoded range.
+*   Positioned so that 0% aligns with the left edge of the Green color bar.
+* Stair: 12 steps (0%,10%,...,100%,109%), each c/2 wide.
+*   Left edge of 0% step aligns with left edge of Yellow bar.
+* PLUGE: 0%, -2%, 0%, +2%, 0%, +4%, 0% black levels (bottom row).
+*
+* The critical signal level difference between subtypes is:
+* 
+* HLG: primary bars are 75% (code 721 at 10-bit narrow)
+* PQ narrow/full: primary bars are 100% top row + 58% second row (58% = 203 cd/m² = equivalent to 75% HLG)
+* Full range: black = code 0, white = 1023; narrow range: black = 64, white = 940
+* 
+*********************************************************************/
+
+// BT.2100 NCL (= BT.2020) matrix coefficients
+static void GetYUVBT2020fromRGB(double R, double G, double B, double& dY, double& dU, double& dV)
+{
+  // BT.2100 / BT.2020 NCL: Kr=0.2627, Kb=0.0593
+  // See https://www.itu.int/rec/R-REC-BT.2100/en
+  double Kr, Kb;
+  GetKrKb(AVS_MATRIX_BT2020_NCL, Kr, Kb);
+  dY = Kr * R + (1.0 - Kr - Kb) * G + Kb * B;
+  dU = (B - dY) / (2.0 * (1.0 - Kb));
+  dV = (R - dY) / (2.0 * (1.0 - Kr));
+}
+
+/*
+  BT.2111-3 Layout (same spatial structure for HLG, PQ narrow, PQ full range):
+          2K     4K     8K
+  a     1920   3840   7680 full width, a = 2c + 6d + e
+  b     1080   2160   4320 full height
+  c      240    480    960 left/right grey pad width  (a/8)
+  d      206    412    824 standard color bar width  (most bars)
+  e      204    408    816 green bar width            (wider than d)
+  f      136    272    544
+  g       70    140    280
+  h       68    136    272
+  i      238    476    952
+  j      438    876   1752
+  k      282    564   1128
+
+  NOTE: d > e at 2K (206 > 204). The green bar is narrower than the others, absorbs the rounding differences.
+
+  ←—————————————————————————— a ———-—————————————————————→
+  +--d--+--c---+--c--+--c--+--e--+--c--+--c--+--c--+--d--+
+  |     |100%  |100% |100% |100% |100% |100% |100% |     |  height = b/12 (100% bars)
+  |     |White |Yell |Cyan |Green|Mag  |Red  |Blue |     |
+  + Grey+------+-----+-----+-----+-----+-----+-----+ Grey+
+  | 40% |      |     |     |     |     |     |     | 40% |
+  |     |75%   |75%  |75%  |75%  |75%  |75%  |75%  |     |  height = b/2 (HLG: 75%; PQ: 58% bars)
+  |     |White |Yell |Cyan |Green|Mag  |Red  |Blue |     |
+  +-----+------+-----+-----+-----+-----+-----+-----+-----+
+  |     |      |  |  |  |  |  |  |  |  |  |  | 1|1 |     |  Stair
+  | 75% |-7%   |0%|10|20|30|40|50|60|70|80|90| 0|0 | 75% |  height: b/12
+  |White|step  |step |step |step |step |step | 0|9 |White|  PQ Full: 0%/100% instead of -7/109%
+  +-----+------+-----+-----+-----+-----+-----+-----+-----+
+  | 0%  |←—————————————————— ramp -—————————————————————→|  Black, lead-in, ramp, lead-out
+  | Blk | HLG/PQ-narrow:-7 to 109% PQ-full:0 to 100%     |  height = b/12
+  +-+-+-+----+-+-+-+-+-+------+-----------+--------+-+-+-+
+  | | | | 0% | | | | | |  0%  |    75%    |   0%   | | | | BT.709 bars, Black, PLUGE, Black, White, Black, BT.709 bars
+  | | | |Blk | | | | | |Black |   White   | Black  | | | | height = b/4
+  |BT709|    | pluge   |      |           |        |BT709| Bars: Yellow,Cyan, Green (left), Magenta, Red, Blue (right)
+  +-+-+-+----+-+-+-+-+-+------+-----------+--------+-+-+-+
+   c c c   f  g h g h g    i        j          k    c c c 
+   / / /                                            / / /
+   3 3 3                                            3 3 3
+
+  NOTE: "It is desirable that implementers should include in this test signal some
+  visual identification of the signal format (HLG narrow range, PQ narrow range, or
+  PQ full range). The test pattern includes grey bars (top right and top left) that
+  may optionally be used for this and/or other purposes."
+  We fill them with 40% Grey.
+
+  Ramp and stair are placed so they do NOT overlap on a waveform monitor:
+  - Ramp: positioned so 0% aligns with left edge of Green bar (Table 5/6 column B/C/D)
+  - Stair: left edge of 0% step aligns with left edge of Yellow bar
+  - Each stair step is half a color bar (c/2) wide, 11 steps: 0%,10%,...,100%.
+*/
+template<typename pixel_t, bool is_rgb>
+static void draw_colorbarsUHD_444_rgb(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8,
+  int pitchY, int pitchUV,
+  int w, int h, int bits_per_pixel, int subtype)
+{
+  pixel_t* pYG = reinterpret_cast<pixel_t*>(pY8); // Y plane, or G plane for RGB (GBR order)
+  pixel_t* pUB = reinterpret_cast<pixel_t*>(pU8); // U plane, or B plane for RGB
+  pixel_t* pVR = reinterpret_cast<pixel_t*>(pV8); // V plane, or R plane for RGB
+  pitchY /= sizeof(pixel_t);
+  pitchUV /= sizeof(pixel_t);
+
+  // -- Bit-depth scaling via get_bits_conv_constants -------------------------
+  //
+  // BT.2111-3 §5: 10-bit is the primary reference for narrow range.
+  // YUV is derived via BT.2020 NCL matrix, then scaled to target bit depth.
+  // Narrow range (subtypes 0/1): black=64, white=940, limited swing.
+  //   Integer scaling: pure bit-shift (limited->limited is exact per §5).
+  // Full range (subtype 2): black=0, white=1023/4095, full swing.
+  //   10-bit AND 12-bit are INDEPENDENTLY specified by ITU (Table 4).
+  //   Neither is derivable from the other by simple bit-shift.
+  //   Other depths: scale from 12-bit ITU reference via round(code12/4095*(vmax-1)).
+  // Float (any subtype): normalised via get_bits_conv_constants to Avisynth's
+  //   float convention (luma 0.0..1.0 maps to black..white).
+  //   Float always uses full-range normalisation; external tools use this convention.
+  //
+  // Pre-compute conversion constants for luma and chroma.
+  // Source: 10-bit reference. Destination: target depth and range.
+  constexpr bool is_float_output = std::is_same<pixel_t, float>::value;
+  const bool is_full_range = subtype == 2;
+  // Float output always uses full-range normalisation regardless of subtype.
+  const bool is_full_range_target = is_full_range || is_float_output;
+  constexpr int src_bits = 10;
+
+  bits_conv_constants luma_c, chroma_c;
+  bits_conv_constants luma_c_from_float, chroma_c_from_float;
+
+  // Used by make_yuv to normalise native pixel_t RGB before BT.2020 matrix.
+  // src: target bit depth and range. dst: float full range.
+  bits_conv_constants luma_c_to_float;
+  if constexpr (!is_rgb) {
+  }
+
+  get_bits_conv_constants(luma_c, false, is_full_range, is_full_range_target, src_bits, bits_per_pixel);
+  if constexpr (!is_rgb) {
+    // YUV output helpers
+    get_bits_conv_constants(luma_c_to_float, false,
+      is_full_range_target,  // src range matches target
+      true,                  // dst is float full range [0..1]
+      bits_per_pixel, 32);
+
+    // luma_c_from_float: float BT.2020 matrix luma output [0..1] → target depth
+    get_bits_conv_constants(luma_c_from_float, false,
+      true,
+      is_full_range_target, 32, bits_per_pixel);
+    // chroma_c_from_float: float BT.2020 matrix chroma output [-0.5..+0.5] → target depth
+    get_bits_conv_constants(chroma_c_from_float, true,
+      true,                  // src is always full-range float
+      is_full_range_target,  // dst matches target signal range
+      32, bits_per_pixel);
+    get_bits_conv_constants(chroma_c, true, is_full_range, is_full_range_target, src_bits, bits_per_pixel);
+  }
+
+  // -- Bar geometry from BT.2111-3 Table 1 ----------------------------------
+  // All values scaled from 2K reference (a=1920, c=240, d=206).
+  const int c_bar = (240 * w + 960) / 1920; // left/right grey pad
+  const int d_bar = (206 * w + 960) / 1920; // standard bar width
+  const int e_bar = w - 2 * c_bar - 6 * d_bar;  // green bar (remainder, absorbs rounding)
+  const int bar_White = c_bar;
+  const int bar_Yellow = c_bar + d_bar;
+  const int bar_Cyan = c_bar + 2 * d_bar;
+  const int bar_Green = c_bar + 3 * d_bar;
+  const int bar_Magenta = c_bar + 3 * d_bar + e_bar;
+  const int bar_Red = c_bar + 4 * d_bar + e_bar;
+  const int bar_Blue = c_bar + 5 * d_bar + e_bar;
+  const int bar_RightC = c_bar + 6 * d_bar + e_bar; // = w - c_bar
+  const int barend_White = bar_Yellow;
+  const int barend_Yellow = bar_Cyan;
+  const int barend_Cyan = bar_Green;
+  const int barend_Green = bar_Magenta;
+  const int barend_Magenta = bar_Red;
+  const int barend_Red = bar_Blue;
+  const int barend_Blue = bar_RightC;
+
+  // -- Vertical row heights --------------------------------------------------
+  const int row1 = (h + 6) / 12;      // b/12: 100% bars
+  const int row2 = (h * 6 + 6) / 12;  // b/2:  75%/58% bars
+  const int row3 = (h + 6) / 12;      // b/12: stair
+  const int row4 = (h + 6) / 12;      // b/12: ramp
+  const int y1 = row1;
+  const int y2 = y1 + row2;
+  const int y3 = y2 + row3;
+  const int y4 = y3 + row4;
+
+  // -- Bottom row geometry --------------------------------------------------
+  const int bt709_bar_w = c_bar / 3;
+  const int f_pluge = (136 * w + 960) / 1920;
+  const int g_pluge = (70 * w + 960) / 1920;
+  const int h_pluge = (68 * w + 960) / 1920;
+  const int i_span = (238 * w + 960) / 1920;
+  const int j_span = (438 * w + 960) / 1920;
+  const int k_span = (282 * w + 960) / 1920;
+
+  // =========================================================================
+  // -- Signal level tables (BT.2111-3) — ITU source values ------------------
+  // =========================================================================
+  // color bar order in Tables 2/3/4:
+  //   [0]=White [1]=Yellow [2]=Cyan [3]=Green [4]=Magenta [5]=Red [6]=Blue
+  //
+  // 100% bars — narrow range 10-bit (Tables 2/3):
+  static const int bars100_R_narrow_10[] = { 940, 940,  64,  64, 940, 940,  64 };
+  static const int bars100_G_narrow_10[] = { 940, 940, 940, 940,  64,  64,  64 };
+  static const int bars100_B_narrow_10[] = { 940,  64, 940,  64, 940,  64, 940 };
+  // 100% bars — full range 10-bit (Table 4): 0=black, 1023=white
+  static const int bars100_R_fr10[] = { 1023, 1023,    0,    0, 1023, 1023,    0 };
+  static const int bars100_G_fr10[] = { 1023, 1023, 1023, 1023,    0,    0,    0 };
+  static const int bars100_B_fr10[] = { 1023,    0, 1023,    0, 1023,    0, 1023 };
+  // 100% bars — full range 12-bit (Table 4): 0=black, 4095=white
+  static const int bars100_R_fr12[] = { 4095, 4095,    0,    0, 4095, 4095,    0 };
+  static const int bars100_G_fr12[] = { 4095, 4095, 4095, 4095,    0,    0,    0 };
+  static const int bars100_B_fr12[] = { 4095,    0, 4095,    0, 4095,    0, 4095 };
+
+  // 75% HLG primary bars — narrow range 10-bit (Table 2):
+  static const int bars75hlg_R_10[] = { 721, 721,  64,  64, 721, 721,  64 };
+  static const int bars75hlg_G_10[] = { 721, 721, 721, 721,  64,  64,  64 };
+  static const int bars75hlg_B_10[] = { 721,  64, 721,  64, 721,  64, 721 };
+
+  // 58% PQ primary bars — narrow range 10-bit (Table 3):
+  static const int bars58pq_R_10[] = { 573, 573,  64,  64, 573, 573,  64 };
+  static const int bars58pq_G_10[] = { 573, 573, 573, 573,  64,  64,  64 };
+  static const int bars58pq_B_10[] = { 573,  64, 573,  64, 573,  64, 573 };
+  // 58% PQ primary bars — full range 10-bit (Table 4):
+  static const int bars58pq_R_fr10[] = { 594, 594,    0,    0, 594, 594,    0 };
+  static const int bars58pq_G_fr10[] = { 594, 594, 594, 594,    0,    0,    0 };
+  static const int bars58pq_B_fr10[] = { 594,    0, 594,    0, 594,    0, 594 };
+  // 58% PQ primary bars — full range 12-bit (Table 4):
+  static const int bars58pq_R_fr12[] = { 2378, 2378,    0,    0, 2378, 2378,    0 };
+  static const int bars58pq_G_fr12[] = { 2378, 2378, 2378, 2378,    0,    0,    0 };
+  static const int bars58pq_B_fr12[] = { 2378,    0, 2378,    0, 2378,    0, 2378 };
+
+  // BT.709-equivalent bars — order: [0]=Yellow [1]=Cyan [2]=Green [3]=Magenta [4]=Red [5]=Blue
+  // Pre-computed via BT.2111-3 Attachment 1 / BT.2407 colorimetric conversion.
+  // Full range 10-bit and 12-bit are independently rounded from the underlying
+  // colorimetric float — neither reproduces the other by simple bit-scaling.
+  // Calculations done by ITU, we just using their tables.
+  // Subtype 0 — HLG narrow 10-bit (Table 2):
+  static const int bt709_hlg_R[] = { 713, 538, 512, 651, 639, 227 };
+  static const int bt709_hlg_G[] = { 719, 709, 706, 286, 269, 147 };
+  static const int bt709_hlg_B[] = { 316, 718, 296, 705, 164, 702 };
+  // Subtype 1 — PQ narrow 10-bit (Table 3):
+  static const int bt709_pq_narrow_R_10[] = { 569, 485, 474, 537, 531, 318 };
+  static const int bt709_pq_narrow_G_10[] = { 572, 566, 565, 362, 351, 236 };
+  static const int bt709_pq_narrow_B_10[] = { 381, 571, 368, 564, 257, 563 };
+  // Subtype 2 — PQ full range 10-bit (Table 4):
+  static const int bt709_pq_R_fr10[] = { 589, 491, 479, 552, 545, 296 };
+  static const int bt709_pq_G_fr10[] = { 593, 586, 585, 348, 335, 201 };
+  static const int bt709_pq_B_fr10[] = { 370, 592, 355, 584, 225, 582 };
+  // Subtype 2 — PQ full range 12-bit (Table 4): independently specified,
+  // e.g. bt709_pq_G_fr10[1] 586 and 2348 cannot be calculated from each other by scaling
+  static const int bt709_pq_R_fr12[] = { 2359, 1967, 1918, 2209, 2181, 1186 };
+  static const int bt709_pq_G_fr12[] = { 2373, 2348, 2342, 1391, 1339,  806 };
+  static const int bt709_pq_B_fr12[] = { 1483, 2371, 1423, 2339,  901, 2331 };
+
+  // non-RGB, simply grey levels:
+
+  // 40% Grey:
+  //   Narrow (subtypes 0/1): 414 at 10-bit (primary). 12-bit = 414<<2 = 1656 (exact shift).
+  //   Full   (subtype 2):    409 at 10-bit, 1638 at 12-bit — independently rounded from ~0.4.
+  static const int grey40_narrow = 414;
+  static const int grey40_fr10 = 409;
+  static const int grey40_fr12 = 1638;
+
+  // PLUGE levels — derived from BT.814-4 Table 3 "Slightly lighter/darker level".
+  // BT.814-4 defines: Slightly lighter=80, Slightly darker=48 at 10-bit narrow.
+  // The naming of 2% and 4% levels are just approximations.
+  // Full range values were probably independently derived from narrow float.
+  //   lighter_float = (80-64)/876 ≈ 0.01826 → 10-bit (*1023): 19, 12-bit (*4096): 75
+  //   +4%_float     = (99-64)/876 ≈ 0.03995 → 10-bit: 41, 12-bit: 164
+  // Narrow: { 0%, -2%, 0%, +2%, 0%, +4%, 0% }
+  static const int pluge_narrow[] = { 64, 48, 64, 80, 64,  99, 64 };
+  // Full range 10-bit (Table 4): no -2% (no sub-black in full range per Table 4 footnote)
+  static const int pluge_fr10[] = { 0,  0,  0, 19,  0,  41,  0 };
+  // Full range 12-bit (Table 4)
+  static const int pluge_fr12[] = { 0,  0,  0, 75,  0, 164,  0 };
+
+  // Stair step values (10-bit), BT.2111-3 Tables 2/3/4:
+  // 13 steps: -7%, 0%, 10%..100%, 109%
+  // Narrow (subtypes 0/1):
+  static const int steps_narrow[] = { 4, 64, 152, 239, 327, 414, 502, 590, 677, 765, 852,  940, 1019 };
+  // Full range (subtype 2): no -7% (clamped to 0) and no 109% (clamped to 1023)
+  static const int steps_fr10[] = { 0,  0, 102, 205, 307, 409, 512, 614, 716, 818, 921, 1023, 1023 };
+  static const int steps_fr12[] = { 0,  0, 410, 819, 1229, 1638, 2048, 2457, 2867, 3276, 3686, 4095, 4095 };
+
+  // narrow range is always 10-bit reference
+  // Reference anchor points at 10/12-bits (used for stair/ramp generation):
+  const int ref_black_narrow = 64; // at 10 bits
+  const int ref_black_fr10 = 0;
+  const int ref_black_fr12 = 0;
+  const int ref_white_narrow = 940; // at 10 bits
+  const int ref_white_fr10 = 1023;
+  const int ref_white_fr12 = 4095;
+  const int ref_min_narrow = 4;    // -7% step
+  const int ref_min_fr10 = 0;      // 0% step
+  const int ref_min_fr12 = 0;      // 0% step
+  const int ref_max_narrow = 1019; // at 10 bits, +109% step
+  const int ref_max_fr10 = 1023;   // at 10 bits, +100% step (full range)
+  const int ref_max_fr12 = 4095;   // at 12 bits, +100% step (full range)
+
+  // Code value 4 = approx −7% = minimum permitted narrow range value (BT.2100).
+  // Code value 1019 = approx +109% = maximum permitted narrow range value (BT.2100).
+
+  // =========================================================================
+  // -- Native pixel_t table pre-computation ---------------------------------
+  // =========================================================================
+  // All ITU source values (int) are converted once to pixel_t here.
+  // Drawing code then reads pre-computed pixel_t values directly with no
+  // per-pixel scaling. This replaces the mixed fill_span/fill_span_native/
+  // fill_bar dispatch logic.
+  //
+  // pixel_t: the element type of all pre-computed tables.
+  //   float output → float (normalised via scale_y)
+  //   integer output → pixel_t (= uint8_t, uint16_t)
+  // All tables are indexed exactly as their ITU int counterparts.
+
+  // -- scale_y: convert one 10-bit source code to pixel_t -------------------
+  // Narrow range: limited->limited pure bit-shift (exact per BT.2111-3 §5).
+  // Full range:   full->full rational rescale via luma_c constants.
+  // Float:        normalised via luma_c.mul_factor + luma_c.dst_offset.
+  auto scale_y = [&](int code10) -> pixel_t {
+    if constexpr (is_float_output) {
+      return (pixel_t)((code10 - luma_c.src_offset_i) * luma_c.mul_factor + luma_c.dst_offset);
+    }
+    else {
+      if (!is_full_range) {
+        const int shift = bits_per_pixel - src_bits;
+        if (shift >= 0) return (pixel_t)(code10 << shift);
+        else            return (pixel_t)((code10 + (1 << (-shift - 1))) >> (-shift));
+      }
+      else {
+        const int dst_max = (1 << bits_per_pixel) - 1;
+        const int result = (int)((code10 - luma_c.src_offset_i) * luma_c.mul_factor
+          + luma_c.dst_offset + 0.5f);
+        return (pixel_t)(std::max(0, std::min(dst_max, result)));
+      }
+    }
+    };
+
+  // -- fr_native12: convert full-range value to pixel_t from 12-bit reference
+  // For full range non-10/12-bit integer depths: scale from 12-bit ITU value.
+  // For 10-bit: use code10 directly.
+  // For 12-bit: use code12 directly.
+  // For float:  use code10 via scale_y (same as narrow — scale_y handles float normalisation).
+  // This ensures ITU-specified 10 and 12-bit values are reproduced exactly,
+  // while other depths get the best approximation from the 12-bit reference.
+  auto fr_native12 = [&](int code10, int code12) -> pixel_t {
+    if constexpr (is_float_output) {
+      return scale_y(code10); // float always uses 10-bit ref via scale_y
+    }
+    else {
+      if (bits_per_pixel == 10) return (pixel_t)code10;
+      if (bits_per_pixel == 12) return (pixel_t)code12;
+      const int vmax = (1 << bits_per_pixel) - 1;
+      return (pixel_t)(int)round((double)code12 / 4095.0 * vmax);
+    }
+    };
+
+  // Helper: build a pixel_t value from a 10-bit code via scale_y.
+  // For narrow range: bit-shift. For full range: rational rescale. For float: normalise.
+  // Used for all grey/luma-only values (grey40, PLUGE, stair, black, white).
+  auto make_luma = [&](int code10) -> pixel_t { return scale_y(code10); };
+
+  // Helper: build a pixel_t value from paired 10/12-bit full-range codes.
+  // Selects ITU exact value at 10/12-bit, scales from 12-bit for other depths.
+  // Float always uses 10-bit reference via scale_y.
+  auto make_luma_fr = [&](int code10, int code12) -> pixel_t {
+    return fr_native12(code10, code12);
+    };
+
+  // -- Pre-compute black and white pixel_t values ---------------------------
+  // Used for i/j/k blocks in row 5, left pad, ramp B/D sections.
+  const pixel_t t_black = is_full_range
+    ? make_luma_fr(ref_black_fr10, ref_black_fr12) // 0 for full range
+    : make_luma(ref_black_narrow);
+  const pixel_t t_white = is_full_range
+    ? make_luma_fr(ref_white_fr10, ref_white_fr12) // 100% for full range
+    : make_luma(ref_white_narrow);
+  const pixel_t t_ramp_min = is_full_range
+    ? make_luma_fr(ref_min_fr10, ref_min_fr12) // -7% for ramp/stair B section
+    : make_luma(ref_min_narrow);
+  const pixel_t t_ramp_max = is_full_range
+    ? make_luma_fr(ref_max_fr10, ref_max_fr12) // +109% for ramp D section
+    : make_luma(ref_max_narrow);
+
+
+  // =========================================================================
+  // -- Pre-compute all native pixel_t bar tables ----------------------------
+  // =========================================================================
+  // All tables are pre-computed once here. Drawing loops read pixel_t values
+  // directly — no per-pixel scaling, no dispatch on range/depth at draw time.
+  //
+  // Naming: t_* = pre-computed pixel_t table.
+  //
+  // RGB tables: 3 planes × N bars, stored as separate arrays.
+  //   t_R100[i]/t_G100[i]/t_B100[i] = 100% bar i, target pixel_t for R/G/B plane.
+  // YUV tables: stored as YCbCr triplets via pre_yuv helper below.
+  //
+  // Table sizes:
+  //   100% and primary bars: 7 entries [0..6]
+  //   BT.709-equivalent bars: 6 entries [0..5]
+  //   PLUGE: 7 entries [0..6]
+  //   Stair steps: 13 entries [0..12]
+  //   Grey40: scalar
+  //   Black/white: scalar
+
+  // -- Pre-compute grey40 ---------------------------------------------------
+  // Narrow: 414 (10-bit primary, scale_y handles all depths via bit-shift).
+  // Full:   409 (10-bit ITU), 1638 (12-bit ITU) — independently rounded from 0.4.
+  //         409<<2=1636≠1638: confirms independent specification.
+  //         fr_native12 selects exact ITU value at 10/12-bit, scales from 12-bit otherwise.
+  const pixel_t t_grey40 = is_full_range
+    ? make_luma_fr(grey40_fr10, grey40_fr12)
+    : make_luma(grey40_narrow);
+
+  // Neutral chroma value (mid-point for YUV, unused for RGB).
+  const pixel_t t_chroma_mid = is_rgb ? pixel_t{} : (pixel_t)chroma_c.dst_offset;
+
+  // -- Helper: write a solid luma+neutral-chroma span (grey) ----------------
+  // All grey fills use pre-computed pixel_t values — no per-pixel scaling.
+  auto fill_grey_px = [&](int x0, int x1, pixel_t luma) {
+    for (int x = x0; x < x1 && x < w; ++x) {
+      if constexpr (is_rgb) { pYG[x] = luma; pUB[x] = luma; pVR[x] = luma; }
+      else { pYG[x] = luma; pUB[x] = t_chroma_mid; pVR[x] = t_chroma_mid; }
+    }
+    };
+
+  // -- Pre-compute PLUGE pixel_t values -------------------------------------
+  // pluge_px[0..6] correspond to pluge_narrow[] / pluge_fr10[] / pluge_fr12[].
+  // Narrow: scale_y(pluge_narrow[s]) — bit-shift from 10-bit.
+  // Full:   fr_native12(pluge_fr10[s], pluge_fr12[s]) — ITU-exact at 10/12-bit.
+  pixel_t t_pluge[7];
+  for (int s = 0; s < 7; ++s) {
+    t_pluge[s] = is_full_range
+      ? make_luma_fr(pluge_fr10[s], pluge_fr12[s])
+      : make_luma(pluge_narrow[s]);
+  }
+
+  // -- Pre-compute stair step pixel_t values --------------------------------
+  // steps_narrow/steps_fr10/steps_fr12 are 10-bit source values.
+  // Narrow: scale_y(steps_narrow[s]) — bit-shift from 10-bit.
+  // Full:   fr_native12(steps_fr10[s], steps_fr12[s]) — ITU-exact at 10/12-bit.
+  pixel_t t_steps[13];
+  for (int s = 0; s < 13; ++s)
+    t_steps[s] = is_full_range
+      ? make_luma_fr(steps_fr10[s], steps_fr12[s])
+    : make_luma(steps_narrow[s]);
+
+  // For YUV output, each bar is stored as a pre-computed YCbCr triplet
+  // in three parallel arrays.
+  struct YUVPixel { pixel_t y, cb, cr; };
+
+  // make_yuv: convert native pixel_t R/G/B → YCbCr pixel_t.
+    // Input is already at target bit depth and range — no further scaling needed.
+    // Normalises to [0..1] float using the native range (full or limited),
+    // applies BT.2020 NCL matrix, then encodes to target depth.
+    // luma_c_to_float converts native pixel_t luma → [0..1] float.
+  auto make_yuv = [&](pixel_t r_px, pixel_t g_px, pixel_t b_px) -> YUVPixel {
+    // Convert native pixel_t to normalised float [0..1].
+    // luma_c_to_float: native target depth → float [0..1] over signal range.
+    // (src=bits_per_pixel full/limited, dst=float full range)
+    const double R = ((double)r_px - luma_c_to_float.src_offset_i) * luma_c_to_float.mul_factor;
+    const double G = ((double)g_px - luma_c_to_float.src_offset_i) * luma_c_to_float.mul_factor;
+    const double B = ((double)b_px - luma_c_to_float.src_offset_i) * luma_c_to_float.mul_factor;
+    double dY, dU, dV;
+    GetYUVBT2020fromRGB(R, G, B, dY, dU, dV);
+    pixel_t sy, scb, scr;
+    if constexpr (is_float_output) {
+      sy = (pixel_t)(dY * luma_c_from_float.mul_factor + luma_c_from_float.dst_offset);
+      scb = (pixel_t)(dU * chroma_c_from_float.mul_factor);
+      scr = (pixel_t)(dV * chroma_c_from_float.mul_factor);
+    }
+    else {
+      const int dst_max = (1 << bits_per_pixel) - 1;
+      sy = (pixel_t)std::max(0, std::min(dst_max,
+        (int)(dY * luma_c_from_float.mul_factor + luma_c_from_float.dst_offset + 0.5)));
+      scb = (pixel_t)std::max(0, std::min(dst_max,
+        (int)(dU * chroma_c_from_float.mul_factor + chroma_c_from_float.dst_offset + 0.5)));
+      scr = (pixel_t)std::max(0, std::min(dst_max,
+        (int)(dV * chroma_c_from_float.mul_factor + chroma_c_from_float.dst_offset + 0.5)));
+    }
+    return { sy, scb, scr };
+    };
+
+  // BarEntry: always store r/g/b at native pixel_t precision.
+  // For RGB output: r/g/b are written directly to planes.
+  // For YUV output: y/cb/cr are derived from r/g/b via make_yuv.
+  // Having r/g/b always present unifies make_bar and make_bar_fr —
+  // no if constexpr(is_rgb) split needed.
+  struct BarEntry {
+    pixel_t r, g, b;   // native pixel_t — always computed
+    pixel_t y, cb, cr; // YUV planes — computed from r/g/b via make_yuv
+  };
+
+  // make_bar_from_px: build BarEntry from native pixel_t R/G/B values.
+  // Always computes r/g/b. Derives y/cb/cr via make_yuv if !is_rgb.
+  auto make_bar_from_px = [&](pixel_t r_px, pixel_t g_px, pixel_t b_px) -> BarEntry {
+    BarEntry e{};
+    e.r = r_px; e.g = g_px; e.b = b_px;
+    if constexpr (!is_rgb) {
+      auto yuv = make_yuv(r_px, g_px, b_px);
+      e.y = yuv.y; e.cb = yuv.cb; e.cr = yuv.cr;
+    }
+    return e;
+    };
+
+  // make_bar: build BarEntry from 10-bit source codes (narrow range or full range 10-bit).
+  // Converts via scale_y to native pixel_t, then derives YUV from native values.
+  auto make_bar = [&](int r10, int g10, int b10) -> BarEntry {
+    return make_bar_from_px(scale_y(r10), scale_y(g10), scale_y(b10));
+    };
+
+  // make_bar_fr: build BarEntry for full range using paired 10/12-bit ITU values.
+  // RGB path: fr_native12 gives ITU-exact native pixel_t at 10/12-bit, scaled otherwise.
+  // YUV path: make_yuv receives the same native pixel_t values — more accurate than
+  //   passing code10 directly since fr_native12 may differ from code10 at 12/other depths.
+  //   Previously YUV used code10 only; now it uses the fr_native12-derived pixel_t,
+  //   giving correct matrix input at all bit depths.
+  auto make_bar_fr = [&](int r10, int g10, int b10,
+    int r12, int g12, int b12) -> BarEntry {
+      return make_bar_from_px(
+        fr_native12(r10, r12),
+        fr_native12(g10, g12),
+        fr_native12(b10, b12));
+    };
+
+  // -- 100% bars (7 entries) ------------------------------------------------
+  BarEntry t_bars100[7];
+  for (int i = 0; i < 7; ++i) {
+    if (is_full_range)
+      t_bars100[i] = make_bar_fr(bars100_R_fr10[i], bars100_G_fr10[i], bars100_B_fr10[i],
+        bars100_R_fr12[i], bars100_G_fr12[i], bars100_B_fr12[i]);
+    else
+      t_bars100[i] = make_bar(bars100_R_narrow_10[i], bars100_G_narrow_10[i], bars100_B_narrow_10[i]);
+  }
+
+  // -- Primary bars (7 entries): 75% HLG or 58% PQ -------------------------
+  BarEntry t_bpri[7];
+  for (int i = 0; i < 7; ++i) {
+    if (subtype == 0)       // HLG narrow
+      t_bpri[i] = make_bar(bars75hlg_R_10[i], bars75hlg_G_10[i], bars75hlg_B_10[i]);
+    else if (subtype == 1)  // PQ narrow
+      t_bpri[i] = make_bar(bars58pq_R_10[i], bars58pq_G_10[i], bars58pq_B_10[i]);
+    else                    // PQ full range
+      t_bpri[i] = make_bar_fr(bars58pq_R_fr10[i], bars58pq_G_fr10[i], bars58pq_B_fr10[i],
+        bars58pq_R_fr12[i], bars58pq_G_fr12[i], bars58pq_B_fr12[i]);
+  }
+
+  // -- BT.709-equivalent bars (6 entries) -----------------------------------
+  BarEntry t_b709[6];
+  for (int i = 0; i < 6; ++i) {
+    if (subtype == 0)       // HLG narrow
+      t_b709[i] = make_bar(bt709_hlg_R[i], bt709_hlg_G[i], bt709_hlg_B[i]);
+    else if (subtype == 1)  // PQ narrow
+      t_b709[i] = make_bar(bt709_pq_narrow_R_10[i], bt709_pq_narrow_G_10[i], bt709_pq_narrow_B_10[i]);
+    else                    // PQ full range
+      t_b709[i] = make_bar_fr(bt709_pq_R_fr10[i], bt709_pq_G_fr10[i], bt709_pq_B_fr10[i],
+        bt709_pq_R_fr12[i], bt709_pq_G_fr12[i], bt709_pq_B_fr12[i]);
+  }
+
+  // =========================================================================
+  // -- Drawing helpers (all operate on pre-computed pixel_t values) ---------
+  // =========================================================================
+
+  // fill_grey_px: fill span with a pre-computed luma + neutral chroma.
+  // (defined above)
+
+  // fill_bar_px: fill span with a pre-computed BarEntry.
+  // Direct pixel_t write — no scaling at draw time.
+  auto fill_bar_px = [&](int x0, int x1, const BarEntry& e) {
+    for (int x = x0; x < x1 && x < w; ++x) {
+      if constexpr (is_rgb) {
+        pYG[x] = e.g; pUB[x] = e.b; pVR[x] = e.r; // Avisynth GBR order
+      }
+      else {
+        pYG[x] = e.y; pUB[x] = e.cb; pVR[x] = e.cr;
+      }
+    }
+    };
+
+  // =========================================================================
+  // -- Draw rows ------------------------------------------------------------
+  // =========================================================================
+  int y = 0;
+
+  // -- Row 1: b/12 — 100% colour bars ---------------------------------------
+  for (; y < y1; ++y) {
+    fill_grey_px(0, c_bar, t_grey40);
+    fill_bar_px(bar_White, barend_White, t_bars100[0]); // White
+    fill_bar_px(bar_Yellow, barend_Yellow, t_bars100[1]); // Yellow
+    fill_bar_px(bar_Cyan, barend_Cyan, t_bars100[2]); // Cyan
+    fill_bar_px(bar_Green, barend_Green, t_bars100[3]); // Green
+    fill_bar_px(bar_Magenta, barend_Magenta, t_bars100[4]); // Magenta
+    fill_bar_px(bar_Red, barend_Red, t_bars100[5]); // Red
+    fill_bar_px(bar_Blue, barend_Blue, t_bars100[6]); // Blue
+    fill_grey_px(bar_RightC, w, t_grey40);
+    pYG += pitchY; pUB += pitchUV; pVR += pitchUV;
+  }
+
+  // -- Row 2: b/2 — 75% HLG or 58% PQ primary colour bars ------------------
+  for (; y < y2; ++y) {
+    fill_grey_px(0, c_bar, t_grey40);
+    fill_bar_px(bar_White, barend_White, t_bpri[0]);
+    fill_bar_px(bar_Yellow, barend_Yellow, t_bpri[1]);
+    fill_bar_px(bar_Cyan, barend_Cyan, t_bpri[2]);
+    fill_bar_px(bar_Green, barend_Green, t_bpri[3]);
+    fill_bar_px(bar_Magenta, barend_Magenta, t_bpri[4]);
+    fill_bar_px(bar_Red, barend_Red, t_bpri[5]);
+    fill_bar_px(bar_Blue, barend_Blue, t_bpri[6]);
+    fill_grey_px(bar_RightC, w, t_grey40);
+    pYG += pitchY; pUB += pitchUV; pVR += pitchUV;
+  }
+
+  // -- Row 3: b/12 — stair --------------------------------------------------
+  // Layout: primary-white(c) | -7%or0%(d) | 12 steps | primary-white(c)
+  // Steps: 0%,10%..100%,109% (narrow) or 0%,10%..100%,100% (full range)
+  // Under each d-width bar: 2 steps of d/2. Under green (e_bar): 2 steps of e/2.
+  // All steps pre-computed in t_steps[0..12].
+  for (; y < y3; ++y) {
+    fill_bar_px(0, bar_White, t_bpri[0]); // primary white left pad
+    fill_grey_px(bar_White, bar_Yellow, t_steps[0]); // pre-step: -7% or 0%
+    // 6 bars × 2 half-steps each = steps[1..12]
+    const int bar_starts[6] = { bar_Yellow, bar_Cyan, bar_Green, bar_Magenta, bar_Red, bar_Blue };
+    const int bar_widths[6] = { d_bar, d_bar, e_bar, d_bar, d_bar, d_bar };
+    for (int b = 0; b < 6; ++b) {
+      const int half = bar_widths[b] / 2;
+      fill_grey_px(bar_starts[b], bar_starts[b] + half, t_steps[1 + b * 2]);
+      fill_grey_px(bar_starts[b] + half, bar_starts[b] + bar_widths[b], t_steps[2 + b * 2]);
+    }
+    fill_bar_px(bar_RightC, w, t_bpri[0]); // primary white right pad
+    pYG += pitchY; pUB += pitchUV; pVR += pitchUV;
+  }
+
+  // -- Row 4: b/12 — ramp ---------------------------------------------------
+  // Ramp is NOT pre-computed (gradient changes per pixel).
+  // Uses the existing real-valued step computation for correctness at all depths.
+  // Section layout:
+  //   left pad (black) | B (constant min) | C (linear ramp) | D (constant max)
+  // Narrow: ramp -7% → +109%    (B=ref_min, D=ref_max)
+  // Full:   ramp  0% → 100%     (B=black,   D=white)
+  {
+    const int A_px = (1680 * w + 960) / 1920;
+    const int left_pad_end = w - A_px;
+    int B_px, C_px, D_px;
+    if (!is_full_range) {
+      B_px = (559 * w + 960) / 1920;
+      D_px = (107 * w + 960) / 1920;
+    }
+    else {
+      B_px = (618 * w + 960) / 1920;
+      D_px = (40 * w + 960) / 1920;
+    }
+    C_px = A_px - B_px - D_px;
+    const int B_start = left_pad_end;
+    const int C_start = B_start + B_px;
+    const int D_start = C_start + C_px;
+
+    if constexpr (is_float_output) {
+      // Float: compute B/D levels in float via scale_y, then step linearly.
+      const int B_code = !is_full_range ? ref_min_narrow : ref_black_fr10;
+      const int D_code = !is_full_range ? ref_max_narrow : ref_white_fr10;
+      const double B_lf = (double)((B_code - luma_c.src_offset_i) * luma_c.mul_factor + luma_c.dst_offset);
+      const double D_lf = (double)((D_code - luma_c.src_offset_i) * luma_c.mul_factor + luma_c.dst_offset);
+      const double step_f = C_px > 0 ? (D_lf - B_lf) / C_px : luma_c.mul_factor;
+      const pixel_t chroma_val = (pixel_t)chroma_c.dst_offset;
+      for (; y < y4; ++y) {
+        fill_grey_px(0, B_start, t_black);
+        fill_grey_px(B_start, C_start, is_full_range ? t_black : t_ramp_min);
+        for (int x = C_start; x < D_start; ++x) {
+          const pixel_t val = (pixel_t)(B_lf + step_f * (x - C_start + 1));
+          if constexpr (is_rgb) { pYG[x] = val; pUB[x] = val; pVR[x] = val; }
+          else { pYG[x] = val; pUB[x] = chroma_val; pVR[x] = chroma_val; }
+        }
+        fill_grey_px(D_start, w, is_full_range ? t_white : t_ramp_max);
+        pYG += pitchY; pUB += pitchUV; pVR += pitchUV;
+      }
+    }
+    else {
+      // Integer: compute native B/D levels, then step with real-valued step.
+      // similar to make_luma_fr but with separate narrow/full logic since we need the 10-bit code for the step calculation below.
+      const int B_level = t_black;
+      const int D_level = t_white;
+      const double real_step = C_px > 0 ? (double)(D_level - B_level) / C_px : 1.0;
+      // Verify against ITU table notes (see Table 5/6 comments above):
+      // 10-bit narrow 2K: B=4,  D=1019, step≈1.001 → first=5,  last=1019
+      // 12-bit narrow 2K: B=16, D=4076, step=4.000 → first=20, last=4076
+      // 10-bit full  2K:  B=0,  D=1023, step≈1.001 → first=1,  last=1023
+      // 12-bit full  2K:  B=0,  D=4092, step=4.000 → first=4,  last=4092
+      for (; y < y4; ++y) {
+        fill_grey_px(0, B_start, t_black);
+        fill_grey_px(B_start, C_start, is_full_range ? t_black : t_ramp_min);
+        for (int x = C_start; x < D_start; ++x) {
+          const pixel_t val = (pixel_t)(int)(B_level + real_step * (x - C_start + 1) + 0.5);
+          if constexpr (is_rgb) { pYG[x] = val; pUB[x] = val; pVR[x] = val; }
+          else { pYG[x] = val; pUB[x] = t_chroma_mid; pVR[x] = t_chroma_mid; }
+        }
+        fill_grey_px(D_start, w, is_full_range ? t_white : t_ramp_max);
+        pYG += pitchY; pUB += pitchUV; pVR += pitchUV;
+      }
+    }
+  }
+
+  // -- Row 5: b/4 — bottom section ------------------------------------------
+  // Left:   BT.709 Yellow, Cyan, Green   (each c/3 wide)
+  // PLUGE:  f(0%) | g(-2%) | h(0%) | g(+2%) | h(0%) | g(+4%) | i(0%) | j(white) | k(0%)
+  // Right:  BT.709 Magenta, Red, Blue    (each c/3 wide)
+  // Full range PQ: no -2% sub-black level (clamped to 0% per Table 4 footnote).
+  // All PLUGE values pre-computed in t_pluge[0..6].
+  {
+    const int pluge_x0 = 3 * bt709_bar_w;
+    const int pluge_f_end = pluge_x0 + f_pluge;
+    const int seg[5] = { g_pluge, h_pluge, g_pluge, h_pluge, g_pluge };
+    // pluge indices: 0=f(0%), 1=-2%, 2=0%, 3=+2%, 4=0%, 5=+4%, 6=0%
+    int pluge_x = pluge_f_end;
+    int seg_ends[5];
+    for (int s = 0; s < 5; ++s) { pluge_x += seg[s]; seg_ends[s] = pluge_x; }
+    const int i_start = pluge_x;
+    const int j_start = i_start + i_span;
+    const int k_start = j_start + j_span;
+    const int k_end = k_start + k_span;
+
+    for (; y < h; ++y) {
+      fill_bar_px(0, bt709_bar_w, t_b709[0]); // BT.709 Yellow
+      fill_bar_px(bt709_bar_w, 2 * bt709_bar_w, t_b709[1]); // BT.709 Cyan
+      fill_bar_px(2 * bt709_bar_w, 3 * bt709_bar_w, t_b709[2]); // BT.709 Green
+      // f block: 0% black
+      fill_grey_px(pluge_x0, pluge_f_end, t_pluge[0]);
+      // 5 PLUGE segments: -2%(g), 0%(h), +2%(g), 0%(h), +4%(g)
+      {
+        int px = pluge_f_end;
+        for (int s = 0; s < 5; ++s) { fill_grey_px(px, seg_ends[s], t_pluge[1 + s]); px = seg_ends[s]; }
+      }
+      // i: 0% black  j: 75%/58% white (primary white = t_bpri[0])  k: 0% black
+      fill_grey_px(i_start, j_start, t_black);
+      fill_bar_px(j_start, k_start, t_bpri[0]); // 75%/58% white patch
+      fill_grey_px(k_start, k_end, t_black);
+      fill_bar_px(k_end, k_end + bt709_bar_w, t_b709[3]); // BT.709 Magenta
+      fill_bar_px(k_end + bt709_bar_w, k_end + 2 * bt709_bar_w, t_b709[4]); // BT.709 Red
+      fill_bar_px(k_end + 2 * bt709_bar_w, w, t_b709[5]); // BT.709 Blue
+      pYG += pitchY; pUB += pitchUV; pVR += pitchUV;
+    }
+  }
+} // draw_colorbarsUHD_444_rgb
+
+
 class ColorBars : public IClip {
   VideoInfo vi;
   PVideoFrame frame;
   SFLOAT *audio;
   unsigned nsamples;
-  bool staticframes; // P.F. false: re-draw each frame. Defaults to true (one pre-computed static frame is served).
+  bool staticframes; // false: re-draw each frame. Defaults to true (one pre-computed static frame is served).
+  int subtype; // for UHD
 
   enum { Hz = 440 } ;
 
@@ -1483,7 +2250,7 @@ public:
     delete audio;
   }
 
-  ColorBars(int w, int h, const char* pixel_type, bool _staticframes, int type, IScriptEnvironment* env) {
+  ColorBars(int w, int h, const char* pixel_type, bool _staticframes, int type, int _subtype, IScriptEnvironment* env) : subtype(_subtype) {
     memset(&vi, 0, sizeof(VideoInfo));
     staticframes = _staticframes;
     vi.width = w;
@@ -1497,10 +2264,15 @@ public:
 
     const bool IsColorbars = (type == 0);
     const bool IsColorbarsHD = (type == 1);
+    const bool IsColorbarsUHD = (type == 2);
 
-    if (IsColorbarsHD) { // ColorbarsHD
-        if (!vi.Is444())
-          env->ThrowError("ColorBarsHD: pixel_type must be \"YV24\" or other 4:4:4 video format");
+    if (IsColorbarsUHD) {
+      if (!vi.Is444() && !vi.IsPlanarRGB())
+        env->ThrowError("ColorBarsUHD: pixel_type must be a planar RGB or 4:4:4 video format");
+    }
+    else if (IsColorbarsHD) { // ColorbarsHD
+      if (!vi.Is444())
+        env->ThrowError("ColorBarsHD: pixel_type must be \"YV24\" or other 4:4:4 video format");
     }
     else if (vi.IsRGB32() || vi.IsRGB64() || vi.IsRGB24() || vi.IsRGB48()) {
       // no special check
@@ -1509,12 +2281,12 @@ public:
       // no special check
     }
     else if (vi.IsYUY2()) { // YUY2
-        if (w & 1)
-          env->ThrowError("ColorBars: YUY2 width must be even!");
+      if (w & 1)
+        env->ThrowError("ColorBars: YUY2 width must be even!");
     }
     else if (vi.Is420()) { // 4:2:0
-        if ((w & 1) || (h & 1))
-          env->ThrowError("ColorBars: for 4:2:0 both height and width must be even!");
+      if ((w & 1) || (h & 1))
+        env->ThrowError("ColorBars: for 4:2:0 both height and width must be even!");
     }
     else if (vi.Is422()) { // 4:2:2
       if (w & 1)
@@ -1525,7 +2297,7 @@ public:
         env->ThrowError("ColorBars: for 4:1:1 width must be divisible by 4!");
     }
     else if (vi.Is444()) { // 4:4:4
-        // no special check
+      // no special check
     }
     else {
       env->ThrowError("ColorBars: this pixel_type not supported");
@@ -1533,196 +2305,256 @@ public:
     vi.sample_type = SAMPLE_FLOAT;
     vi.nchannels = 2;
     vi.audio_samples_per_second = 48000;
-    vi.num_audio_samples=vi.AudioSamplesFromFrames(vi.num_frames);
+    vi.num_audio_samples = vi.AudioSamplesFromFrames(vi.num_frames);
 
     frame = env->NewVideoFrame(vi);
 
-    uint32_t* p = (uint32_t *)frame->GetWritePtr();
+    uint32_t* p = (uint32_t*)frame->GetWritePtr();
 
     // set basic frame properties
     auto props = env->getFramePropsRW(frame);
     int theMatrix;
     int theColorRange;
-    if (IsColorbarsHD) {
+    int theTransfer;
+    int thePrimaries;
+    if (IsColorbarsUHD) {
+      // subtypes 0,1,2: HLG narrow, PQ narrow, PQ full range (BT.2111-3)
+
+      // ColorBarsUHD RGB or YUV444
+      // For YUV BT.2100 uses Y'CbCr NCL (identical Kr/Kb to BT.2020 NCL).
+      theMatrix = vi.IsRGB() ? Matrix_e::AVS_MATRIX_RGB : Matrix_e::AVS_MATRIX_BT2020_NCL; // = 0/9
+      // HLG narrow (0) and PQ narrow (1) use limited swing (64–940 at 10-bit).
+      // PQ full range (subtype 2) uses full swing (0–1023 at 10-bit).
+      // Note: AVS_COLORRANGE_LIMITED = 1, AVS_COLORRANGE_FULL = 0 in the Compat enum
+      // (inverted from the ITU-T H.265 / AVS_RANGE_* convention).
+      // Float output is always full range, tools usually do not support Avisynth's style "limited float"
+      theColorRange = (subtype == 2 || bits_per_pixel == 32)
+        ? ColorRange_Compat_e::AVS_COLORRANGE_FULL
+        : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
+      // Transfer: HLG (subtype 0) = ARIB B67 (= 18), PQ (subtypes 1/2) = ST2084 (= 16).
+      theTransfer = (subtype == 0) ? Transfer_e::AVS_TRANSFER_ARIB_B67 : Transfer_e::AVS_TRANSFER_ST2084;
+      thePrimaries = Primaries_e::AVS_PRIMARIES_BT2020;
+    }
+    else if (IsColorbarsHD) {
       // ColorBarsHD 444 only
       theMatrix = Matrix_e::AVS_MATRIX_BT709;
       theColorRange = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
+      theTransfer = Transfer_e::AVS_TRANSFER_BT709;    // = 1
+      thePrimaries = Primaries_e::AVS_PRIMARIES_BT709; // = 1
     }
     else {
-      // IsColorBars
-      // ColorBars can be rgb or yuv
+      // ColorBars RGB or YUV
+      // RGB output has no YCbCr matrix, but still carries BT.601 (ST170-M) primaries and transfer.
       theMatrix = vi.IsRGB() ? Matrix_e::AVS_MATRIX_RGB : Matrix_e::AVS_MATRIX_ST170_M;
       // Studio RGB: limited!
+      // Unlike UHD, float is Avisynth's "limited float"
       theColorRange = vi.IsRGB() ? ColorRange_Compat_e::AVS_COLORRANGE_LIMITED : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
+      theTransfer = Transfer_e::AVS_TRANSFER_BT601;      // = 6, same gamma curve as BT.709
+      thePrimaries = Primaries_e::AVS_PRIMARIES_ST170_M; // = 6, BT.601-525 (NTSC)
     }
     update_Matrix_and_ColorRange(props, theMatrix, theColorRange, env);
+    update_Transfer_and_Primaries(props, theTransfer, thePrimaries, env);
 
-  // HD colorbars arib_std_b28
-  // Rec709 yuv values
-  if (IsColorbarsHD) { // ColorbarsHD
-    BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-    BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-    BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-    const int pitchY  = frame->GetPitch(PLANAR_Y);
-    const int pitchUV = frame->GetPitch(PLANAR_U);
+    if (IsColorbarsUHD) { // ColorbarsUHD
+      // UHD colorbars BT.2111-3 (05/2025)
+      // https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.2111-3-202505-I!!PDF-E.pdf
+      // RECOMMENDATION ITU-R BT.2111-3
+      // Specification of color bar test pattern for high dynamic range television systems (2017-2019-2020-2025)
+      // subtype=0: hybrid log-gamma (HLG) system with narrow range coding
+      // subtype=1: perceptual quantization (PQ) system with narrow range coding
+      // subtype=2: PQ system with full range coding
+      const bool isRGB = vi.IsRGB();
+      BYTE* p1 = (BYTE*)frame->GetWritePtr(isRGB ? PLANAR_G : PLANAR_Y);
+      BYTE* p2 = (BYTE*)frame->GetWritePtr(isRGB ? PLANAR_B : PLANAR_U);
+      BYTE* p3 = (BYTE*)frame->GetWritePtr(isRGB ? PLANAR_R : PLANAR_V);
+      const int pitch1 = frame->GetPitch(isRGB ? PLANAR_G : PLANAR_Y);
+      const int pitch23 = frame->GetPitch(isRGB ? PLANAR_G : PLANAR_U); // all pitches equal in planar RGB
 
-    if (bits_per_pixel == 8)
-      draw_colorbarsHD_444<uint8_t>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
-    else if (bits_per_pixel <= 16)
-      draw_colorbarsHD_444<uint16_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
-    else if (bits_per_pixel == 32)
-      draw_colorbarsHD_444<float>(pY, pU, pV, pitchY, pitchUV, w, h,32);
-  }
-  else if (IsColorbars) {
-    // Rec. ITU-R BT.801-1
-      // "ColorBars" pattern is defined in Rec. ITU-R BT.801-1, with studio RGB values that are then converted to YUV for YUV formats.
-    // Optional YUV output calculation uses 170_ST (601) independent from the actual frame dimensions.
-    if (vi.IsRGB() && vi.IsPlanar()) {
-      BYTE* pG = (BYTE*)frame->GetWritePtr(PLANAR_G);
-      BYTE* pB = (BYTE*)frame->GetWritePtr(PLANAR_B);
-      BYTE* pR = (BYTE*)frame->GetWritePtr(PLANAR_R);
-      const int pitch = frame->GetPitch(PLANAR_G);
+      if (bits_per_pixel == 8) {
+        if (isRGB)
+          draw_colorbarsUHD_444_rgb<uint8_t, true>(p1, p2, p3, pitch1, pitch23, w, h, 8, subtype);
+        else
+          draw_colorbarsUHD_444_rgb<uint8_t, false>(p1, p2, p3, pitch1, pitch23, w, h, 8, subtype);
+      }
+      else if (bits_per_pixel <= 16) {
+        if (isRGB)
+          draw_colorbarsUHD_444_rgb<uint16_t, true>(p1, p2, p3, pitch1, pitch23, w, h, bits_per_pixel, subtype);
+        else
+          draw_colorbarsUHD_444_rgb<uint16_t, false>(p1, p2, p3, pitch1, pitch23, w, h, bits_per_pixel, subtype);
+      }
+      else if (bits_per_pixel == 32) {
+        if (isRGB)
+          draw_colorbarsUHD_444_rgb<float, true>(p1, p2, p3, pitch1, pitch23, w, h, 32, subtype);
+        else
+          draw_colorbarsUHD_444_rgb<float, false>(p1, p2, p3, pitch1, pitch23, w, h, 32, subtype);
+      }
+    }
+    else if (IsColorbarsHD) { // ColorbarsHD
+      // HD colorbars arib_std_b28
+      // Rec709 yuv values
+      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+      const int pitchY = frame->GetPitch(PLANAR_Y);
+      const int pitchUV = frame->GetPitch(PLANAR_U);
 
       if (bits_per_pixel == 8)
-        draw_colorbars_rgbp<uint8_t>(pR, pG, pB, pitch, w, h, 8);
+        draw_colorbarsHD_444<uint8_t>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
       else if (bits_per_pixel <= 16)
-        draw_colorbars_rgbp<uint16_t>(pR, pG, pB, pitch, w, h, bits_per_pixel);
+        draw_colorbarsHD_444<uint16_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
       else if (bits_per_pixel == 32)
-        draw_colorbars_rgbp<float>(pR, pG, pB, pitch, w, h, 32);
+        draw_colorbarsHD_444<float>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
     }
-    else if (vi.IsRGB32() || vi.IsRGB64()) {
-      const int pitch = frame->GetPitch() / 4;
-      switch (bits_per_pixel) {
-      case 8: draw_colorbars_rgb3264<uint8_t>((uint8_t*)p, pitch, w, h); break;
-      case 16: draw_colorbars_rgb3264<uint16_t>((uint8_t*)p, pitch, w, h); break;
+    else if (IsColorbars) {
+      // Rec. ITU-R BT.801-1
+      // "ColorBars" pattern is defined in Rec. ITU-R BT.801-1, with studio RGB values that are then converted to YUV for YUV formats.
+      // Optional YUV output calculation uses 170_ST (601) independent from the actual frame dimensions.
+      if (vi.IsRGB() && vi.IsPlanar()) {
+        BYTE* pG = (BYTE*)frame->GetWritePtr(PLANAR_G);
+        BYTE* pB = (BYTE*)frame->GetWritePtr(PLANAR_B);
+        BYTE* pR = (BYTE*)frame->GetWritePtr(PLANAR_R);
+        const int pitch = frame->GetPitch(PLANAR_G);
+
+        if (bits_per_pixel == 8)
+          draw_colorbars_rgbp<uint8_t>(pR, pG, pB, pitch, w, h, 8);
+        else if (bits_per_pixel <= 16)
+          draw_colorbars_rgbp<uint16_t>(pR, pG, pB, pitch, w, h, bits_per_pixel);
+        else if (bits_per_pixel == 32)
+          draw_colorbars_rgbp<float>(pR, pG, pB, pitch, w, h, 32);
       }
-    }
-    else if (vi.IsRGB24() || vi.IsRGB48()) {
-      const int pitch = frame->GetPitch();
-      switch (bits_per_pixel) {
-      case 8: draw_colorbars_rgb2448<uint8_t>((uint8_t*)p, pitch, w, h); break;
-      case 16: draw_colorbars_rgb2448<uint16_t>((uint8_t*)p, pitch, w, h); break;
-      }
-    }
-    else if (vi.IsYUY2()) {
-      // YUY2 is a packed 4:2:2 format: Y0 U0 Y1 V0 (alternating luma/chroma samples)
-      // We treat it as planar internally, then pack the results
-      const int pitch = frame->GetPitch();
-      uint8_t* dst = frame->GetWritePtr();
-
-      // Allocate temporary planar buffers for 8-bit YUV
-      std::vector<uint8_t> tempY(w * h);
-      std::vector<uint8_t> tempU((w >> 1) * h);
-      std::vector<uint8_t> tempV((w >> 1) * h);
-
-      // Use the unified YUV drawing function to generate planar data
-      draw_colorbars_yuv<uint8_t, false, true, false>(
-        tempY.data(), tempU.data(), tempV.data(),
-        w, w >> 1, w, h, 8
-      );
-
-      // Pack planar YUV 4:2:2 into YUY2 format (Y0 U0 Y1 V0)
-      for (int y = 0; y < h; ++y) {
-        const uint8_t* srcY = tempY.data() + y * w;
-        const uint8_t* srcU = tempU.data() + y * (w >> 1);
-        const uint8_t* srcV = tempV.data() + y * (w >> 1);
-        uint8_t* dstRow = dst + y * pitch;
-
-        for (int x = 0; x < w >> 1; ++x) {
-          dstRow[x * 4 + 0] = srcY[x * 2 + 0];  // Y0
-          dstRow[x * 4 + 1] = srcU[x];          // U0
-          dstRow[x * 4 + 2] = srcY[x * 2 + 1];  // Y1
-          dstRow[x * 4 + 3] = srcV[x];          // V0
+      else if (vi.IsRGB32() || vi.IsRGB64()) {
+        const int pitch = frame->GetPitch() / 4;
+        switch (bits_per_pixel) {
+        case 8: draw_colorbars_rgb3264<uint8_t>((uint8_t*)p, pitch, w, h); break;
+        case 16: draw_colorbars_rgb3264<uint16_t>((uint8_t*)p, pitch, w, h); break;
         }
       }
-    }
-    if (vi.Is444()) {
-      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-      const int pitchY = frame->GetPitch(PLANAR_Y);
-      const int pitchUV = frame->GetPitch(PLANAR_U);
-      if (bits_per_pixel == 8)
-        draw_colorbars_yuv<uint8_t, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
-      else if (bits_per_pixel <= 16)
-        draw_colorbars_yuv<uint16_t, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
-      else
-        draw_colorbars_yuv<float, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
-    }
-    else if (vi.Is420()) {
-      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-      const int pitchY = frame->GetPitch(PLANAR_Y);
-      const int pitchUV = frame->GetPitch(PLANAR_U);
-      if (bits_per_pixel == 8)
-        draw_colorbars_yuv<uint8_t, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
-      else if (bits_per_pixel <= 16)
-        draw_colorbars_yuv<uint16_t, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
-      else
-        draw_colorbars_yuv<float, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
-    }
-    else if (vi.Is422()) {
-      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-      const int pitchY = frame->GetPitch(PLANAR_Y);
-      const int pitchUV = frame->GetPitch(PLANAR_U);
-      if (bits_per_pixel == 8)
-        draw_colorbars_yuv<uint8_t, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
-      else if (bits_per_pixel <= 16)
-        draw_colorbars_yuv<uint16_t, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
-      else
-        draw_colorbars_yuv<float, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
-    }
-    else if (vi.IsYV411()) {
-      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-      const int pitchY = frame->GetPitch(PLANAR_Y);
-      const int pitchUV = frame->GetPitch(PLANAR_U);
-      // YV411 is 8-bit only
-      draw_colorbars_yuv<uint8_t, false, false, true>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
-    }
-  } // "ColorBars" pattern generation
-  else {
-    // future other ColorBars types can be added here
-  }
+      else if (vi.IsRGB24() || vi.IsRGB48()) {
+        const int pitch = frame->GetPitch();
+        switch (bits_per_pixel) {
+        case 8: draw_colorbars_rgb2448<uint8_t>((uint8_t*)p, pitch, w, h); break;
+        case 16: draw_colorbars_rgb2448<uint16_t>((uint8_t*)p, pitch, w, h); break;
+        }
+      }
+      else if (vi.IsYUY2()) {
+        // YUY2 is a packed 4:2:2 format: Y0 U0 Y1 V0 (alternating luma/chroma samples)
+        // We treat it as planar internally, then pack the results
+        const int pitch = frame->GetPitch();
+        uint8_t* dst = frame->GetWritePtr();
 
-  // Alpha cnannel - if any - is common. RGB32/64 has already filled alpha.
-  if (vi.IsYUVA() || vi.IsPlanarRGBA()) {
-    // initialize planar alpha planes with zero (no transparency), like RGB32 does
-    BYTE* dstp = frame->GetWritePtr(PLANAR_A);
-    int rowsize = frame->GetRowSize(PLANAR_A);
-    int pitch = frame->GetPitch(PLANAR_A);
-    int height = frame->GetHeight(PLANAR_A);
-    switch (bits_per_pixel) {
-    case 8: fill_plane<uint8_t>(dstp, height, rowsize, pitch, 0); break;
-    case 10: case 12: case 14: case 16: fill_plane<uint16_t>(dstp, height, rowsize, pitch, 0); break;
-    case 32: fill_plane<float>(dstp, height, rowsize, pitch, 0.0f); break;
-    }
-  }
+        // Allocate temporary planar buffers for 8-bit YUV
+        std::vector<uint8_t> tempY(w * h);
+        std::vector<uint8_t> tempU((w >> 1) * h);
+        std::vector<uint8_t> tempV((w >> 1) * h);
 
-  // Generate Audio buffer
-  {
-    unsigned x = vi.audio_samples_per_second, y = Hz;
-    while (y) {     // find gcd
-      unsigned t = x%y; x = y; y = t;
-    }
-    nsamples = vi.audio_samples_per_second / x; // 1200
-    const unsigned ncycles = Hz / x; // 11
+        // Use the unified YUV drawing function to generate planar data
+        draw_colorbars_yuv<uint8_t, false, true, false>(
+          tempY.data(), tempU.data(), tempV.data(),
+          w, w >> 1, w, h, 8
+        );
 
-    audio = new(std::nothrow) SFLOAT[nsamples];
-    if (!audio)
-      env->ThrowError("ColorBars: insufficient memory");
+        // Pack planar YUV 4:2:2 into YUY2 format (Y0 U0 Y1 V0)
+        for (int y = 0; y < h; ++y) {
+          const uint8_t* srcY = tempY.data() + y * w;
+          const uint8_t* srcU = tempU.data() + y * (w >> 1);
+          const uint8_t* srcV = tempV.data() + y * (w >> 1);
+          uint8_t* dstRow = dst + y * pitch;
 
-    const double add_per_sample = ncycles / (double)nsamples;
-    double second_offset = 0.0;
-    for (unsigned i = 0; i < nsamples; i++) {
-      audio[i] = (SFLOAT)sin(PI * 2.0 * second_offset);
-      second_offset += add_per_sample;
+          for (int x = 0; x < w >> 1; ++x) {
+            dstRow[x * 4 + 0] = srcY[x * 2 + 0];  // Y0
+            dstRow[x * 4 + 1] = srcU[x];          // U0
+            dstRow[x * 4 + 2] = srcY[x * 2 + 1];  // Y1
+            dstRow[x * 4 + 3] = srcV[x];          // V0
+          }
+        }
+      }
+      if (vi.Is444()) {
+        BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+        BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+        BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+        const int pitchY = frame->GetPitch(PLANAR_Y);
+        const int pitchUV = frame->GetPitch(PLANAR_U);
+        if (bits_per_pixel == 8)
+          draw_colorbars_yuv<uint8_t, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+        else if (bits_per_pixel <= 16)
+          draw_colorbars_yuv<uint16_t, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
+        else
+          draw_colorbars_yuv<float, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
+      }
+      else if (vi.Is420()) {
+        BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+        BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+        BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+        const int pitchY = frame->GetPitch(PLANAR_Y);
+        const int pitchUV = frame->GetPitch(PLANAR_U);
+        if (bits_per_pixel == 8)
+          draw_colorbars_yuv<uint8_t, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+        else if (bits_per_pixel <= 16)
+          draw_colorbars_yuv<uint16_t, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
+        else
+          draw_colorbars_yuv<float, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
+      }
+      else if (vi.Is422()) {
+        BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+        BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+        BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+        const int pitchY = frame->GetPitch(PLANAR_Y);
+        const int pitchUV = frame->GetPitch(PLANAR_U);
+        if (bits_per_pixel == 8)
+          draw_colorbars_yuv<uint8_t, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+        else if (bits_per_pixel <= 16)
+          draw_colorbars_yuv<uint16_t, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
+        else
+          draw_colorbars_yuv<float, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
+      }
+      else if (vi.IsYV411()) {
+        BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+        BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+        BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+        const int pitchY = frame->GetPitch(PLANAR_Y);
+        const int pitchUV = frame->GetPitch(PLANAR_U);
+        // YV411 is 8-bit only
+        draw_colorbars_yuv<uint8_t, false, false, true>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+      }
+    } // "ColorBars" pattern generation
+    else {
+      // future other ColorBars types can be added here
     }
-  }
+
+    // Alpha cnannel - if any - is common. RGB32/64 has already filled alpha.
+    if (vi.IsYUVA() || vi.IsPlanarRGBA()) {
+      // initialize planar alpha planes with zero (no transparency), like RGB32 does
+      BYTE* dstp = frame->GetWritePtr(PLANAR_A);
+      int rowsize = frame->GetRowSize(PLANAR_A);
+      int pitch = frame->GetPitch(PLANAR_A);
+      int height = frame->GetHeight(PLANAR_A);
+      switch (bits_per_pixel) {
+      case 8: fill_plane<uint8_t>(dstp, height, rowsize, pitch, 0); break;
+      case 10: case 12: case 14: case 16: fill_plane<uint16_t>(dstp, height, rowsize, pitch, 0); break;
+      case 32: fill_plane<float>(dstp, height, rowsize, pitch, 0.0f); break;
+      }
+    }
+
+    // Generate Audio buffer
+    {
+      unsigned x = vi.audio_samples_per_second, y = Hz;
+      while (y) {     // find gcd
+        unsigned t = x % y; x = y; y = t;
+      }
+      nsamples = vi.audio_samples_per_second / x; // 1200
+      const unsigned ncycles = Hz / x; // 11
+
+      audio = new(std::nothrow) SFLOAT[nsamples];
+      if (!audio)
+        env->ThrowError("ColorBars: insufficient memory");
+
+      const double add_per_sample = ncycles / (double)nsamples;
+      double second_offset = 0.0;
+      for (unsigned i = 0; i < nsamples; i++) {
+        audio[i] = (SFLOAT)sin(PI * 2.0 * second_offset);
+        second_offset += add_per_sample;
+      }
+    }
   }
 
   // By the new "staticframes" parameter: colorbars we generate (copy) real new frames instead of a ready-to-use static one
@@ -1831,18 +2663,45 @@ public:
 
   static AVSValue __cdecl Create(AVSValue args, void* _type, IScriptEnvironment* env) {
     const int type = (int)(size_t)_type;
-    // 0: ColorBars, 1: ColorBarsHD
+    enum { typeColorBars = 0, typeColorBarsHD = 1, typeColorBarsUHD = 2 };
+    // 0: ColorBars, 1: ColorBarsHD, 2: ColorBarsUHD
+
+    // { "ColorBars", BUILTIN_FUNC_PREFIX, "[width]i[height]i[pixel_type]s[staticframes]b", ColorBars::Create, (void*)0 },
+    // { "ColorBarsHD", BUILTIN_FUNC_PREFIX, "[width]i[height]i[pixel_type]s[staticframes]b", ColorBars::Create, (void*)1 },
+    // { "ColorBarsUHD", BUILTIN_FUNC_PREFIX, "[width]i[height]i[pixel_type]s[staticframes]b[mode]i", ColorBars::Create, (void*)2 }, // BT-2111-3
+
     bool staticframes = args[3].AsBool(true);
 
-    const int default_width = type ? 1288 : 640;
-    const int default_height = type ? 720 : 480;
-    const char* default_pixel_type = type ? "YV24" : "RGB32";
+    const int default_width =
+      type == typeColorBarsUHD ? 3840 :
+      type == typeColorBarsHD ? 1288 :
+      640; // typeColorBars
+    int width = args[0].AsInt(default_width);
+    // for UHD the default height is adaptive
+    // ColorBarsUHD width may imply the height:
+    // 1920x1080, 3840x2160 or 7680x4320, but user can override it. For non-UHD types the default height is fixed.
+    const int default_height =
+      type == typeColorBarsUHD ? (width * 2160) / 3840 :
+      type == typeColorBarsHD ? 720 :
+      480; // typeColorBars
 
-    PClip clip = new ColorBars(args[0].AsInt(default_width),
+    const char* default_pixel_type =
+      type == typeColorBarsUHD ? "RGBP10" :
+      type == typeColorBarsHD ? "YV24" :
+      "RGB32"; // typeColorBars
+
+    int UHD_subType = 0;
+    if (type == typeColorBarsUHD) {
+      UHD_subType = args[4].AsInt(0);
+    }
+
+    PClip clip = new ColorBars(width,
                          args[1].AsInt(default_height),
                          args[2].AsString(default_pixel_type),
                          staticframes,
-                         type, env);
+                         type,
+                         UHD_subType,
+                         env);
     // wrap in OnCPU to support multi devices
     AVSValue arg[2]{ clip, 1 }; // prefetch=1: enable cache but not thread
     AVSValue ret = env->Invoke("OnCPU", AVSValue(arg, 2));
@@ -2124,6 +2983,7 @@ extern const AVSFunction Source_filters[] = {
   { "MessageClip", BUILTIN_FUNC_PREFIX, "s[width]i[height]i[shrink]b[text_color]i[halo_color]i[bg_color]i[utf8]b", Create_MessageClip },
   { "ColorBars", BUILTIN_FUNC_PREFIX, "[width]i[height]i[pixel_type]s[staticframes]b", ColorBars::Create, (void*)0 },
   { "ColorBarsHD", BUILTIN_FUNC_PREFIX, "[width]i[height]i[pixel_type]s[staticframes]b", ColorBars::Create, (void*)1 },
+  { "ColorBarsUHD", BUILTIN_FUNC_PREFIX, "[width]i[height]i[pixel_type]s[staticframes]b[mode]i", ColorBars::Create, (void*)2 }, // BT-2111-3
   { "Tone", BUILTIN_FUNC_PREFIX, "[length]f[frequency]f[samplerate]i[channels]i[type]s[level]f", Tone::Create },
 
   { "Version", BUILTIN_FUNC_PREFIX, "[length]i[width]i[height]i[pixel_type]s[clip]c", Create_Version },

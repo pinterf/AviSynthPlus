@@ -442,6 +442,19 @@ void update_Matrix_and_ColorRange(AVSMap* props, int theMatrix, int theColorRang
   //set_int_if_positive("_Primaries", theColorPrimaries);
 }
 
+void update_Transfer_and_Primaries(AVSMap* props, int theTransfer, int thePrimaries, IScriptEnvironment* env)
+{
+  auto set_int_if_positive = [&](const char* key, int x)
+    {
+      if (x >= 0)
+        env->propSetInt(props, key, x, AVSPropAppendMode::PROPAPPENDMODE_REPLACE);
+      else
+        env->propDeleteKey(props, key);
+    };
+  set_int_if_positive("_Transfer", theTransfer);
+  set_int_if_positive("_Primaries", thePrimaries);
+}
+
 void update_ChromaLocation(AVSMap* props, int theChromaLocation, IScriptEnvironment* env)
 {
   auto set_int_if_positive = [&](const char* key, int x)
