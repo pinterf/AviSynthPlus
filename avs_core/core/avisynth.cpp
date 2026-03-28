@@ -3540,12 +3540,12 @@ void ScriptEnvironment::ListFrameRegistry(size_t min_size, size_t max_size, bool
         if (someframes)
         {
           std::chrono::duration<double> elapsed_seconds = t_end - frame_entry_timestamp;
-          if (inner_frame_count <= 2) // list only the first 2. There can be even many thousand of frames!
+          if (inner_frame_count <= 4) // list only the first 2. There can be even many thousand of frames!
           {
             // log only if frame creation timestamp is too old!
             // e.g. 100 secs, it must be a stuck frame (but can also be a valid static frame from ColorBars)
             // if (elapsed_seconds.count() > 100.0f && frame->refcount > 0)
-            if (frame->refcount > 0)
+            //if (frame->refcount > 0)
             {
               snprintf(buf, 1023, "  >> Frame#%6d: vfb=%p frame=%p frame_refcount=%3ld T=%f ago\n", inner_frame_count, vfb, frame, frame->refcount, elapsed_seconds.count());
               DebugOut(buf);
@@ -3568,6 +3568,10 @@ void ScriptEnvironment::ListFrameRegistry(size_t min_size, size_t max_size, bool
           }
         }
       }
+      // After the inner loop, always print summary:
+      snprintf(buf, 1023, "  == TOTAL of %d frames. nonzero refcount=%d \n",
+        inner_frame_count, inner_frame_count_for_frame_refcount_nonzero);
+      DebugOut(buf);
     }
   }
   snprintf(buf, 1023, ">> >> >> array sizes %d %d %d Total VFB size=%zu\n", size1, size2, size3, total_vfb_size);
@@ -3623,15 +3627,12 @@ VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* dev
           // because when a vfb is free (refcount==0) then all its parent frames should also be free
           assert(0 == frame->refcount);
 
-          // refcount == 0 implies that 'properties' was deleted and nullified
-          // Cannot assume this: assert(nullptr == frame->properties);
-          // An Avisynth 2.5 filter ("baked code" in ancient avisynth.h)
-          // can set VideoFrame's reference count to zero
-          // but it won't delete extra frame data such as .properties
-          if (frame->properties != nullptr) {
-            delete frame->properties;
-            frame->properties = nullptr;
-          }
+          // Note: Release() does not free 'properties'; FrameRegistry is the sole owner.
+          // An Avisynth 2.5 filter ("baked code" in ancient avisynth.h) can set refcount
+          // to zero without freeing extra frame data, so nullptr is not guaranteed here.
+          // Clear content now to promptly free any large strings/arrays.
+          if (frame->properties != nullptr)
+            frame->properties->clear();
 
           if (!found)
           {
@@ -3646,7 +3647,9 @@ VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* dev
             _RPT0(0, buf);
             _RPT5(0, "                                          frame %p RowSize=%d Height=%d Pitch=%d Offset=%d\n", frame, frame->GetRowSize(), frame->GetHeight(), frame->GetPitch(), frame->GetOffset());
 #endif
-            frame->properties = new AVSMap();
+            // properties was cleared above; create the AVSMap shell only if somehow null
+            if (frame->properties == nullptr)
+              frame->properties = new AVSMap();
             // only 1 frame in list -> no delete
             if (videoFrameListSize <= 1)
             {
@@ -3749,10 +3752,9 @@ VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* dev
         VideoFrame* frame = it3->frame;
         assert(0 == frame->refcount);
 
-        if (frame->properties != nullptr) {
-          delete frame->properties;
-          frame->properties = nullptr;
-        }
+        // Clear content now to promptly free any large strings/arrays.
+        if (frame->properties != nullptr)
+          frame->properties->clear();
 
         if (!found)
         {
@@ -3768,7 +3770,9 @@ VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* dev
           _RPT0(0, buf);
 #endif
 
-          frame->properties = new AVSMap();
+          // properties was cleared above; create the AVSMap shell only if somehow null
+          if (frame->properties == nullptr)
+            frame->properties = new AVSMap();
           frame_found = frame;
           found = true;
 
@@ -3778,7 +3782,7 @@ VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* dev
           ++it3;
         }
         else {
-          delete frame;
+          delete frame; // ~VideoFrame()/DESTRUCTOR() deletes frame->properties
           ++it3;
         }
       } // for it3
@@ -3829,7 +3833,7 @@ VideoFrame* ScriptEnvironment::GetNewFrame(size_t vfb_size, size_t margin, Devic
     return frame;
 
   /* -----------------------------------------------------------
-   *   No unused instance was found, try to allocate a new one
+     *   No unused instance was found, try to allocate a new one
    * -----------------------------------------------------------
    */
    // We reserve 15% for unaccounted stuff
@@ -4407,11 +4411,7 @@ void ScriptEnvironment::RegisterSubFrameInRegistry(size_t vfb_size, VideoFrameBu
   for (auto it = vec.begin(); it != vec.end(); ) {
     VideoFrame* f = it->frame;
     if (f->refcount == 0) {
-      if (f->properties != nullptr) {
-        delete f->properties;
-        f->properties = nullptr;
-      }
-      delete f;
+      delete f; // ~VideoFrame()/DESTRUCTOR() deletes f->properties
       it = vec.erase(it);
     }
     else {
@@ -4435,7 +4435,7 @@ PVideoFrame ScriptEnvironment::Subframe(PVideoFrame src, int rel_offset, int new
 
   const AVSMap &avsmap = src->getConstProperties();
   if (propNumKeys(&avsmap) > 0)
-    subframe->setProperties(src->getConstProperties());
+    subframe->setProperties(avsmap);
 
   size_t vfb_size = src->GetFrameBuffer()->GetDataSize();
 
@@ -4458,7 +4458,7 @@ PVideoFrame ScriptEnvironment::SubframePlanar(PVideoFrame src, int rel_offset, i
 
   const AVSMap& avsmap = src->getConstProperties();
   if (propNumKeys(&avsmap) > 0)
-    subframe->setProperties(src->getConstProperties());
+    subframe->setProperties(avsmap);
 
   size_t vfb_size = src->GetFrameBuffer()->GetDataSize();
 
@@ -4482,7 +4482,7 @@ PVideoFrame ScriptEnvironment::SubframePlanar(PVideoFrame src, int rel_offset, i
 
   const AVSMap& avsmap = src->getConstProperties();
   if (propNumKeys(&avsmap) > 0)
-    subframe->setProperties(src->getConstProperties());
+    subframe->setProperties(avsmap);
 
   size_t vfb_size = src->GetFrameBuffer()->GetDataSize();
 
@@ -5426,11 +5426,11 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
     {
       std::string real_function_name = name;
       if (!cache_guard_called) {
-        real_function_name = "on behalf of " + real_function_name;
-        _RPT2(0, "ScriptEnvironment:: AvsCache FrontCache altered (but no direct AvsCache call) %s  cache_id=%p\r\n", real_function_name.c_str(), (void*)FrontCache);
+        real_function_name = "Unknow_Function_Invoked_By_No-Op_" + real_function_name + "_Create";
+        _RPT2(0, "ScriptEnvironment::Invoke nearEnd: FrontCache altered, (but no direct AvsCache call) FuncName=%s  cache_id=%p\r\n", real_function_name.c_str(), (void*)FrontCache);
       }
       else {
-        _RPT2(0, "ScriptEnvironment:: AvsCache FrontCache altered %s  cache_id=%p\r\n", real_function_name.c_str(), (void*)FrontCache);
+        _RPT2(0, "ScriptEnvironment::Invoke nearEnd: FrontCache altered. FuncName=%s  cache_id=%p\r\n", real_function_name.c_str(), (void*)FrontCache);
       }
       FrontCache->FuncName = real_function_name; // helps debugging. See also in cache.cpp
     }
@@ -5535,7 +5535,7 @@ bool ScriptEnvironment::MakePropertyWritable(PVideoFrame* pvf)
 
   const AVSMap& avsmap = vf->getConstProperties();
   if (propNumKeys(&avsmap) > 0)
-    dst->setProperties(vf->getConstProperties());
+    dst->setProperties(avsmap);
 
   size_t vfb_size = vf->GetFrameBuffer()->GetDataSize();
 
