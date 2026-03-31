@@ -8,7 +8,25 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
-20260328 3.7.5.r46xx (pre 3.7.6)
+20260331 3.7.5.r45XX (pre 3.7.6)
+--------------------------------
+- SetFilterProp: new conditional form — inject a frame property only when a named call argument
+  equals a given match value or any element of an alias array (e.g. all equivalent string
+  representations of the same colorspace constant). String comparison is case-insensitive.
+  Both positional and named call sites are matched.
+  Syntax: SetFilterProp(filter, param_name, param_match_or_array, key, value [, mode])
+- SetFilterProp: capture mode (undefined() value) — capture the actual call-time argument
+  value and stamp it as a frame property of the same name. Works for positional and named calls.
+- SetFilterPropPassthrough(filter) — compatibility shim for old filters that predate frame
+  property support (e.g. ColorMatrix). Copies all input frame properties to the filter's output.
+  Self-healing: becomes a no-op per frame once the plugin is updated to use NewVideoFrameP.
+  Must be combined with SetFilterProp rules if specific properties should override the inherited
+  values (passthrough runs first, injections run after).
+- GetFilterProps() — returns all registered SetFilterProp rules as a JSON string (diagnostics).
+- doc: add SetFilterProp / SetFilterPropPassthrough documentation page.
+  Addresses https://github.com/AviSynth/AviSynthPlus/issues/393 and more.
+
+20260328 3.7.5.r4565 (pre 3.7.6)
 --------------------------------
 - Add ColorbarsUHD
 - Fix: LruCache self-tuning cache resize: raised ghost-hit threshold from ghosted>0 to ghosted>1,
@@ -20,7 +38,7 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Fix: YUV<->RGB conversion with quality=true at 10-14 bit sources (regression).
 - Fix: Histogram "color"/"color2": "target" parameter no longer acts as master switch for "axes".
 
-20260306 3.7.5.r45xx (pre 3.7.6)
+20260306 3.7.5.r4554 (pre 3.7.6)
 --------------------------------
 - Reenable YUY2 in planar target conversions as source (disabled in r4549)
 - ConvertToY also gets bits and quality parameters, latter is used when source is RGB.

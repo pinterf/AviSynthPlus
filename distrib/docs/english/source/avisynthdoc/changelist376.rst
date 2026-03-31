@@ -3,6 +3,23 @@ Changes from 3.7.5 to 3.7.6
 
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
+- Added ``SetFilterProp``, ``GetFilterProps``, and ``SetFilterPropPassthrough``:
+
+  * ``SetFilterProp`` — automatically inject a frame property on the output of a named filter
+    every time it is instantiated, without modifying the script.  Rules are typically placed in
+    an auto-loaded ``.avsi`` file.  The property value may be a static int/float/string, a
+    function object evaluated per frame (e.g. to derive ``_Matrix`` from output resolution), or
+    captured from the filter's own call argument (``undefined()`` capture mode).
+  * ``SetFilterProp`` conditional form — inject a property only when a specific named call
+    argument equals a given match value or any element of an alias array.  String comparison is
+    case-insensitive.  Both positional and named call sites are matched.
+  * ``SetFilterPropPassthrough`` — compatibility shim for old filters that predate frame-property
+    support (e.g. ``ColorMatrix``).  Copies all input frame properties to the filter's output;
+    self-healing: becomes a no-op per frame once the plugin is updated to use ``NewVideoFrameP``.
+  * ``GetFilterProps`` — returns the registered rule table as a JSON string for diagnostics.
+
+  Addresses `issue #393 <https://github.com/AviSynth/AviSynthPlus/issues/393>`_ and more.
+  See :doc:`SetFilterProp <./corefilters/setfilterprop>`.
 - Bump year to 2026
 - Overlay: "add" and "subtract" direct RGB mode
 - Overlay: "add" and "subtract" supports 32-bit float.
@@ -289,17 +306,18 @@ Documentation
 - Update :doc:`Convert <./corefilters/convert>` with ``ConvertToYUY2``
   ``ChromaOutPlacement`` parameter and corrected chroma placement behavior.
 - Update :doc:`Convert <./corefilters/convert>` with ``bits`` and ``quality`` parameters
-- Update :doc:`Sampling <./advancedtopics/sampling>` with historical content notes 
+- Update :doc:`Sampling <./advancedtopics/sampling>` with historical content notes
   on legacy ``YUY2`` handling.
 - Add another Ubuntu->Windows DLL cross-compilation guide:
   See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
 - Add :doc:`ColorBarsUHD <./corefilters/colorbarsuhd>`
+- Add :doc:`SetFilterProp / SetFilterPropPassthrough <./corefilters/setfilterprop>`
 
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/03/28 15:31:00 $
+$Date: 2026/03/30 12:00:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
