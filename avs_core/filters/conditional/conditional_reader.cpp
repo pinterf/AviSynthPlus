@@ -1328,6 +1328,38 @@ AVSValue __cdecl ClearProperties::Create(AVSValue args, void*, IScriptEnvironmen
 }
 
 //**************************************************
+// PropPassthrough — compatibility helper for old filters that predate frame properties
+
+PropPassthrough::PropPassthrough(PClip _child, PClip _prop_src, IScriptEnvironment* env)
+  : GenericVideoFilter(_child), prop_src(_prop_src)
+{ }
+
+PVideoFrame __stdcall PropPassthrough::GetFrame(int n, IScriptEnvironment* env)
+{
+  PVideoFrame out = child->GetFrame(n, env);
+  // Self-healing: if the filter was updated to use NewVideoFrameP it will already
+  // carry properties. In that case trust it and skip the copy.
+  const AVSMap* out_map = env->getFramePropsRO(out);
+  if (env->propNumKeys(out_map) > 0)
+    return out;
+  PVideoFrame src = prop_src->GetFrame(n, env);
+  env->MakePropertyWritable(&out);
+  env->copyFrameProps(src, out);
+  return out;
+}
+
+int __stdcall PropPassthrough::SetCacheHints(int cachehints, int frame_range)
+{
+  AVS_UNUSED(frame_range);
+  switch (cachehints)
+  {
+  case CACHE_GET_MTMODE:
+    return MT_NICE_FILTER;
+  }
+  return 0;
+}
+
+//**************************************************
 // propCopy
 
 CopyProperties::CopyProperties(PClip _child, PClip _child2, bool _merge, AVSValue _propNames, bool _exclude, IScriptEnvironment* env)

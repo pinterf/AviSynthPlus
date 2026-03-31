@@ -1,4 +1,4 @@
-﻿/*
+/*
   ConditionalReader  (c) 2004 by Klaus Post
 
   This program is free software; you can redistribute it and/or modify
@@ -83,35 +83,35 @@ public:
 class Write : public GenericVideoFilter
 {
 private:
-	FILE * fout;
-	int linecheck;	// 0=write each line, 1=write only if first expression == true, -1 = write at start, -2 = write at end
-	bool flush;
-	bool append;
+  FILE * fout;
+  int linecheck;	// 0=write each line, 1=write only if first expression == true, -1 = write at start, -2 = write at end
+  bool flush;
+  bool append;
   bool local;
 
 #ifdef AVS_WINDOWS
-	char filename[_MAX_PATH];
+  char filename[_MAX_PATH];
 #else
-	char filename[PATH_MAX];
+  char filename[PATH_MAX];
 #endif
-	int arrsize;
-	struct exp_res {
-		AVSValue expression;
-		const char* string;
-	};
-	exp_res* arglist;
+  int arrsize;
+  struct exp_res {
+    AVSValue expression;
+    const char* string;
+  };
+  exp_res* arglist;
 
-	bool DoEval(IScriptEnvironment* env);
-	void FileOut(IScriptEnvironment* env, const char* mode);
+  bool DoEval(IScriptEnvironment* env);
+  void FileOut(IScriptEnvironment* env, const char* mode);
 
 public:
     Write(PClip _child, const char* _filename, AVSValue args, int _linecheck, bool _flush, bool _append, bool _local, IScriptEnvironment* env);
-	~Write(void);
-	PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
+  ~Write(void);
+  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
   int __stdcall SetCacheHints(int cachehints, int frame_range);
-	static AVSValue __cdecl Create(AVSValue args, void* user_data, IScriptEnvironment* env);
-	static AVSValue __cdecl Create_If(AVSValue args, void* user_data, IScriptEnvironment* env);
-	static AVSValue __cdecl Create_Start(AVSValue args, void* user_data, IScriptEnvironment* env);
+  static AVSValue __cdecl Create(AVSValue args, void* user_data, IScriptEnvironment* env);
+  static AVSValue __cdecl Create_If(AVSValue args, void* user_data, IScriptEnvironment* env);
+  static AVSValue __cdecl Create_Start(AVSValue args, void* user_data, IScriptEnvironment* env);
     static AVSValue __cdecl Create_End(AVSValue args, void* user_data, IScriptEnvironment* env);
 };
 
@@ -175,6 +175,21 @@ public:
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
   int __stdcall SetCacheHints(int cachehints, int frame_range);
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
+};
+
+// Compatibility helper for old filters that predate frame property support.
+// Copies all frame properties from the filter's first input clip to its output,
+// but only when the output has no properties of its own (self-healing: becomes a
+// no-op if the plugin is later updated to pass properties e.g. by using NewVideoFrameP).
+class PropPassthrough : public GenericVideoFilter
+{
+private:
+  PClip prop_src; // first input clip — source of properties
+
+public:
+  PropPassthrough(PClip _child, PClip _prop_src, IScriptEnvironment* env);
+  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
+  int __stdcall SetCacheHints(int cachehints, int frame_range);
 };
 
 class CopyProperties : public GenericVideoFilter

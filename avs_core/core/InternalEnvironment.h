@@ -248,6 +248,11 @@ public:
   virtual void __stdcall LogMsgOnce_valist(const OneTimeLogTicket &ticket, int level, const char* fmt, va_list va) = 0;
   virtual void __stdcall VThrowError(const char* fmt, va_list va) = 0;
   virtual void __stdcall SetMaxCPU(const char *feature) = 0;
+  virtual void __stdcall SetFilterProp(const char* filter, const char* key, const AVSValue& value, int mode) = 0;
+  virtual void __stdcall SetFilterPropConditional(const char* filter, const char* param_name, const AVSValue& param_match,
+                                                   const char* key, const AVSValue& value, int mode) = 0;
+  virtual const char* __stdcall GetFilterProps() = 0;
+  virtual void __stdcall SetFilterPropPassthrough(const char* filter) = 0;
 
   /*
     How casting down works in Avisynth, when passing differently typed 

@@ -232,6 +232,19 @@ std::string Utf8ToAnsi(const char* s_utf8)
 
 #endif
 
+std::string double_to_string(double d)
+{
+  char s[50]; // safe size for a double
+#ifdef MSVC
+  _locale_t locale = _create_locale(LC_NUMERIC, "C"); // force '.' as decimal separator
+  _sprintf_l(s, "%lf", locale, d);
+  _free_locale(locale);
+#else
+  sprintf(s, "%lf", d);
+#endif
+  return s;
+}
+
 std::string GetFullPathNameWrapUtf8(const std::string& f)
 {
 #ifdef AVS_WINDOWS

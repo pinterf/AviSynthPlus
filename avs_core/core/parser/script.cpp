@@ -308,6 +308,10 @@ extern const AVSFunction Script_functions[] = {
   { "SetCacheMode",     BUILTIN_FUNC_PREFIX, "[mode]i", SetCacheMode }, // Neo
   { "SetDeviceOpt",     BUILTIN_FUNC_PREFIX, "[opt]i[val]i", SetDeviceOpt }, // Neo
   { "SetMaxCPU",        BUILTIN_FUNC_PREFIX, "s", SetMaxCPU }, // 20200331
+  { "SetFilterProp",   BUILTIN_FUNC_PREFIX, "ss.[mode]i",   SetFilterProp }, // any type (int/float/bool/string/fn/undef); clip rejected in body
+  { "SetFilterProp",   BUILTIN_FUNC_PREFIX, "ss.s.[mode]i", SetFilterProp }, // conditional: when param==match, inject key=value
+  { "GetFilterProps",        BUILTIN_FUNC_PREFIX, "", GetFilterProps },
+  { "SetFilterPropPassthrough", BUILTIN_FUNC_PREFIX, "s", SetFilterPropPassthrough },
 
   { "IsY",       BUILTIN_FUNC_PREFIX, "c", IsY },
   { "Is420",     BUILTIN_FUNC_PREFIX, "c", Is420 },
@@ -1752,18 +1756,8 @@ static std::string AVSValue_to_string(AVSValue v, IScriptEnvironment* env) {
   if (v.IsString()) return v.AsString();
   if (v.IsBool()) return v.AsBool() ? "true" : "false";
   if (v.IsFunction()) return v.AsFunction()->ToString(env);
-  if (v.IsInt()) return std::to_string(v.AsInt());
-  if (v.IsFloat()) {
-    char s[30];
-#ifdef MSVC
-    _locale_t locale = _create_locale(LC_NUMERIC, "C"); // decimal point: dot
-    _sprintf_l(s, "%lf", locale, v.AsFloat());
-    _free_locale(locale);
-#else
-    sprintf(s, "%lf", v.AsFloat());
-#endif
-    return s;
-  }
+  if (v.IsInt()) return std::to_string(v.AsLong()); // AsLong handles both 32 and 64-bit int
+  if (v.IsFloat()) return double_to_string(v.AsFloat());
   return "";
 }
 
@@ -2291,6 +2285,69 @@ AVSValue SetDeviceOpt(AVSValue args, void*, IScriptEnvironment* env)
     InternalEnvironment *envI = static_cast<InternalEnvironment*>(env);
     envI->SetDeviceOpt((DeviceOpt)args[0].AsInt(), args[1].AsInt(0));
     return AVSValue();
+}
+
+AVSValue SetFilterProp(AVSValue args, void*, IScriptEnvironment* env)
+{
+  InternalEnvironment* envi = static_cast<InternalEnvironment*>(env);
+
+  // 3+1-arg: "ss.[mode]i"
+  // 5+1-arg: "ss.s.[mode]i":
+  // arg3 exists and is string or integer/undefined
+  if (args[3].IsString()) {
+    // 5+1-arg conditional form matched by "ss.s.[mode]i":
+    //   SetFilterProp(filter, param_name, param_match, prop_key, prop_value [, mode])
+    // Inject prop_key=prop_value only when the named call arg 'param_name' equals param_match.
+    const AVSValue& param_match = args[2];
+    // param_match may be a scalar (int/float/bool/string) or an array of scalars (aliases)
+    if (param_match.IsArray()) {
+      for (int j = 0; j < param_match.ArraySize(); ++j) {
+        const AVSValue& elem = param_match[j];
+        if (!elem.IsInt() && !elem.IsFloat() && !elem.IsString() && !elem.IsBool())
+          env->ThrowError("SetFilterProp: alias array element %d must be int, float, bool, or string", j);
+      }
+    } else if (!param_match.IsInt() && !param_match.IsFloat() && !param_match.IsString() && !param_match.IsBool()) {
+      env->ThrowError("SetFilterProp: condition value must be int, float, bool, string, "
+                      "or an array of those");
+    }
+    const AVSValue& prop_value = args[4];
+    if (prop_value.Defined() &&
+        !prop_value.IsInt() && !prop_value.IsFloat() && !prop_value.IsString() &&
+        !prop_value.IsBool() && !prop_value.IsFunction())
+      env->ThrowError("SetFilterProp: property value (arg 5) must be int, float, bool, string, or function");
+    // Frame properties have no bool type: convert bool value to int 0/1
+    AVSValue stored_value = prop_value;
+    if (stored_value.IsBool())
+      stored_value = AVSValue(stored_value.AsBool() ? 1 : 0);
+    const int mode = args[5].AsInt(AVSPropAppendMode::PROPAPPENDMODE_REPLACE);
+    envi->SetFilterPropConditional(args[0].AsString(), args[1].AsString(), param_match,
+                                   args[3].AsString(), stored_value, mode);
+  } else {
+    // 3-arg simple form matched by "ss.[mode]i":
+    //   SetFilterProp(filter, prop_key, value [, mode])
+    const int mode = args[3].AsInt(AVSPropAppendMode::PROPAPPENDMODE_REPLACE);
+    AVSValue val = args[2];
+    if (val.Defined() && !val.IsInt() && !val.IsFloat() && !val.IsString() && !val.IsBool() && !val.IsFunction())
+      env->ThrowError("SetFilterProp: property value must be int, float, bool, string, function, or undefined()");
+    // Frame properties have no bool type: convert bool to int 0/1
+    if (val.IsBool())
+      val = AVSValue(val.AsBool() ? 1 : 0);
+    envi->SetFilterProp(args[0].AsString(), args[1].AsString(), val, mode);
+  }
+  return AVSValue();
+}
+
+AVSValue GetFilterProps(AVSValue args, void*, IScriptEnvironment* env)
+{
+  InternalEnvironment* envi = static_cast<InternalEnvironment*>(env);
+  return AVSValue(envi->GetFilterProps());
+}
+
+AVSValue SetFilterPropPassthrough(AVSValue args, void*, IScriptEnvironment* env)
+{
+  InternalEnvironment* envi = static_cast<InternalEnvironment*>(env);
+  envi->SetFilterPropPassthrough(args[0].AsString());
+  return AVSValue();
 }
 
 // Neo style

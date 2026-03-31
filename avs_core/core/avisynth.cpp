@@ -44,6 +44,7 @@
 #include "bitblt.h"
 #include "FilterConstructor.h"
 #include "PluginManager.h"
+#include "../filters/conditional/conditional_reader.h"
 #include "MappedList.h"
 #include <chrono>
 #include <vector>
@@ -923,6 +924,11 @@ public:
   void AdjustMemoryConsumption(size_t amount, bool minus);
   void SetFilterMTMode(const char* filter, MtMode mode, bool force);
   void SetFilterMTMode(const char* filter, MtMode mode, MtWeight weight);
+  void SetFilterProp(const char* filter, const char* key, const AVSValue& value, int mode);
+  void SetFilterPropConditional(const char* filter, const char* param_name, const AVSValue& param_match,
+                                const char* key, const AVSValue& value, int mode);
+  const char* GetFilterProps();
+  void SetFilterPropPassthrough(const char* filter);
   MtMode GetFilterMTMode(const Function* filter, bool* is_forced) const;
   void ParallelJob(ThreadWorkerFuncPtr jobFunc, void* jobData, IJobCompletion* completion);
   IJobCompletion* NewCompletion(size_t capacity);
@@ -1153,6 +1159,17 @@ private:
   std::unordered_map<std::string, std::pair<MtMode, MtWeight>> MtMap;
   MtMode DefaultMtMode = MtMode::MT_MULTI_INSTANCE;
   static const std::string DEFAULT_MODE_SPECIFIER;
+
+  // Auto filter-property injection
+  struct PropEntry {
+    std::string key;         // frame property key to inject
+    AVSValue value;          // int, float, string, function, or undefined (capture from named arg)
+    int mode;                // AVSPropAppendMode
+    std::string param_name;  // if non-empty: only inject when named call arg 'param_name' == param_match
+    AVSValue param_match;    // the value to compare against (only used when param_name is non-empty)
+  };
+  std::unordered_map<std::string, std::vector<PropEntry>> FilterPropMap;
+  std::unordered_set<std::string> FilterPropPassthroughSet; // filters that need input-prop forwarding
 
   // Logging-related members
   int LogLevel;
@@ -2122,6 +2139,27 @@ public:
   char* __stdcall ListAutoloadDirs()
   {
     return core->ListAutoloadDirs();
+  }
+
+  void __stdcall SetFilterProp(const char* filter, const char* key, const AVSValue& value, int mode)
+  {
+    core->SetFilterProp(filter, key, value, mode);
+  }
+
+  void __stdcall SetFilterPropConditional(const char* filter, const char* param_name, const AVSValue& param_match,
+                                          const char* key, const AVSValue& value, int mode)
+  {
+    core->SetFilterPropConditional(filter, param_name, param_match, key, value, mode);
+  }
+
+  const char* __stdcall GetFilterProps()
+  {
+    return core->GetFilterProps();
+  }
+
+  void __stdcall SetFilterPropPassthrough(const char* filter)
+  {
+    core->SetFilterPropPassthrough(filter);
   }
 
   int __stdcall IncrImportDepth()
@@ -3252,6 +3290,151 @@ bool ScriptEnvironment::FilterHasMtMode(const Function* filter) const
   const auto& end = MtMap.end();
   return (end != MtMap.find(NormalizeString(filter->canon_name)))
     || (end != MtMap.find(NormalizeString(filter->name)));
+}
+
+static bool isValidVSMapKey(const std::string& s); // forward
+
+void ScriptEnvironment::SetFilterProp(const char* filter, const char* key, const AVSValue& value, int mode)
+{
+  assert(filter != nullptr && *filter != '\0');
+  assert(key != nullptr);
+
+  if (!isValidVSMapKey(std::string(key)))
+    ThrowError("SetFilterProp: invalid property key '%s'. Must start with a letter or underscore, "
+               "followed only by letters, digits and underscores.", key);
+
+  if (mode != AVSPropAppendMode::PROPAPPENDMODE_REPLACE
+    && mode != AVSPropAppendMode::PROPAPPENDMODE_APPEND
+    && mode != AVSPropAppendMode::PROPAPPENDMODE_TOUCH)
+    ThrowError("SetFilterProp: invalid mode %d for filter '%s', key '%s'.", mode, filter, key);
+
+  std::string name_to_register;
+  std::string loading;
+  {
+    std::unique_lock<std::recursive_mutex> env_lock(plugin_mutex);
+    loading = plugin_manager->PluginLoading();
+  }
+  if (loading.empty())
+    name_to_register = filter;
+  else
+    name_to_register = loading + "_" + filter;
+
+  name_to_register = NormalizeString(name_to_register);
+
+  FilterPropMap[name_to_register].push_back(PropEntry{ std::string(key), value, mode, {}, AVSValue() });
+}
+
+void ScriptEnvironment::SetFilterPropConditional(const char* filter, const char* param_name,
+  const AVSValue& param_match, const char* key, const AVSValue& value, int mode)
+{
+  assert(filter != nullptr && *filter != '\0');
+  assert(param_name != nullptr && *param_name != '\0');
+  assert(key != nullptr);
+
+  if (!isValidVSMapKey(std::string(key)))
+    ThrowError("SetFilterProp: invalid property key '%s'. Must start with a letter or underscore, "
+               "followed only by letters, digits and underscores.", key);
+
+  if (mode != AVSPropAppendMode::PROPAPPENDMODE_REPLACE
+    && mode != AVSPropAppendMode::PROPAPPENDMODE_APPEND
+    && mode != AVSPropAppendMode::PROPAPPENDMODE_TOUCH)
+    ThrowError("SetFilterProp: invalid mode %d for filter '%s', key '%s'.", mode, filter, key);
+
+  std::string name_to_register;
+  std::string loading;
+  {
+    std::unique_lock<std::recursive_mutex> env_lock(plugin_mutex);
+    loading = plugin_manager->PluginLoading();
+  }
+  if (loading.empty())
+    name_to_register = filter;
+  else
+    name_to_register = loading + "_" + filter;
+
+  name_to_register = NormalizeString(name_to_register);
+
+  FilterPropMap[name_to_register].push_back(PropEntry{ std::string(key), value, mode,
+                                                        std::string(param_name), param_match });
+}
+
+void ScriptEnvironment::SetFilterPropPassthrough(const char* filter)
+{
+  assert(filter != nullptr && *filter != '\0');
+
+  std::string name_to_register;
+  std::string loading;
+  {
+    std::unique_lock<std::recursive_mutex> env_lock(plugin_mutex);
+    loading = plugin_manager->PluginLoading();
+  }
+  if (loading.empty())
+    name_to_register = filter;
+  else
+    name_to_register = loading + "_" + filter;
+
+  FilterPropPassthroughSet.insert(NormalizeString(name_to_register));
+}
+
+const char* ScriptEnvironment::GetFilterProps()
+{
+  std::string json = "[\n";
+  bool first = true;
+  for (const auto& kv : FilterPropMap) {
+    for (const auto& entry : kv.second) {
+      if (!first) json += ",\n";
+      first = false;
+      json += "  {\"filter\":\"" + kv.first + "\",\"key\":\"" + entry.key + "\"";
+      if (!entry.param_name.empty()) {
+        json += ",\"when_param\":\"" + entry.param_name + "\",\"when_value\":";
+        // param_match can be a scalar or an alias array
+        auto serializeScalar = [&](const AVSValue& v) -> std::string {
+          if (v.IsString()) return "\"" + std::string(v.AsString()) + "\"";
+          if (v.IsInt())    return std::to_string(v.AsLong());
+          if (v.IsFloat())  return double_to_string(v.AsFloat());
+          if (v.IsBool())   return v.AsBool() ? "true" : "false";
+          return "null";
+        };
+        if (entry.param_match.IsArray()) {
+          json += "[";
+          for (int j = 0; j < entry.param_match.ArraySize(); ++j) {
+            if (j > 0) json += ",";
+            json += serializeScalar(entry.param_match[j]);
+          }
+          json += "]";
+        } else {
+          json += serializeScalar(entry.param_match);
+        }
+      }
+      json += ",";
+      if (entry.value.IsFunction()) {
+        json += "\"type\":\"function\",\"value\":null";
+      } else if (entry.value.IsInt()) {
+        json += "\"type\":\"int\",\"value\":" + std::to_string(entry.value.AsLong());
+      } else if (entry.value.IsBool()) {
+        // bool values are converted to int at registration; this branch is a safety net
+        json += "\"type\":\"int\",\"value\":" + std::to_string(entry.value.AsBool() ? 1 : 0);
+      } else if (entry.value.IsFloat()) {
+        json += "\"type\":\"float\",\"value\":" + double_to_string(entry.value.AsFloat());
+      } else if (entry.value.IsString()) {
+        std::string escaped;
+        for (unsigned char c : std::string(entry.value.AsString())) {
+          if      (c == '"')  escaped += "\\\"";
+          else if (c == '\\') escaped += "\\\\";
+          else if (c == '\n') escaped += "\\n";
+          else if (c == '\r') escaped += "\\r";
+          else                escaped += c;
+        }
+        json += "\"type\":\"string\",\"value\":\"" + escaped + "\"";
+      } else if (!entry.value.Defined()) {
+        json += "\"type\":\"capture\",\"value\":null"; // undefined(): capture from named call arg
+      } else {
+        json += "\"type\":\"unknown\",\"value\":null";
+      }
+      json += ",\"mode\":" + std::to_string(entry.mode) + "}";
+    }
+  }
+  json += "\n]";
+  return threadEnv->SaveString(json.c_str(), (int)json.size());
 }
 
 MtMode ScriptEnvironment::GetFilterMTMode(const Function* filter, bool* is_forced) const
@@ -5225,6 +5408,101 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
   }
   bool isSourceFilter = !foundClipArgument;
 
+  // Capture call-time parameter values for filter-prop injection.
+  // Must run before funcCtor (which moves args3) so we can read args3 here.
+  // Using args3 (by now it is fully resolved) lets us match both positional and named call args.
+  // For 99.9% of filters (not in FilterPropMap) this is just one fast O(1) map lookup.
+  // Memo: f->param_types is the full function parameter signature.
+  const std::vector<PropEntry>* prop_entries_to_inject = nullptr;
+  std::vector<PropEntry> captured_entries;
+  if (f->name != nullptr) {
+    const std::string fname_for_prop = NormalizeString(f->canon_name ? f->canon_name : f->name);
+    auto prop_it = FilterPropMap.find(fname_for_prop);
+    if (prop_it == FilterPropMap.end() && f->canon_name != nullptr)
+      prop_it = FilterPropMap.find(NormalizeString(f->name));
+    if (prop_it != FilterPropMap.end()) {
+      bool needs_capture = false;
+      for (const auto& e : prop_it->second)
+        if (!e.value.Defined() || !e.param_name.empty()) { needs_capture = true; break; }
+      if (needs_capture) {
+        // Scan f->param_types for a [name]type parameter, return its args3 index or -1.
+        // Works for both positional and named call args because args3 is fully resolved.
+        auto findParamIdx = [&](const char* pname) -> int {
+          int idx = 0;
+          for (const char* p = f->param_types; *p; ++p) {
+            if (*p == '*' || *p == '+') continue; // modifier, doesn't add a new slot
+            if (*p == '[') {
+              ++p;
+              const char* q = strchr(p, ']');
+              if (!q) break;
+              if (!_strnicmp(pname, p, q - p) && strlen(pname) == size_t(q - p))
+                return idx; // found: args3[idx] holds this param's value
+              p = q + 1;    // advance to type char, outer ++p moves past it
+            }
+            idx++;
+          }
+          return -1;
+        };
+        auto scalarMatch = [](const AVSValue& actual, const AVSValue& candidate) -> bool {
+          if (actual.IsString() && candidate.IsString())
+            return _stricmp(actual.AsString(), candidate.AsString()) == 0;
+          // bool and int are interchangeable: true==1, false==0
+          if ((actual.IsInt() || actual.IsBool()) && (candidate.IsInt() || candidate.IsBool())) {
+            int64_t a = actual.IsInt()    ? actual.AsLong()             : (actual.AsBool()    ? 1LL : 0LL);
+            int64_t c = candidate.IsInt() ? candidate.AsLong()          : (candidate.AsBool() ? 1LL : 0LL);
+            return a == c;
+          }
+          return (actual.IsFloat() && candidate.IsFloat() &&
+                  actual.AsFloat() == candidate.AsFloat());
+        };
+        captured_entries = prop_it->second; // copy to resolve
+        for (auto& entry : captured_entries) {
+          if (!entry.param_name.empty()) {
+            // Conditional: find formal param 'param_name' in args3 and compare to param_match.
+            // param_match may be a scalar or an alias array (any element satisfies).
+            // Works for positional and named call sites alike.
+            int idx = findParamIdx(entry.param_name.c_str());
+            if (idx < 0 || idx >= (int)args3.size() || !args3[idx].Defined()) {
+              entry.key.clear(); // param not in signature or not provided: skip
+            } else {
+              const AVSValue& actual = args3[idx];
+              bool matched = false;
+              if (entry.param_match.IsArray()) {
+                for (int j = 0; j < entry.param_match.ArraySize() && !matched; ++j)
+                  matched = scalarMatch(actual, entry.param_match[j]);
+              } else {
+                matched = scalarMatch(actual, entry.param_match);
+              }
+              if (!matched)
+                entry.key.clear(); // condition not met: skip
+            }
+          } else if (!entry.value.Defined()) {
+            // Unconditional capture: find formal param named entry.key in args3.
+            int idx = findParamIdx(entry.key.c_str());
+            if (idx >= 0 && idx < (int)args3.size() && args3[idx].Defined())
+              entry.value = args3[idx];
+            // Still undefined: param not found or not passed; skipped at injection
+          }
+        }
+        prop_entries_to_inject = &captured_entries;
+      } else {
+        prop_entries_to_inject = &(prop_it->second); // all entries have static values
+      }
+    }
+  }
+
+  // Capture passthrough source clip before funcCtor moves args3.
+  // Only set when the filter is registered in FilterPropPassthroughSet AND args3[0] is a clip.
+  PClip prop_passthrough_src;
+  if (f->name != nullptr) {
+    const std::string fname_pt = NormalizeString(f->canon_name ? f->canon_name : f->name);
+    bool in_set = FilterPropPassthroughSet.count(fname_pt) > 0;
+    if (!in_set && f->canon_name != nullptr)
+      in_set = FilterPropPassthroughSet.count(NormalizeString(f->name)) > 0;
+    if (in_set && !args3.empty() && args3[0].IsClip())
+      prop_passthrough_src = args3[0].AsClip();
+  }
+
   auto call_env = f->isPluginAvs25 || f->isPluginPreV11C ? nullptr : threadEnv.get();
   auto call_env25 = f->isPluginAvs25 ? threadEnv.get()->GetEnv25() : nullptr;
   auto call_envPreV11C = f->isPluginPreV11C ? threadEnv.get()->GetEnvPreV11C() : nullptr;
@@ -5249,6 +5527,22 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
 #ifdef _DEBUG
     _RPT1(0, "ScriptEnvironment::Invoke done funcCtor->InstantiateFilter %s\r\n", name);
 #endif
+    if ((*result).IsClip()) {
+      // PropPassthrough: forward input frame properties for old filters that drop them.
+      // Inserted before SetFilterProp entries so specific injections override inherited props.
+      if (prop_passthrough_src)
+        *result = new PropPassthrough((*result).AsClip(), prop_passthrough_src, threadEnv.get());
+      // property injection
+      if (prop_entries_to_inject != nullptr) {
+        for (const auto& entry : *prop_entries_to_inject) {
+          if (entry.key.empty()) continue;
+          if (!entry.value.Defined()) continue;
+          const char* saved_key = threadEnv->SaveString(entry.key.c_str());
+          AVSValue prop_args[4] = { *result, AVSValue(saved_key), entry.value, AVSValue(entry.mode) };
+          *result = SetProperty::Create(AVSValue(prop_args, 4), (void*)0, threadEnv.get());
+        }
+      }
+    }
   }
   else if (funcCtor->IsScriptFunction())
   {
@@ -5264,6 +5558,19 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
 #ifdef _DEBUG
     _RPT1(0, "ScriptEnvironment::Invoke done funcCtor->InstantiateFilter %s\r\n", name);
 #endif
+    if ((*result).IsClip()) {
+      if (prop_passthrough_src)
+        *result = new PropPassthrough((*result).AsClip(), prop_passthrough_src, threadEnv.get());
+      if (prop_entries_to_inject != nullptr) {
+        for (const auto& entry : *prop_entries_to_inject) {
+          if (entry.key.empty()) continue;
+          if (!entry.value.Defined()) continue;
+          const char* saved_key = threadEnv->SaveString(entry.key.c_str());
+          AVSValue prop_args[4] = { *result, AVSValue(saved_key), entry.value, AVSValue(entry.mode) };
+          *result = SetProperty::Create(AVSValue(prop_args, 4), (void*)0, threadEnv.get());
+        }
+      }
+    }
   }
   else
   {
@@ -5399,6 +5706,25 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
         {
           OneTimeLogTicket ticket(LOGTICKET_W1006, f);
           LogMsgOnce(ticket, LOGLEVEL_INFO, "Ignoring unnecessary MT-mode specification for %s() by script.", f->canon_name);
+        }
+      }
+
+      // Auto-inject registered frame properties for this filter, outside !instantiated_clip_unaltered:
+      // rules apply even when the filter returned a parameter clip unaltered.
+      // PropPassthrough wraps first so specific SetFilterProp entries override inherited props.
+      if ((*result).IsClip()) {
+        if (prop_passthrough_src)
+          *result = new PropPassthrough((*result).AsClip(), prop_passthrough_src, threadEnv.get());
+        // prop_entries_to_inject was resolved before InstantiateFilter(); undefined entries are
+        // ones where capture-from-param failed (no matching named arg) and are skipped here.
+        if (prop_entries_to_inject != nullptr) {
+          for (const auto& entry : *prop_entries_to_inject) {
+            if (entry.key.empty()) continue;        // conditional entry: param did not match
+            if (!entry.value.Defined()) continue;   // capture-from-param: no named arg matched
+            const char* saved_key = threadEnv->SaveString(entry.key.c_str());
+            AVSValue prop_args[4] = { *result, AVSValue(saved_key), entry.value, AVSValue(entry.mode) };
+            *result = SetProperty::Create(AVSValue(prop_args, 4), (void*)0, threadEnv.get());
+          }
         }
       }
 

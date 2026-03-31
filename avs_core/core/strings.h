@@ -58,6 +58,10 @@ std::string Utf8ToAnsi(const char* s_utf8);
 
 std::string GetFullPathNameWrapUtf8(const std::string& f);
 
+// Converts a double to string using the "C" locale (always '.' as decimal
+// separator), matching the behaviour of String() and AVSValue_to_string().
+std::string double_to_string(double d);
+
 size_t str_utf8_size(const std::string& s);
 std::string U16_to_utf8(uint16_t u16);
 std::string charToUtf8(const char* text, bool utf8);
