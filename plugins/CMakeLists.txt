@@ -13,35 +13,48 @@ if (WIN32)
   #option(BUILD_VFAPIFILTER "Build VFAPIFilter plugin" ON)
 endif()
 
-include(FindDevIL)
-if(DevIL_FOUND)
+# DevIL detection: skip auto detection if paths are pre-supplied via -DIL_LIBRARIES=...
+if(IL_LIBRARIES AND IL_INCLUDE_DIR)
+  message(STATUS "DevIL paths pre-supplied, skipping auto-detection.")
+  set(DevIL_FOUND TRUE)
   set(DEVIL_PLUGIN_STATE ON)
 else()
-  MESSAGE(WARNING "DevIL library not found. ImageSeq plugin will not be built.")
-  set(DEVIL_PLUGIN_STATE OFF)
+  include(FindDevIL) # official CMake module
+  if(DevIL_FOUND)
+    set(DEVIL_PLUGIN_STATE ON)
+  else()
+    MESSAGE(WARNING "DevIL library not found. ImageSeq plugin will not be built.")
+    set(DEVIL_PLUGIN_STATE OFF)
+  endif()
 endif()
 
-find_package(PkgConfig)
-if(PkgConfig_FOUND)
-  pkg_check_modules(SOUNDTOUCH soundtouch)
-endif()
-
-if(SOUNDTOUCH_FOUND)
+# SoundTouch detection: skip auto-detection if paths are pre-supplied via -DSOUNDTOUCH_LINK_LIBRARIES=...
+if(SOUNDTOUCH_LINK_LIBRARIES AND SOUNDTOUCH_INCLUDE_DIRS)
+  message(STATUS "SoundTouch paths pre-supplied, skipping auto-detection.")
   set(SOUNDTOUCH_PLUGIN_STATE ON)
 else()
-  # check to see if SoundTouch's CMake files were installed and whether the library itself exists
-  MESSAGE(WARNING "SoundTouch not found by pkg-config, falling back to CMake detection")
-  find_package(SoundTouch)
-  find_library(SOUNDTOUCH SoundTouch PATH ${SoundTouch_LIBRARY_DIRS})
-  if(SoundTouch_FOUND)
-    # override the SOUNDTOUCH_LINK_LIBRARIES and SOUNDTOUCH_INCLUDE_DIRS variables
-    # that pkg-config would have set, and allow these to be overridden at configure time as well
-    set(SOUNDTOUCH_LINK_LIBRARIES ${SOUNDTOUCH} CACHE PATH "Path to SoundTouch library")
-    set(SOUNDTOUCH_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include/soundtouch CACHE PATH "Path to SoundTouch headers")
+  find_package(PkgConfig)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(SOUNDTOUCH soundtouch)
+  endif()
+
+  if(SOUNDTOUCH_FOUND)
     set(SOUNDTOUCH_PLUGIN_STATE ON)
   else()
-    MESSAGE(WARNING "SoundTouch library not found. TimeStretch plugin will not be built.")
-    set(SOUNDTOUCH_PLUGIN_STATE OFF)
+    # check to see if SoundTouch's CMake files were installed and whether the library itself exists
+    MESSAGE(WARNING "SoundTouch not found by pkg-config, falling back to CMake detection")
+    find_package(SoundTouch)
+    find_library(SOUNDTOUCH SoundTouch PATH ${SoundTouch_LIBRARY_DIRS})
+    if(SoundTouch_FOUND)
+      # override the SOUNDTOUCH_LINK_LIBRARIES and SOUNDTOUCH_INCLUDE_DIRS variables
+      # that pkg-config would have set, and allow these to be overridden at configure time as well
+      set(SOUNDTOUCH_LINK_LIBRARIES ${SOUNDTOUCH} CACHE PATH "Path to SoundTouch library")
+      set(SOUNDTOUCH_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include/soundtouch CACHE PATH "Path to SoundTouch headers")
+      set(SOUNDTOUCH_PLUGIN_STATE ON)
+    else()
+      MESSAGE(WARNING "SoundTouch library not found. TimeStretch plugin will not be built.")
+      set(SOUNDTOUCH_PLUGIN_STATE OFF)
+    endif()
   endif()
 endif()
 
