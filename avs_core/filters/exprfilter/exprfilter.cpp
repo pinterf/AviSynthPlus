@@ -130,6 +130,16 @@
 #include <sys/mman.h>
 #endif
 
+#ifdef XP_TLS
+#ifdef MSVC_PURE
+// v141_xp workaround: disabling /O2 global optimizations reduces build time
+// from 56 minutes to 48 seconds.
+#pragma optimize("g", off) // disables global optimizations (e.g. /O2 max opt,speed)
+#pragma optimize("t", on) // favor speed /Ot
+#pragma auto_inline(on) // enable aggressive inlining, equivalent of /Ob2
+#endif
+#endif
+
 #ifdef VS_TARGET_CPU_X86
 
 //#define TEST_AVX2_CODEGEN_IN_AVX
@@ -732,7 +742,7 @@ float fast_tanf(float x) {
   // Check proximity to asymptotes
   const float asympt_limit = 0.8f;
   float distToAsymptote = halfPI - abs_y;
-  // If very close to ±polyPI/2, use asymptotic approximation
+  // If very close to Â±polyPI/2, use asymptotic approximation
   if (distToAsymptote < asympt_limit) {
     // The tangent function approaches 1/distToAsymptote as y approaches +/-polyPI/2
     // Improved coefficients based on curve fitting to better match std::tan
@@ -7248,3 +7258,10 @@ Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector
   }
 
 }
+
+#ifdef XP_TLS
+#ifdef MSVC_PURE
+// end of v141_xp toolset ultra slow build workaround
+#pragma optimize("", on)
+#endif
+#endif
