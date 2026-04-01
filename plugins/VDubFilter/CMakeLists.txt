@@ -15,6 +15,7 @@ list (APPEND SourceFiles
     "vdvideofilt.h"
 )
 add_library(${ProjectName} SHARED ${SourceFiles})
+set_property(GLOBAL APPEND PROPERTY BUILT_TARGETS ${ProjectName})
 set_target_properties(${ProjectName} PROPERTIES "OUTPUT_NAME" ${PluginName})
 if (MINGW)
   set_target_properties(${ProjectName} PROPERTIES PREFIX "")
