@@ -337,7 +337,7 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
     masked_merge_float_fn_t* blend_fn_luma   = get_overlay_blend_masked_float_fn(cpuFlags, false, placement, vi_internal);
     masked_merge_float_fn_t* blend_fn_chroma =
       use_scratch_path ? blend_fn_luma
-      : get_overlay_blend_masked_float_fn(cpuFlags, true, placement, vi_internal);
+      : get_overlay_blend_masked_float_fn(cpuFlags, false, placement, vi_internal);
 
     if (use_scratch_path) {
       // Luma plane (if applicable)
@@ -443,7 +443,7 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
     masked_merge_fn_t* blend_fn_luma   = get_overlay_blend_masked_fn(cpuFlags, false, placement, vi_internal);
     masked_merge_fn_t* blend_fn_chroma =
       use_scratch_path ? blend_fn_luma
-      : get_overlay_blend_masked_fn(cpuFlags, true, placement, vi_internal);
+      : get_overlay_blend_masked_fn(cpuFlags, false, placement, vi_internal);
 
     if (use_scratch_path) {
       // Luma plane (if applicable)
