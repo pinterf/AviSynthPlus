@@ -145,8 +145,29 @@ Load a YUV420 jpg image and convert it to YUV444 and save it as an ebmp::
     ConvertToYUV444(ChromaInPlacement="MPEG1") # "MPEG2" for YUV422 JPGs
     ImageWriter("GoldPetals-YUV444", type="ebmp")
 
+Convert a clip to 4:4:0 (YUV440) and round-trip it through an ebmp. A 16-bit,
+3-plane ebmp is ambiguous between YV16 (4:2:2) and YUV440, so *pixel_type*
+must be given on forced read as 440 (default is YV16) (see :doc:`ImageReader <imagesource>`)::
+
+    FFImageSource("GoldPetals.jpg")
+    ConvertToYUV440()
+    ImageWriter("GoldPetals-YUV440", type="ebmp")
+
+    # ...in another script, read the single written frame back:
+    ImageSource("GoldPetals-YUV440000000.ebmp", pixel_type="YUV440")
+
+Convert a clip to 4:1:0 (YUV410) and round-trip it through an ebmp. A 9-bit,
+3-plane ebmp is unambiguous, so no *pixel_type* is needed on read::
+
+    FFImageSource("GoldPetals.jpg")
+    ConvertToYUV410()
+    ImageWriter("GoldPetals-YUV410", type="ebmp")
+
+    # ...in another script, read the single written frame back:
+    ImageSource("GoldPetals-YUV410000000.ebmp")
+
 See the :doc:`ImageReader <imagesource>` page for more information on why the
-JPGs in the last two examples were loaded with `FFImageSource`_ instead of the
+JPGs in these examples were loaded with `FFImageSource`_ instead of the
 internal ImageReader filter.
 
 Changelog
@@ -155,6 +176,8 @@ Changelog
 +-----------------+------------------------------------------------------------------+
 | Version         |                                                                  |
 +=================+==================================================================+
+| AviSynth+ 3.7.6 | Add YUV440 (4:4:0) and YUV410 (4:1:0) round-trip examples.       |
++-----------------+------------------------------------------------------------------+
 | AviSynth+ r2768 | Fix: ImageReader/Writer: path "" means current directory.        |
 +-----------------+------------------------------------------------------------------+
 | AviSynth+ r2502 | Fix: ImageWriter crash when no '.' in filename.                  |
@@ -181,7 +204,7 @@ Changelog
 | AviSynth 2.5.1  | Added ImageWriter filter in limited form.                        |
 +-----------------+------------------------------------------------------------------+
 
-$Date: 2022/03/24 12:22:43 $
+$Date: 2026/09/14 11:09:00 $
 
 .. _DevIL library:
     https://github.com/DentonW/DevIL

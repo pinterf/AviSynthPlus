@@ -57,13 +57,18 @@ Changelog
 +-----------------+--------------------------------------------------------------------------+
 | Version         | Changes                                                                  |
 +=================+==========================================================================+
+| v3.7.6          | Horizontal/VerticalReduceBy2: fixed a crash for 4:1:0 sources near the   |
+|                 | minimum reducible size (a chroma plane could underflow to a huge invalid |
+|                 | row count); also relaxed the overly conservative minimum-size check.     |
+|                 | No longer rejects small but valid clips (e.g. a height=2 4:4:4 source).  |
++-----------------+--------------------------------------------------------------------------+
 | AviSynth+ r2487 | Horizontal/VerticalReduceBy2: add support for RGB48/64, planar RGB(A)    |
 |                 | and YUV(A).                                                              |
 +-----------------+--------------------------------------------------------------------------+
 | AviSynth+ r2290 | Horizontal/VerticalReduceBy2: add 16/32 bit support.                     |
 +-----------------+--------------------------------------------------------------------------+
 
-$Date: 2023/01/20 19:19:07 $
+$Date: 2026/09/15 17:43:00 $
 
 .. _"ReduceBy2() introduces chroma shift":
     https://forum.doom9.org/showthread.php?t=143692

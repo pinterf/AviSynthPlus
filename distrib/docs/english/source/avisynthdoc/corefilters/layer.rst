@@ -111,7 +111,8 @@ Note that some modes can be similar to :doc:`Overlay <overlay>`, but the two fil
     |          |                                                 |   (128d for 8-bit integer, 0.0 for float). A fully bright overlay Y (max) leaves the base unchanged.        |
     |          |                                                 |                                                                                                             |
     |          |                                                 | | The result matches ``Overlay(mode="multiply")`` within ±1 LSB for all bit depths and all 4:2:0 / 4:2:2    |
-    |          |                                                 |   chroma placements.                                                                                        |
+    |          |                                                 |   chroma placements (not independently re-verified for 4:1:1/4:4:0/4:1:0, though it shares the same         |
+    |          |                                                 |   chroma-mask code path as "darken"/"lighten" below, which are).                                            |
     |          |                                                 |                                                                                                             |
     |          |                                                 | | **Difference from "mul":** "mul" multiplies each output plane independently by the corresponding overlay  |
     |          |                                                 |   plane (Y×Y, U×U, V×V), and works for RGB too. "mulovr" uses only the overlay Y to drive all planes,       |
@@ -127,7 +128,8 @@ Note that some modes can be similar to :doc:`Overlay <overlay>`, but the two fil
     |          |                                                 | |   ``result_UV = (base_UV * (max − darken_factor) + neutral * darken_factor) / max``                       |
     |          |                                                 |                                                                                                             |
     |          |                                                 | | opacity/alpha: same semantics as other modes (alpha-aware overlay clip, ``opacity`` parameter).           |
-    |          |                                                 | | ``placement`` is respected for correct chroma-mask downsampling in 4:2:0 and 4:2:2 formats.               |
+    |          |                                                 | | ``placement`` is respected for correct chroma-mask downsampling in all supported subsampled formats       |
+    |          |                                                 |   (4:2:0, 4:2:2, 4:1:1, 4:4:0, 4:1:0).                                                                      |
     +----------+-------------------------------------------------+-------------------------------------------------------------------------------------------------------------+
     | fast     |                                                 | Like "add", but without masking. ``use_chroma`` must be true; ``opacity``, ``level`` and ``threshold``      |
     |          |                                                 | are not used. The result is simply the average of ``base_clip`` and ``overlay_clip``.                       |
@@ -257,19 +259,28 @@ Note that some modes can be similar to :doc:`Overlay <overlay>`, but the two fil
 
 .. describe:: placement
 
-    Chroma placement for 4:2:0 and 4:2:2 YUV formats.
-    
-    default=``"mpeg2"`` 
+    Chroma placement for subsampled planar YUV formats: 4:2:0, 4:2:2, 4:1:1, 4:4:0
+    and 4:1:0 (not available for YUY2).
+
+    default=``"mpeg2"``
 
     Possible values: ``"mpeg2"`` (default), ``"mpeg1"``, ``"top_left"``.
 
     Used in "mul", "mulovr", "darken", "lighten", "add" and "subtract" modes with planar YUV
-    4:2:0 or 4:2:2 color spaces (not available for YUY2) to correctly filter the
-    luma-resolution alpha mask down to chroma resolution for the U and V planes.
+    color spaces to correctly filter the luma-resolution alpha mask down to chroma
+    resolution for the U and V planes.
 
     * ``"mpeg2"`` — left-cosited H, centred V (MPEG-2 / H.264 default; triangle filter).
     * ``"mpeg1"`` — centred H+V (MPEG-1 / JPEG; box filter).
     * ``"top_left"`` — left-cosited H+V (HEVC / AV1 / UHD default; point sample, fastest).
+
+    **4:1:1, 4:4:0 and 4:1:0** have no standard chroma siting convention, so only
+    two distinct behaviors exist per format instead of three: ``"mpeg2"`` and
+    ``"top_left"`` both mean a point sample, and only ``"mpeg1"`` means a centered
+    box average — same grouping for all three ratios. See
+    :doc:`Overlay <overlay>`'s ``placement`` documentation for the full
+    per-format siting table and rationale (Layer shares the same underlying
+    chroma-mask logic).
 
 Other notes
 -----------

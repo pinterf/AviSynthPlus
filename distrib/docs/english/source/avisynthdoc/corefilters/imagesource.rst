@@ -37,12 +37,12 @@ invoked. When true, execution skips directly to DevIL processing. You should
 only need to use this if you have BMP files you don't want read by
 ``ImageReader``'s internal parser.
 
-*NOTE* : DevIL version 1.6.6 as shipped with Avisynth does not correctly
-support DIB/BMP type files that use a pallette, these include 8 bit RGB,
-Monochrome, RLE8 and RLE4. Because the failure is usually catastrophic, from
-revision 2.56, internal BMP processing does not automatically fail over to
-DevIL processing. Forcing DevIL processing for these file types is currently
-not recommended.
+*NOTE* : DevIL versions before 1.7.8 do not correctly support DIB/BMP type
+files that use a palette, these include 8 bit RGB, Monochrome, RLE8 and RLE4.
+Because the failure is usually catastrophic, from revision 2.56, internal BMP
+processing does not automatically fail over to DevIL processing. Forcing DevIL
+processing for these file types with an old DevIL build is currently not
+recommended.
 
 *info* = false: when true, the source filename and DevIL version is written to
 each video frame (added in *v2.55*).
@@ -50,6 +50,14 @@ each video frame (added in *v2.55*).
 *pixel_type* = "rgb24": Allow the output pixel format to be specified, both
 rgb24 and rgb32 are supported. The alpha channel is loaded only for rgb32 and
 only if DevIL supports it for the loaded image format. (added in *v2.56*).
+
+For AviSynth's internal EBMP reader specifically, *pixel_type* is only needed
+to disambiguate a 3-plane file whose bit-count average is shared by two
+different subsampling ratios: 12 bits/pixel means YV12 (4:2:0) unless
+*pixel_type* is explicitly ``"YV411"`` (4:1:1); 16 bits/pixel means YV16
+(4:2:2) unless *pixel_type* is explicitly ``"YUV440"`` (4:4:0) (added in
+*v3.7.6*). A 9 bits/pixel file is unambiguously YUV410 (4:1:0), needing no
+disambiguation.
 
 The resulting video clip colorspace is RGB if DevIL is used, otherwise it is
 whatever colorspace an EBMP sequence was written from (all AviSynth formats
@@ -70,13 +78,12 @@ RGB32 by default. If the images in the animation have unequal dimensions,
 then the dimension of the first image is taken and the remaining images are
 padded with black pixels below and or to the right.
 
-1.7.8 DevIL.dll can be downloaded `here`_. Just put the DevIL.dll in your
-system folder (it will overwrite the 1.6.6 DevIL.dll which comes with
-AviSynth). Be sure to use the non-unicode version, because the other one
-will result in crashes when loading pictures.
-
-DevIL.dll 1.7.8 requires the 2005 VC runtime libraries to be correctly
-installed: `Visual C++ 2005 SP1 Redistributable Package (x86)`_.
+Since AviSynth+ 3.7.4, DevIL is no longer bundled with AviSynth+ itself — it's
+built and linked at compile time by whoever builds AviSynth+, so the DevIL
+version available to ``ImageSource``/``ImageWriter`` depends on that build. See
+the `DevIL library`_ and the :doc:`build dependency guide
+<../contributing/avsplus_external_deps_guide_manual>` for how to obtain or
+build a current version.
 
 ::
 
@@ -121,17 +128,20 @@ installed: `Visual C++ 2005 SP1 Redistributable Package (x86)`_.
     supported). See :doc:`ImageWriter <imagewriter>` for more details.
 -   Greyscale BMPs are not read and written correctly by DevIL. They
     should be opened using **use_DevIL=false**.
--   DevIL version 1.6.7 as shipped with AviSynth does not correctly
-    support DIB/BMP type files that use a pallette, these include 8 bit RGB,
-    Monochrome, RLE8 and RLE4. Loading those images requires DevIL version
-    1.7.8. (Because the failure is usually catastrophic, from revision v2.56,
+-   DevIL versions before 1.7.8 do not correctly support DIB/BMP type files
+    that use a pallette, these include 8 bit RGB, Monochrome, RLE8 and RLE4.
+    (Because the failure is usually catastrophic, from revision v2.56,
     internal BMP processing does not automatically fail over to DevIL
-    processing. Forcing DevIL processing with the shipped DevIL version for
-    these file types is currently not recommended.)
+    processing. Forcing DevIL processing with an old DevIL build for these
+    file types is currently not recommended.)
 
 +---------+-----------------------------------------------------------+
 | Changes |                                                           |
 +=========+===========================================================+
+| v3.7.6  | - EBMP: added 4:4:0 (YUV440, 16 bit) and 4:1:0 (YUV410, 9 |
+|         |   bit) 3-plane support; pixel_type disambiguates the      |
+|         |   YV16/YUV440 16-bit collision (YV16 stays default).      |
++---------+-----------------------------------------------------------+
 | v2.60   | - Added ImageSourceAnim.                                  |
 |         | - Support user upgrade to 1.7.8 DevIL.dll                 |
 |         |   (need to manage CRT dependancies).                      |
@@ -143,11 +153,9 @@ installed: `Visual C++ 2005 SP1 Redistributable Package (x86)`_.
 |         |   all color formats.                                      |
 +---------+-----------------------------------------------------------+
 
-$Date: 2012/10/10 13:41:51 $
+$Date: 2026/09/14 11:12:00 $
 
 .. _sprintf syntax:
     http://www.cplusplus.com/reference/clibrary/cstdio/sprintf/
-.. _here:
-    https://sourceforge.net/projects/openil/files/DevIL%20Win32/1.7.8/DevIL-EndUser-x86-1.7.8.zip
-.. _Visual C++ 2005 SP1 Redistributable Package (x86):
-    http://www.microsoft.com/downloads/details.aspx?familyid=200B2FD9-AE1A-4A14-984D-389C36F85647&displaylang=en
+.. _DevIL library:
+    https://github.com/DentonW/DevIL

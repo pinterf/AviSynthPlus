@@ -192,12 +192,15 @@ the proper colorspace.
 
     Full support list.
     Non *-marked formats (FourCC column) are supported since r2724.
+    I411, YVU9, I410, I440 are supported since 3.7.6.
 
     'pixel_type' Avs+ Format   FourCC(s) for ICDecompressQuery
     YV24         YV24          *YV24
     YV16         YV16          *YV16
     YV12         YV12          *YV12
-    YV411        YV411         *Y41B
+    YV411        YV411         *Y41B      I411
+    YUV410       YUV410        YVU9       I410
+    YUV440       YUV440        I440
     YUY2         YUY2          *YUY2
     RGBP10       RGBP10        G3[0][10]  r210  R10k
     r210         RGBP10        r210
@@ -293,6 +296,8 @@ Changelog
 +-----------------+----------------------------------------------------+
 | Version         | Changes                                            |
 +=================+====================================================+
+| AviSynth+ 3.7.6 | Add I411, YVU9, I410, I440 (YUV440,YUV410/YUV9)    |
++-----------------+----------------------------------------------------+
 | AviSynth+ r2768 | Added utf8 filename support.                       |
 +-----------------+----------------------------------------------------+
 | AviSynth+ r2724 || Added 10+ bits new color formats.                 |
@@ -304,7 +309,7 @@ Changelog
 | AviSynth 2.5.5  | Added fourCC option.                               |
 +-----------------+----------------------------------------------------+
 
-$Date: 2022/03/14 07:32:20 $
+$Date: 2026/09/15 17:19:00 $
 
 .. _AVI:
     http://avisynth.nl/index.php/AVI

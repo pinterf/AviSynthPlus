@@ -143,6 +143,39 @@ ConvertToXXXX function
 (``ConvertToYV411`` is the 8-bit-only legacy name; ``ConvertToYUV411`` is the same
 conversion at any bit depth.)
 
+*YUV440, YUVA440*
+::
+
+    ConvertToYUV440(clip, [ string matrix, bool interlaced,
+         string ChromaInPlacement,
+         string chromaresample,
+         string ChromaOutPlacement,
+         float param1, float param2, float param3,
+         int bits, bool quality] )
+    ConvertToYUVA440(clip, [ string matrix, bool interlaced,
+         string ChromaInPlacement,
+         string chromaresample,
+         string ChromaOutPlacement,
+         float param1, float param2, float param3,
+         int bits, bool quality] )
+
+*YUV410, YUVA410*
+::
+
+    ConvertToYUV410(clip, [ string matrix, bool interlaced,
+         string ChromaInPlacement,
+         string chromaresample,
+         string ChromaOutPlacement,
+         float param1, float param2, float param3,
+         int bits, bool quality] )
+    ConvertToYUVA410(clip, [ string matrix, bool interlaced,
+         string ChromaInPlacement,
+         string chromaresample,
+         string ChromaOutPlacement,
+         float param1, float param2, float param3,
+         int bits, bool quality] )
+
+
 *Y-only*
 ::
 
@@ -193,6 +226,14 @@ Notes:
 +----------------+-----------+--------------+---------------------------------------------------------------+-------------+
 | YUVA411Pxx     | 8-16, 32  | 4:1:1:4      | chroma shared between 4 pixels + alpha                        | planar      |
 +----------------+-----------+--------------+---------------------------------------------------------------+-------------+
+| YUV440Pxx      | 8-16, 32  | 4:4:0        | chroma shared between 2 vertically stacked pixels             | planar      |
++----------------+-----------+--------------+---------------------------------------------------------------+-------------+
+| YUVA440Pxx     | 8-16, 32  | 4:4:0:4      | chroma shared between 2 vertically stacked pixels + alpha     | planar      |
++----------------+-----------+--------------+---------------------------------------------------------------+-------------+
+| YUV9,YUV410Pxx | 8-16, 32  | 4:1:0        | chroma shared between 4x4=16 pixels                           | planar      |
++----------------+-----------+--------------+---------------------------------------------------------------+-------------+
+| YUVA410Pxx     | 8-16, 32  | 4:1:0:4      | chroma shared between 4x4=16 pixels + alpha                   | planar      |
++----------------+-----------+--------------+---------------------------------------------------------------+-------------+
 | Y8,Y10-16,Y32  | 8-16, 32  | 4:0:0        | no chroma                                                     | both        |
 +----------------+-----------+--------------+---------------------------------------------------------------+-------------+
 | YUY2           | 8         | 4:2:2        | chroma shared between 2 pixels. Deprecated format, use YV16   | interleaved |
@@ -207,7 +248,8 @@ or the target placement is different from the source chroma placement read from 
 
 Such functions are ``ConvertToYV12``/``ConvertToYUV420``/``ConvertToYUVA420`` or
 ``ConvertToYV16``/``ConvertToYUV422``/``ConvertToYUVA422`` or
-``ConvertToYV411``/``ConvertToYUV411``/``ConvertToYUVA411``.
+``ConvertToYV411``/``ConvertToYUV411``/``ConvertToYUVA411`` or
+``ConvertToYUV440``/``ConvertToYUVA440`` or ``ConvertToYUV410``/``ConvertToYUVA410``.
 
 ``ConvertToRGB`` (without numeric suffix) is adaptive:
 
@@ -394,10 +436,10 @@ Syntax and parameters
 
     This form is used when:
 
-    - A **YUV → YUV** conversion is needed. Internally the two matrices are combined and
-      applied as a single pass in the 32-bit float unclipped domain, so any out-of-range
-      RGB intermediate values that would arise from a naïve chained conversion are handled
-      safely without clipping artefacts.
+    - (as of v3.7.6: not implemented, imprecise in present form; preliminary info) A **YUV → YUV** conversion 
+      is needed. Internally the two matrices are combined and applied as a single pass in the 
+      32-bit float unclipped domain, so any out-of-range RGB intermediate values that would arise 
+      from a chained conversion are handled safely without clipping artefacts.
 
       YUV→RGB→YUV conversion using the specified matrix and range for each leg::
 
@@ -482,9 +524,11 @@ Syntax and parameters
         ConvertToYV16(clip, interlaced=true)
 
 
-    Note, interlaced=true has an effect only on YV12 <-> YV16/YUY2 or YV12 <-> RGB conversions.
-    (and their high bit depth equivalents).
-    More about that can be found here: 
+    Note, interlaced=true has an effect only on YV12 <-> YV16/YUY2 or YV12 <-> RGB conversions
+    (and their high bit depth equivalents). More presicely, whenever 4:2:0 is one side of the conversion, 
+    which includes a mixed 4:2:0 <-> 4:4:0 or 4:2:0 <-> 4:1:0 conversion (but see the note 
+    under *ChromaInPlacement, ChromaOutPlacement* below for how the 4:1:0 side of that case is handled).
+    More about that can be found here:
     :doc:`Color conversions and interlaced / field-based video <../advancedtopics/interlaced_fieldbased>`.
 
 .. describe:: ChromaInPlacement, ChromaOutPlacement
@@ -507,7 +551,48 @@ Syntax and parameters
     - ``"top_left"``
       Subsampling used in UHD 4:2:0. Chroma samples are located on the top left pixel column of the group.
     - ``bottom_left`` 4:2:0 only
-    - ``bottom``   4:2:0 only 
+    - ``bottom``   4:2:0 only
+
+    .. note::
+
+       4:4:0 (``ConvertToYUV440``/``ConvertToYUVA440``) and 4:1:0
+       (``ConvertToYUV410``/``ConvertToYUVA410``) are exceptions to all of the above:
+       neither ratio has a standard broadcast chroma siting convention (no MPEG/H.26x/AV1
+       stream header ever defined one), so instead of the three-way choice above they
+       support only two distinct placements — a centered box average (``"center"``,
+       synonyms ``"mpeg1"``/``"jpeg"``), and an uncentered point sample (``"top"`` for
+       4:4:0; ``"top_left"``, also accepted as ``"top"`` or ``"left"``, for 4:1:0). No
+       other name from the list above (``"mpeg2"``, ``"dv"``, ``"bottom_left"``,
+       ``"bottom"``) is accepted for either format and throws an error if given
+       explicitly.
+
+       The point-sample value is the **default** for both (not ``"center"``) when
+       ``ChromaInPlacement``/``ChromaOutPlacement`` is left unset or set to
+       ``"auto"`` — this matches FFmpeg's ``libswscale``, which has no siting
+       awareness at all for ``YUV410P``/``YUV440P`` and always resamples them with a
+       zero (point-sample) offset, so scripts moving between the two tools see
+       consistent chroma positioning by default. Avisynth's handling is strict:
+       it does not silently ignore an incompatible placement; an explicit value must be 
+       one of the two or three names accepted for that format (or one of their aliases
+       above); any other explicit value is rejected with an error rather than silently discarded.
+
+    .. note::
+
+       **Interlaced handling for 4:4:0 and 4:1:0.** As noted under the *interlaced*
+       description above, ``interlaced=true`` only has an effect when 4:2:0 is one side of the
+       conversion — so this only matters for a mixed 4:2:0 <-> 4:4:0 or 4:2:0 <-> 4:1:0
+       conversion done with ``interlaced=true``.
+
+       - **4:4:0** shares 4:2:0's vertical subsampling factor (2), so the same top-field
+         / bottom-field chroma split 4:2:0 uses applies to 4:4:0 unchanged (just without
+         the horizontal component) — this case is handled correctly.
+       - **4:1:0** has a 4x vertical subsampling factor, so a chroma sample's 4-row group
+         splits into 2 rows from the top field and 2 from the bottom field, not 1+1 like
+         4:2:0/4:4:0. The chroma-siting model used internally can only express a single
+         siting position per field, so it cannot represent that 2-rows-per-field split at
+         all. Rather than reject the combination, ``interlaced=true`` with 4:1:0 falls
+         back to the same flat (non-field-aware) ``"center"`` position on both fields.
+         (Intentional workaround, possibly non-existent in the wild).
 
    See also the Frame properties section below.
 
@@ -575,7 +660,7 @@ Frame properties
 ----------------
 
 Since Avisynth v3.7.1 frame property (_ChromaLocation) support appears in selected filters
-(e.g. ConvertToYUV420, ConvertToYUV422, ConvertToYUV411).
+(e.g. ConvertToYUV420, ConvertToYUV422, ConvertToYUV411, ConvertToYUV440, ConvertToYUV410).
 Property can be read and/or set. A frame property can replace default behaviour of location parameters and is set 
 (or deleted) upon finishing conversion. Since a format without subsampling - such as 4:4:4 (YV24) - does not have 
 chroma location, the property is deleted automatically when converting to YUV444 or RGB.
@@ -584,15 +669,23 @@ chroma location, the property is deleted automatically when converting to YUV444
 
     * if source has _ChromaLocation frame property it will be used else the default is "mpeg2" ("left")
     * if parameter is "auto" or not given at all, ChromaInLocation will be set to the above mentioned default value
-    * if parameter is explicitely given, it will be used 
+    * if parameter is explicitely given, it will be used
+    * exception: for 4:4:0 (HxV:1x2) sources the default is "top" (not "left"), with "center"
+      as the only other accepted explicit value; for 4:1:0 (HxV:4x4) sources the default is
+      "top_left" (also accepted as "top"/"left"), again with "center" as the only
+      other accepted explicit value — see the note under ChromaInPlacement above
 
 - "ChromaOutPlacement" rules:
 
     * default is "mpeg2" ("left")
     * if parameter is "auto" or not given at all, ChromaOutLocation will be set to the above mentioned default value
-    * if parameter is explicitely given, it will be used 
+    * if parameter is explicitely given, it will be used
+    * exception: for 4:4:0 targets the default is "top" (not "left"), with "center"
+      as the only other accepted explicit value; for 4:1:0 targets the default is
+      "top_left" (also accepted as "top"/"left"), again with "center" as the only
+      other accepted explicit value — see the note under ChromaInPlacement above
 
-    Accepted values for "ChromaInPlacement" and "ChromaOutPlacement" (when source/target is a chroma subsampled format) 
+    Accepted values for "ChromaInPlacement" and "ChromaOutPlacement" (when source/target is a chroma subsampled format)
     (full list):
 
     * "left" or "mpeg2"
@@ -623,13 +716,13 @@ Conversion paths
 
 The following conversion paths occur
 
--   411/420/422 YUV planar -> RGB via YUV444
+-   411/420/422/440/410 YUV planar -> RGB via YUV444
 -   YUV planar -> YUY2 via YV16 (8 bit YUV422)
 -   YUV planar -> Y: direct
 -   Planar RGB -> 444: direct
 -   Planar RGB -> Y planar: direct
 -   Packed RGB -> Y/YUV planar: via Planar RGB(A) (A: depending on the target YUV's alpha-needs)
--   Any RGB -> 411/420/422 YUV planar via YUV444
+-   Any RGB -> 411/420/422/440/410 YUV planar via YUV444
 -   YUY2 -> Y: direct
 -   YUY2 -> Any: via YV16
 -   Any -> YUY2: via YV16
@@ -702,6 +795,7 @@ Color conversions
 |          || Extend YUV411 to all bit depths; add ConvertToYUVA411     |
 |          || Add ChromaOutPlacement to 4:1:1 (YUV411/YUVA411) functions|
 |          || 4:1:1 ChromaInPlacement: allow "center"; default to "left"|
+|          || Add ConvertToYUV(A)440 / ConvertToYUV(A)410 (4:4:0, 4:1:0)|
 +----------+------------------------------------------------------------+
 | v3.7.3   || Added "sinpow",  "sinclin2" and "userdefined2" to         |
 |          |  chromaresampler options                                   |

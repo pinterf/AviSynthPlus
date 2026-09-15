@@ -5,7 +5,7 @@ ConvertBits
 
 ::
 
-    ConvertBits(clip, int bits [, int dither, int dither_bits, bool fulls, bool fulld ] )
+    ConvertBits(clip, int bits [, bool truerange, int dither, int dither_bits, bool fulls, bool fulld ] )
 
 Changes bit depth while keeping color format the same, if possible.
 If the conversion is not possible – for example, converting RGB32 to 14bit – an error is raised.
@@ -22,6 +22,27 @@ If the conversion is not possible – for example, converting RGB32 to 14bit –
         Bit depth of output clip. If provided valid values are: 8, 10, 12, 14, 16 (integer) or 32 (floating point). 
         Parameter is optional when no bitdepth change is needed but doing only range conversion (fulls-fulld) 
         or artistic dithering (dither_bits<bit depth).
+
+.. describe:: truerange
+
+    bool  truerange = true
+
+        **Legacy parameter — avoid using it.** A workaround from the early days of
+        AviSynth+ high-bit-depth support, when only 16-bit integer storage existed
+        for anything above 8 bits and some tools put 10-bit data inside a 16-bit
+        container. Setting ``truerange=false`` makes ``ConvertBits`` treat the
+        source's *actual* bit depth as 16 regardless of what its pixel format
+        nominally says. Only meaningful for planar sources; specifying it for a
+        non-planar source is an error.
+
+        This was left undocumented on purpose for a long time, since it only exists
+        for that narrow historical case. It's documented here only because some
+        existing scripts and plugins already call ``ConvertBits`` (and
+        ``ConvertTo8bit``/``ConvertTo16bit``/``ConvertToFloat``) with positional
+        arguments and so already depend on where this parameter sits in the list.
+        New code should not use it — pass ``dither``, ``dither_bits``, ``fulls`` and
+        ``fulld`` by name instead of positionally so this parameter is skipped
+        entirely, and just leave it at its default.
 
 .. describe:: dither
 
@@ -100,8 +121,13 @@ Changelog
     :widths: auto
 
     +-----------------+---------------------------------------------------------------------------+
-    | Version         | Changes                                                                   | 
+    | Version         | Changes                                                                   |
     +=================+===========================================================================+
+    | v3.7.6          || Documented (and discouraged) the previously-undocumented 'truerange'     |
+    |                 |  parameter, kept only for scripts/plugins already relying on positional   |
+    |                 || Supports 4:4:0 and 4:1:0 formats                                         |
+    |                 || Supports 4:1:1 over 8-bits                                               |
+    +-----------------+---------------------------------------------------------------------------+
     | 3.7.1           || Support YUY2 (by autoconverting to and from YV16), support YV411         |
     |                 || "bits" parameter is not compulsory, bit depth can stay as it was         |
     |                 || much nicer output for low bit depth targets (dither_bits 1 to 7)         |
@@ -127,4 +153,4 @@ Changelog
     | Avisynth+       | First added                                                               |
     +-----------------+---------------------------------------------------------------------------+
 
-$Date: 2024/12/18 14:38:00 $
+$Date: 2026/09/15 17:46:00 $

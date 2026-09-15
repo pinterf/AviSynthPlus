@@ -221,15 +221,31 @@ Syntax and Parameters
     Default: (adaptive)
 
     * false when mode="blend" and format is RGB
-    * false when mode="blend", "luma" or "chroma" and format is YUV420/YUV422 (YV12/YV16).
-      Original format is kept throughout the whole process, no 4:4:4 conversion occurs.
+    * false when mode="blend", "luma" or "chroma" and format is YUV420, YUV422, YUV411,
+      YUV440 or YUV410 (YV12/YV16/YV411/etc., any bit depth). Original format is kept
+      throughout the whole process, no 4:4:4 conversion occurs.
     * false when mode="add" or mode="subtract" and format is RGB
-    * true for all other cases (input is converted internally to 4:4:4)
+    * true for all other cases (input is converted internally to 4:4:4) — this always
+      includes "multiply", and "add"/"subtract" on non-RGB YUV, regardless of format.
 
     When ``use444=false`` (conversionless mode) is in effect for a subsampled YUV format
-    (4:2:0 or 4:2:2) and ``greymask=true`` (default), the luma-resolution mask is
-    downsampled to chroma resolution on the fly. The ``placement`` parameter controls
-    the filter weights used for this downsampling.
+    (4:2:0, 4:2:2, 4:1:1, 4:4:0 or 4:1:0) and ``greymask=true`` (default), the
+    luma-resolution mask is downsampled to chroma resolution on the fly. The
+    ``placement`` parameter controls the filter weights used for this downsampling.
+    Overlay and mask clips that don't already match the base clip's exact format are
+    converted to match via the corresponding ``ConvertToYUV420``/``ConvertToYUV422``/
+    ``ConvertToYUV411``/``ConvertToYUV440``/``ConvertToYUV410`` call, which respects
+    chroma placement via its own ``ChromaInPlacement``/``ChromaOutPlacement`` defaults.
+    (Prior to 3.7.6, 4:2:0/4:2:2 formats used an internal 4:4:4 proxy bridge with a
+    fixed, left-aligned siting independent of ``placement``; all subsampled formats now
+    go through the same placement-aware conversion.)
+
+    Note that ``placement`` is a single value for the whole filter call. For this
+    conversionless mode it is only ever used to steer the mask's chroma downsampling;
+    it is not verified against the base or overlay clip's own actual chroma siting, nor
+    are the base and overlay clips checked against each other. If they were authored
+    with genuinely different chroma siting, this silently proceeds as if they matched.
+    Anyway, as of 3.7.6, this is not checked at all.
 
 .. describe:: condvarsuffix
 
@@ -265,38 +281,130 @@ Syntax and Parameters
 
 .. describe:: placement
 
-    Specifies the chroma sample placement for subsampled YUV formats (4:2:0 or 4:2:2).
-    Accepted values (case-insensitive): ``"mpeg2"``, ``"mpeg1"``, and ``"top_left"``.
+    Specifies the chroma sample placement for subsampled YUV formats (4:2:0, 4:2:2,
+    4:1:1, 4:4:0, or 4:1:0). Accepted values (case-insensitive): ``"mpeg2"``,
+    ``"mpeg1"``, and ``"top_left"``.
 
-    This parameter is only relevant when all three of the following are true:
+    This single value drives two different things, depending on whether the
+    internal working format ends up 4:4:4 or stays subsampled (see ``use444``):
 
-    * ``use444=false`` (conversionless mode is active for a subsampled format), AND
-    * ``greymask=true`` (default — mask luma plane is used for all chroma planes), AND
-    * the internal working format is subsampled (YUV 4:2:0 or 4:2:2).
+    * **Conversionless/native mode** (``use444=false``, ``greymask=true`` (default),
+      and the internal working format is subsampled 4:2:0/4:2:2/4:1:1/4:4:0/4:1:0):
+      the luma-resolution mask is filtered down to chroma resolution once per row
+      (shared for U and V), and the filter weights depend on the declared chroma
+      placement of the source material.
+    * **Forced 4:4:4 round trip** (``use444=true``, i.e. "multiply", "add"/"subtract"
+      on non-RGB YUV, and RGB→4:4:4 conversions for "luma"/"chroma"): whenever the
+      base clip, overlay clip, or mask don't already match the internal 4:4:4 working
+      format, ``placement`` is passed as ``ChromaInPlacement`` to the
+      ``ConvertToYUV444`` call that brings them in, and as ``ChromaOutPlacement`` to
+      the final ``ConvertToYUV420``/``ConvertToYUV422``/``ConvertToYUV411``/
+      ``ConvertToYUV440``/``ConvertToYUV410`` call that reconstructs the output
+      pixel format — so the same siting is assumed on the way in and reproduced on the
+      way out, keeping a 4:2:0→4:4:4→4:2:0 (etc.) round trip free of any chroma shift.
+      ``ConvertToYUV4xx``'s own ``ChromaInPlacement``/``ChromaOutPlacement``
+      parser is not equally permissive for all three raw names on every subsampled
+      format, though: 4:1:1 and 4:1:0 both accept ``"mpeg2"``, ``"mpeg1"`` and
+      ``"top_left"`` directly (empirically verified against all six combinations —
+      3 names × In/Out — for each). 4:4:0 is the odd one out: it has no horizontal
+      subsampling to site, and its parser only recognizes ``"center"``/``"top"`` —
+      passing ``"mpeg2"`` or ``"top_left"`` straight through throws
+      ``"4:4:0 has no standard chroma siting..."``. Overlay maps around this rather
+      than surfacing it: for any call touching a 4:4:0 clip, ``"mpeg1"`` is
+      translated to ``"center"`` and ``"mpeg2"``/``"top_left"`` are both translated
+      to ``"top"`` before the ``ConvertToYUV444``/``ConvertToYUV440`` Invoke.
 
-    When those conditions hold, the luma-resolution mask is filtered down to chroma
-    resolution once per row (shared for U and V), and the filter weights depend on
-    the declared chroma placement of the source material:
+    **4:2:0 and 4:2:2** have real, named industry conventions, so all three values
+    behave distinctly there. **4:1:1, 4:4:0, and 4:1:0** have no standard siting
+    convention, so only two distinct behaviors exist per format: ``"mpeg2"`` and
+    ``"top_left"`` always collapse to the same point-sample behavior, and only
+    ``"mpeg1"`` (the one placement that actually asks for a centered box average)
+    is distinct — the same grouping for all three formats. ``"mpeg2"`` (H
+    co-sited, V centered) reduces to ``"top_left"``'s point-sample behavior on a
+    format that subsamples horizontally (4:1:1, 4:1:0); on 4:4:0, which subsamples
+    only vertically, ``"mpeg2"``'s H-component is moot to begin with, so with no H
+    axis to be co-sited on it collapses to ``"top_left"`` there too rather than to
+    ``"mpeg1"``:
 
-    * ``"mpeg2"`` — chroma samples are co-sited with the left luma column
-      (MPEG-2 / H.264 / H.265 default; left-aligned). This is a 3-tap horizontal
-      triangle filter: ``(left + 2*centre + right) / 4``.
-      For 4:2:0 an additional vertical 2-row sum is folded in:
-      ``(left + 2*centre + right) / 8`` (summing both field rows first).
-    * ``"mpeg1"`` — chroma samples are centred between luma columns
-      (MPEG-1 / JPEG). This is a simple box average: ``(left + right) / 2``.
-      For 4:2:0 a 2×2 box average is used.
-    * ``"top_left"`` — chroma samples are co-sited both horizontally and vertically
-      with the top-left luma sample (HEVC / AV1 / UHD default). This is a point sample:
-      ``dst = src[x*2]``, taking only the left-aligned luma sample.
-      For 4:2:0 only the top row is used. This is the fastest option but introduces
-      some aliasing compared to the filtered modes.
+    .. list-table:: Effective chroma siting by format and ``placement`` value
+       :header-rows: 1
+       :widths: 10 30 30 30
 
-    When ``use444=true`` or the source is not subsampled, this parameter has no
-    effect: the mask is already at the chroma plane's full resolution (MASK444
-    mode is always used internally in those cases).
+       * - Format
+         - ``"mpeg2"``
+         - ``"mpeg1"``
+         - ``"top_left"``
+       * - 4:2:0
+         - H left-aligned (3-tap), V centered (2-row sum): ``(l+2c+r)/8``
+         - H and V centered: 2×2 box average
+         - point-sample top-left luma sample only
+       * - 4:2:2
+         - H left-aligned (3-tap): ``(l+2c+r)/4``
+         - H centered: box average ``(l+r)/2``
+         - point-sample left luma sample only
+       * - 4:1:1
+         - **= "top_left"** (point-sample, left of the 4-column block)
+         - box average over the 4-column block
+         - point-sample, left of the 4-column block
+       * - 4:4:0
+         - **= "top_left"** (point-sample, top of the 2-row block)
+         - box average over the 2-row block
+         - point-sample, top of the 2-row block
+       * - 4:1:0
+         - **= "top_left"** (point-sample, top-left of the 4×4 block)
+         - box average over the 4×4 block
+         - point-sample, top-left of the 4×4 block
 
-    Default: ``"mpeg2"``
+    The point-sample choices above match what tools with no signaled chroma siting
+    do for these three ratios (e.g. ffmpeg's ``swscale``, which has no siting
+    awareness at all for these pix_fmts and always resamples with a zero offset);
+    the "=" rows above are why the per-format default (below) only ever
+    needs to distinguish "mpeg1" from everything else, for all three of
+    4:1:1/4:4:0/4:1:0 alike.
+
+    For the **forced 4:4:4 round trip** case above, the same three names are also
+    passed straight through as raw ``ChromaInPlacement``/``ChromaOutPlacement``
+    strings to the underlying ``ConvertToYUV4xx`` calls — except that
+    ``ConvertToYUV4xx``'s own parser does not accept all three names on every
+    format, so Overlay translates where needed:
+
+    .. list-table:: ``ConvertToYUV4xx`` ChromaIn/OutPlacement acceptance
+       :header-rows: 1
+       :widths: 10 30 30 30
+
+       * - Format
+         - ``"mpeg2"``
+         - ``"mpeg1"``
+         - ``"top_left"``
+       * - 4:2:0 / 4:2:2 / 4:1:1 / 4:1:0
+         - accepted as-is
+         - accepted as-is
+         - accepted as-is
+       * - 4:4:0
+         - rejected — Overlay sends ``"top"`` instead
+         - accepted as-is (already means ``"center"``)
+         - rejected — Overlay sends ``"top"`` instead
+
+    When the internal working format is 4:4:4 already (RGB "blend"/"add"/"subtract",
+    or any already-444 source) or Y (greyscale), this parameter has no effect: there
+    is no subsampled chroma to site, on either the mask-downsampling or the
+    forced-444-round-trip side.
+
+    Default: not given explicitly, the value is resolved the same way
+    ``ConvertToYUV4xx``'s own ``ChromaInPlacement`` resolves it (see
+    ``chromaloc_parse_merge_with_props``): the base clip's ``_ChromaLocation`` frame
+    property is used if present (mapped down to the nearest of the three buckets
+    above — ``left``→``"mpeg2"``, ``center``→``"mpeg1"``, everything else→
+    ``"top_left"``); otherwise a per-format hardcoded default is used: ``"mpeg2"``
+    for 4:2:0/4:2:2/4:1:1, and ``"top_left"`` for 4:4:0/4:1:0 (which, per the point
+    above, behaves as point-sample there — matching ffmpeg's untagged ``swscale``
+    behavior for these formats).
+
+    Note that ``placement`` is a single value for the whole filter call, applied
+    uniformly to the base clip, the overlay clip, and the mask. For the
+    conversionless/native-mode mask-downsampling case it is not verified against any
+    of their actual, individual chroma siting, nor are they checked against each
+    other — see the caveat under ``use444`` above.
 
 
 RGB considerations
@@ -585,9 +693,30 @@ Test script for different bit depths with and without masks
 |           |   "exclusion"/"softlight"/"hardlight" now match the unmasked result    |
 |           |   exactly at mask=0/max, restoring the guarantee already established   |
 |           |   for "blend" (r2502).                                                 |
+|           | | Blend engine rewritten to use exact integer "magic division" (see    |
+|           |  MagicDiv) instead of internal float math for integer bit depths; float|
+|           |  is now used only for the native 32-bit float pixel format path (see   |
+|           |  3.7.2 below, now superseded).                                         |
+|           | | Native (``use444=false``) processing extended to 4:1:1, 4:4:0 and    |
+|           |   4:1:0 for "blend", "luma" and "chroma" (previously only              |
+|           |   4:2:0/4:2:2/4:4:4/RGB).                                              |
+|           | | ``placement`` now also applies to 4:1:1/4:4:0/4:1:0 (point-sample    |
+|           |   "top_left"-style default, "mpeg1" for centered averaging).           |
+|           | | ``placement`` default now also resolves from the base clip's         |
+|           |   ``_ChromaLocation`` frame property (matching ``ConvertToYUV4xx``'s   |
+|           |   own precedence) when not given explicitly; falls back to the per-    |
+|           |   format default otherwise.                                            |
+|           | | Base/overlay/mask clip pixel format matching for the forced 4:4:4    |
+|           |   round trip (4:2:0, 4:2:2, 4:1:1, 4:4:0, 4:1:0) unified onto the real |
+|           |   chroma-placement-aware resampler, replacing the old fixed-siting     |
+|           |   internal 4:4:4 bridge previously used for 4:2:0/4:2:2 mismatches;    |
+|           |   fixes a chroma shift on round-trip and keeps input/reconstructed     |
+|           |   output siting consistent via ``placement``.                          |
 +-----------+------------------------------------------------------------------------+
 | 3.7.2     | Address issue #255: "blend": now using accurate formula using float    |
-|           | calculation internally.                                                |
+|           | calculation internally. (Superseded in 3.7.6 by an exact integer "magic|
+|           | division" approach, used for all integer bit depths; float is no longer|
+|           | used internally except for the native 32-bit float format.)            |
 +-----------+------------------------------------------------------------------------+
 | 3.7.1     | Overlay mode "multiply": overlay clip is not converted to 4:4:4        |
 |           | when when 420 or 422, since only Y is used from it (speed).            |
@@ -616,6 +745,6 @@ Test script for different bit depths with and without masks
 | v2.54     | Initial Release                                                        |
 +-----------+------------------------------------------------------------------------+
 
-$Date: 2026/08/26 15:53:00 $
+$Date: 2026/09/15 17:41:00 $
 
 .. _here: http://forum.doom9.org/showthread.php?s=&threadid=28438

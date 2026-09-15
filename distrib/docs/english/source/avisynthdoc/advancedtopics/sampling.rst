@@ -31,12 +31,19 @@ Sampling
    - ``ConvertBackToYUY2`` is now an alias for ``ConvertToYUY2``; the
      left-pixel-only hack described in the RGB→YUY2 subsampling section no
      longer applies. It is kept for backward compatibility with pre-2.5 scripts.
-     It is now equivalent to ``ConvertToYUY2``, and still accepts only a single 
+     It is now equivalent to ``ConvertToYUY2``, and still accepts only a single
      ``matrix`` parameter and does not support interlaced material.
+   - **4:4:0 and 4:1:0** are new bit-depth-agnostic formats as of AviSynth+
+     **4:1:1** supports 10+ bit depths as of AviSynth+ 3.7.6.
+     (4:1:1 t 8-bits has existed since AviSynth 2.6).
+     Unlike 4:2:0/4:2:2, none of these three ratios has an inherited
+     broadcast/industry-standard chroma siting convention; see the new
+     `4:1:1, 4:4:0 and 4:1:0 sampling (AviSynth+)`_ section below.
 
    The theoretical sections on color format layouts, chroma subsampling
    geometry, MPEG-1 vs MPEG-2 sampling, and DV sampling remain accurate
-   and are not affected by the above changes.
+   and are not affected by the above changes. The 4:1:1/4:4:0/4:1:0 section
+   is a new addition, not part of the original (~2010) material.
 
 .. toctree::
     :maxdepth: 3
@@ -790,6 +797,119 @@ References
 | [`DV sampling`_]
 
 
+4:1:1, 4:4:0 and 4:1:0 sampling (AviSynth+)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+4:1:1 has been supported since AviSynth 2.6 (see the DV section above); 4:4:0
+and 4:1:0 are newer additions, and all became bit-depth-agnostic as of AviSynth+ 3.7.6.
+Unlike 4:2:0 and 4:2:2, none of these three ratios has an inherited
+broadcast/industry-standard chroma siting convention to draw from (MPEG-1/
+MPEG-2/CCIR-601 only define 4:2:0 and 4:2:2 siting) — AviSynth+ therefore
+defines its own for the ``ChromaInPlacement``/``ChromaOutPlacement``
+parameters of :doc:`ConvertToYUV411, ConvertToYUV440 and ConvertToYUV410
+<../corefilters/convert>`, and for every filter built on the same chroma-mask
+machinery (:doc:`Overlay <../corefilters/overlay>`'s ``placement`` parameter,
+:doc:`Layer <../corefilters/layer>`, and :doc:`Subtitle
+<../corefilters/subtitle>`'s ``placement`` parameter).
+
+4:1:1 (already shown above, field-based, as used by DV) subsamples chroma
+4x horizontally only, full vertical resolution. The progressive, non-DV
+layout produced by ``ConvertToYUV411`` is the same 4-wide grouping without
+DV's field interleaving:
+
++-------------------+--------+
+| frame             | line   |
++===================+========+
+| YC Y Y Y YC Y Y Y | line 1 |
++-------------------+--------+
+| YC Y Y Y YC Y Y Y | line 2 |
++-------------------+--------+
+| YC Y Y Y YC Y Y Y | line 3 |
++-------------------+--------+
+| YC Y Y Y YC Y Y Y | line 4 |
++-------------------+--------+
+
+4:4:0 subsamples chroma 2x vertically only, full horizontal resolution — the
+transpose of 4:2:2:
+
++-------------+--------+
+| frame       | line   |
++=============+========+
+| YC YC YC YC | line 1 |
++-------------+--------+
+| Y  Y  Y  Y  | line 2 |
++-------------+--------+
+| YC YC YC YC | line 3 |
++-------------+--------+
+| Y  Y  Y  Y  | line 4 |
++-------------+--------+
+
+4:1:0 subsamples chroma 4x on both axes — one C sample per 4x4 luma block:
+
++--------------------+--------+
+| frame              | line   |
++====================+========+
+| YC Y Y Y YC Y Y Y  | line 1 |
++--------------------+--------+
+| Y  Y Y Y Y  Y Y Y  | line 2 |
++--------------------+--------+
+| Y  Y Y Y Y  Y Y Y  | line 3 |
++--------------------+--------+
+| Y  Y Y Y Y  Y Y Y  | line 4 |
++--------------------+--------+
+
+With no inherited convention, only two distinct siting behaviors exist per
+format (a centered box average, or an uncentered point-sample) — but *which*
+of the three ``"mpeg2"``/``"mpeg1"``/``"top_left"`` compatibility names
+collapse together is not the same for all three, since it depends on which
+axis each ratio actually subsamples:
+
+.. list-table:: Effective chroma siting for 4:1:1, 4:4:0 and 4:1:0
+   :header-rows: 1
+   :widths: 10 30 30 30
+
+   * - Format
+     - ``"mpeg2"``
+     - ``"mpeg1"``
+     - ``"top_left"``
+   * - 4:1:1 (H only)
+     - = ``"top_left"``: point-sample, left column of the 4-wide block
+     - box average over the 4-wide block
+     - point-sample, left column of the 4-wide block
+   * - 4:4:0 (V only)
+     - = ``"top_left"``: point-sample, top row of the 2-row block
+     - box average over the 2-row block
+     - point-sample, top row of the 2-row block
+   * - 4:1:0 (H and V)
+     - = ``"top_left"``: point-sample, top-left of the 4×4 block
+     - box average over the 4×4 block
+     - point-sample, top-left of the 4×4 block
+
+All three ratios group the same way: ``"mpeg2"`` and ``"top_left"`` always
+collapse to the same point-sample behavior, and only ``"mpeg1"`` (the one
+placement that actually asks for a centered box average) is distinct. For
+4:1:1 and 4:1:0 this is because both subsample horizontally, where ``"mpeg2"``
+(H co-sited) already is that point-sample offset. 4:4:0 subsamples *only*
+vertically, so ``"mpeg2"``'s H-component is moot to begin with — with no H
+axis to be co-sited on, ``"mpeg2"`` and ``"top_left"`` are indistinguishable
+there too, so it collapses the same way rather than the opposite way. The
+point-sample choice for each format matches what tools with no siting
+awareness for these ratios do (e.g. ffmpeg's ``swscale``, which always
+resamples 4:1:1/4:4:0/4:1:0 with a zero offset), so it round-trips losslessly
+against such tools and is also the fastest option — this is why AviSynth+
+also uses it as the default when no ``ChromaInPlacement``/``placement``/
+``_ChromaLocation`` is given.
+
+Note that ``ConvertToYUV4xx``'s own parser does not literally accept all
+three compatibility names as raw ``ChromaInPlacement``/``ChromaOutPlacement``
+strings on every format — 4:4:0 in particular only recognizes the literal
+strings ``"center"``/``"top"`` (passing ``"left"``, ``"mpeg2"`` or
+``"top_left"`` directly throws an error); 4:1:1 and 4:1:0 accept all three
+compatibility names directly. See :doc:`Overlay <../corefilters/overlay>`'s
+``placement`` parameter documentation for the full acceptance table and how
+Overlay works around the 4:4:0 case internally.
+
+
 4:2:0 Interlaced Chroma Problem (or ICP)
 ----------------------------------------
 
@@ -808,7 +928,7 @@ AviSynth/VDub filter which attempts to do this doesn't exist yet.
 | [`The 4:2:0 Interlaced Chroma Problem <http://www.hometheaterhifi.com/volume_8_2/dvd-benchmark-special-report-chroma-bug-4-2001.html>`_]
 | [`The 4:2:0 Interlaced Chroma Problem - Television and Video Advice <http://members.aol.com/ajaynejr/vidbug2.htm>`_]
 
-$Date: 2026/03/02 21:16:00 $
+$Date: 2026/09/15 17:19:00 $
 
 .. _The Chroma Upsampling Error:
     http://www.hometheaterhifi.com/volume_8_2/dvd-benchmark-special-report-chroma-bug-4-2001.html
