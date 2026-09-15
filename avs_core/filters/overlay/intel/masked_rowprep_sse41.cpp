@@ -877,6 +877,19 @@ const pixel_t* prepare_effective_mask_for_row_sse41(
       fill_mask420_topleft_sse41<pixel_t, full_opacity>(dst, maskp, mask_pitch, width, opacity_i, half, magic);
     else if constexpr (maskMode == MASK411)
       fill_mask411_sse41<pixel_t, full_opacity>(dst, maskp, width, opacity_i, half, magic);
+    else if constexpr (maskMode == MASK410 || maskMode == MASK440 ||
+                        maskMode == MASK410_TOPLEFT || maskMode == MASK440_TOPLEFT || maskMode == MASK411_TOPLEFT) {
+      // No SIMD kernel yet for these rare ratios -> scalar C fallback, see rowprep in blend_common.h.
+      int mask_right = 0; // unused (only MPEG2 sliding-window modes need it)
+      for (int x = 0; x < width; ++x) {
+        const pixel_t avg = (pixel_t)calculate_effective_mask<maskMode>(maskp, x, mask_pitch, mask_right);
+        if constexpr (full_opacity)
+          dst[x] = avg;
+        else
+          dst[x] = static_cast<pixel_t>(
+            magic_div_rt<pixel_t>((uint32_t)avg * (uint32_t)opacity_i + (uint32_t)half, magic));
+      }
+    }
     return dst;
   }
 }
@@ -933,6 +946,18 @@ AVS_FORCEINLINE const float* prepare_effective_mask_for_row_float_sse41(
       fill_mask420_topleft_float_sse41<full_opacity>(dst, maskp, mask_pitch, width, opacity);
     else if constexpr (maskMode == MASK411)
       fill_mask411_float_sse41<full_opacity>(dst, maskp, width, opacity);
+    else if constexpr (maskMode == MASK410 || maskMode == MASK440 ||
+                        maskMode == MASK410_TOPLEFT || maskMode == MASK440_TOPLEFT || maskMode == MASK411_TOPLEFT) {
+      // No SIMD kernel yet for these rare ratios -> scalar C fallback, see rowprep in blend_common.h.
+      float mask_right = 0.0f; // unused (only MPEG2 sliding-window modes need it)
+      for (int x = 0; x < width; ++x) {
+        const float avg = calculate_effective_mask_f<maskMode>(maskp, x, mask_pitch, mask_right);
+        if constexpr (full_opacity)
+          dst[x] = avg;
+        else
+          dst[x] = avg * opacity;
+      }
+    }
     return dst;
   }
 }
@@ -954,6 +979,11 @@ INST_PREP_SSE41(MASK422,          uint8_t)   INST_PREP_SSE41(MASK422,          u
 INST_PREP_SSE41(MASK422_MPEG2,    uint8_t)   INST_PREP_SSE41(MASK422_MPEG2,    uint16_t)
 INST_PREP_SSE41(MASK422_TOPLEFT,  uint8_t)   INST_PREP_SSE41(MASK422_TOPLEFT,  uint16_t)
 INST_PREP_SSE41(MASK411,          uint8_t)   INST_PREP_SSE41(MASK411,          uint16_t)
+INST_PREP_SSE41(MASK411_TOPLEFT,  uint8_t)   INST_PREP_SSE41(MASK411_TOPLEFT,  uint16_t)
+INST_PREP_SSE41(MASK440,          uint8_t)   INST_PREP_SSE41(MASK440,          uint16_t)
+INST_PREP_SSE41(MASK440_TOPLEFT,  uint8_t)   INST_PREP_SSE41(MASK440_TOPLEFT,  uint16_t)
+INST_PREP_SSE41(MASK410,          uint8_t)   INST_PREP_SSE41(MASK410,          uint16_t)
+INST_PREP_SSE41(MASK410_TOPLEFT,  uint8_t)   INST_PREP_SSE41(MASK410_TOPLEFT,  uint16_t)
 #undef INST_PREP_SSE41
 
 // prepare_effective_mask_for_row_float_sse41
@@ -968,5 +998,10 @@ INST_PREP_SSE41(MASK422)
 INST_PREP_SSE41(MASK422_MPEG2)
 INST_PREP_SSE41(MASK422_TOPLEFT)
 INST_PREP_SSE41(MASK411)
+INST_PREP_SSE41(MASK411_TOPLEFT)
+INST_PREP_SSE41(MASK440)
+INST_PREP_SSE41(MASK440_TOPLEFT)
+INST_PREP_SSE41(MASK410)
+INST_PREP_SSE41(MASK410_TOPLEFT)
 #undef INST_PREP_SSE41
 

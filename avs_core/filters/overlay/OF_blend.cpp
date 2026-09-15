@@ -60,15 +60,7 @@
 static masked_merge_float_fn_t* get_overlay_blend_masked_float_fn(
   int cpuFlags, bool is_lumamask_based_chroma, int placement, const VideoInfo& vi_internal)
 {
-  MaskMode maskMode = MASK444;
-  if (is_lumamask_based_chroma) {
-    if (vi_internal.Is411())
-      maskMode = MASK411;
-    else if (vi_internal.Is420())
-      maskMode = (placement == PLACEMENT_MPEG1) ? MASK420 : (placement == PLACEMENT_TOPLEFT) ? MASK420_TOPLEFT : MASK420_MPEG2;
-    else if (vi_internal.Is422())
-      maskMode = (placement == PLACEMENT_MPEG1) ? MASK422 : (placement == PLACEMENT_TOPLEFT) ? MASK422_TOPLEFT : MASK422_MPEG2;
-  }
+  MaskMode maskMode = is_lumamask_based_chroma ? resolveChromaMaskMode(placement, vi_internal) : MASK444;
 
 #ifdef INTEL_INTRINSICS
   if (cpuFlags & CPUF_AVX2)   return get_overlay_blend_masked_float_fn_avx2(is_lumamask_based_chroma, maskMode);
@@ -89,15 +81,7 @@ static masked_merge_float_fn_t* get_overlay_blend_masked_float_fn(
 static masked_merge_fn_t* get_overlay_blend_masked_fn(
   int cpuFlags, bool is_lumamask_based_chroma, int placement, const VideoInfo& vi_internal)
 {
-  MaskMode maskMode = MASK444;
-  if (is_lumamask_based_chroma) {
-    if (vi_internal.Is411())
-      maskMode = MASK411;
-    else if (vi_internal.Is420())
-      maskMode = (placement == PLACEMENT_MPEG1) ? MASK420 : (placement == PLACEMENT_TOPLEFT) ? MASK420_TOPLEFT : MASK420_MPEG2;
-    else if (vi_internal.Is422())
-      maskMode = (placement == PLACEMENT_MPEG1) ? MASK422 : (placement == PLACEMENT_TOPLEFT) ? MASK422_TOPLEFT : MASK422_MPEG2;
-  }
+  MaskMode maskMode = is_lumamask_based_chroma ? resolveChromaMaskMode(placement, vi_internal) : MASK444;
 
 #ifdef INTEL_INTRINSICS
   if (cpuFlags & CPUF_AVX2)   return get_overlay_blend_masked_fn_avx2(is_lumamask_based_chroma, maskMode);
@@ -239,6 +223,16 @@ static void do_fill_chroma_row(
     prepare_effective_mask_for_row<MASK422_MPEG2,    pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK422_TOPLEFT:
     prepare_effective_mask_for_row<MASK422_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK440:
+    prepare_effective_mask_for_row<MASK440,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK410:
+    prepare_effective_mask_for_row<MASK410,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK411_TOPLEFT:
+    prepare_effective_mask_for_row<MASK411_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK440_TOPLEFT:
+    prepare_effective_mask_for_row<MASK440_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK410_TOPLEFT:
+    prepare_effective_mask_for_row<MASK410_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   default: break;
   }
 }
@@ -264,6 +258,16 @@ static void do_fill_chroma_row_f(
     prepare_effective_mask_for_row_float_c<MASK422_MPEG2,    full_opacity>(luma_row, luma_pitch_floats, chroma_w, buf, opacity_f); break;
   case MASK422_TOPLEFT:
     prepare_effective_mask_for_row_float_c<MASK422_TOPLEFT,  full_opacity>(luma_row, luma_pitch_floats, chroma_w, buf, opacity_f); break;
+  case MASK440:
+    prepare_effective_mask_for_row_float_c<MASK440,          full_opacity>(luma_row, luma_pitch_floats, chroma_w, buf, opacity_f); break;
+  case MASK410:
+    prepare_effective_mask_for_row_float_c<MASK410,          full_opacity>(luma_row, luma_pitch_floats, chroma_w, buf, opacity_f); break;
+  case MASK411_TOPLEFT:
+    prepare_effective_mask_for_row_float_c<MASK411_TOPLEFT,  full_opacity>(luma_row, luma_pitch_floats, chroma_w, buf, opacity_f); break;
+  case MASK440_TOPLEFT:
+    prepare_effective_mask_for_row_float_c<MASK440_TOPLEFT,  full_opacity>(luma_row, luma_pitch_floats, chroma_w, buf, opacity_f); break;
+  case MASK410_TOPLEFT:
+    prepare_effective_mask_for_row_float_c<MASK410_TOPLEFT,  full_opacity>(luma_row, luma_pitch_floats, chroma_w, buf, opacity_f); break;
   default: break;
   }
 }
@@ -323,10 +327,10 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
   // Per-row scratch path: imghelpers stores the luma mask pointer in planes 1/2 for
   // subsampled greymask; BlendImageMask fills a per-row scratch buffer from luma rows,
   // shared for both U and V.
-  // Active when use444=false keeps vi_internal at 420/422/411 AND greymask=true.
+  // Active when use444=false keeps vi_internal at 420/422/411/440/410 AND greymask=true.
   // Not active when use444=true or input is natively 444/RGB: vi_internal is then at full
-  // chroma resolution, Is420/Is422/Is411 == false, so is_subsampled = false.
-  const bool is_subsampled = vi_internal.Is420() || vi_internal.Is422() || vi_internal.Is411();
+  // chroma resolution, Is420/Is422/Is411/Is440/Is410 == false, so is_subsampled = false.
+  const bool is_subsampled = vi_internal.Is420() || vi_internal.Is422() || vi_internal.Is411() || vi_internal.Is440() || vi_internal.Is410();
   const bool use_scratch_path = greymask_mask && use_chroma_fn && is_subsampled;
 
   if constexpr (std::is_same_v<pixel_t, float>) {
@@ -350,21 +354,23 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
       // Chroma planes: outer loop = rows, inner = planes.
       // Scratch filled once per row, reused for all active chroma planes (U and V).
       if (planeindex_to >= 1) {
-        MaskMode chroma_maskMode = MASK444;
-        if (vi_internal.Is411())
-          chroma_maskMode = MASK411;
-        else if (vi_internal.Is420())
-          chroma_maskMode = (placement == PLACEMENT_MPEG1) ? MASK420 : (placement == PLACEMENT_TOPLEFT) ? MASK420_TOPLEFT : MASK420_MPEG2;
-        else if (vi_internal.Is422())
-          chroma_maskMode = (placement == PLACEMENT_MPEG1) ? MASK422 : (placement == PLACEMENT_TOPLEFT) ? MASK422_TOPLEFT : MASK422_MPEG2;
+        MaskMode chroma_maskMode = resolveChromaMaskMode(placement, vi_internal);
 
         const int xws = base->xSubSamplingShifts[1];
         const int yhs = base->ySubSamplingShifts[1];
         const int chroma_w = (xws > 0) ? ((base->xAccum() & ((1 << xws) - 1)) + w + (1 << xws) - 1) >> xws : w;
         const int chroma_h = (yhs > 0) ? ((base->yAccum() & ((1 << yhs) - 1)) + h + (1 << yhs) - 1) >> yhs : h;
         const int luma_mask_pitch_floats = mask->GetPitchByIndex(0) / (int)sizeof(float);
-        const int luma_mask_advance = (chroma_maskMode == MASK420 || chroma_maskMode == MASK420_MPEG2 || chroma_maskMode == MASK420_TOPLEFT)
-                                      ? luma_mask_pitch_floats * 2 : luma_mask_pitch_floats;
+        // Vertical row advance per chroma output row, one luma-mask row group per
+        // chroma_maskMode's actual MaskVSubsample (blend_common.h)
+        // 4 for 4:1:0
+        // 2 for 4:2:0 and 4:4:0
+        // 1 for others (4:1:1/4:2:2, no vertical subsampling).
+        const int luma_mask_advance =
+          (chroma_maskMode == MASK410 || chroma_maskMode == MASK410_TOPLEFT) ? luma_mask_pitch_floats * 4 :
+          (chroma_maskMode == MASK420 || chroma_maskMode == MASK420_MPEG2 || chroma_maskMode == MASK420_TOPLEFT ||
+           chroma_maskMode == MASK440 || chroma_maskMode == MASK440_TOPLEFT) ? luma_mask_pitch_floats * 2 :
+          luma_mask_pitch_floats;
         const int scratch_pitch = chroma_w * (int)sizeof(float);
         std::vector<float> scratch(chroma_w);
 
@@ -456,21 +462,23 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
       // Chroma planes: outer loop = rows, inner = planes.
       // Scratch filled once per row, reused for all active chroma planes (U and V).
       if (planeindex_to >= 1) {
-        MaskMode chroma_maskMode = MASK444;
-        if (vi_internal.Is411())
-          chroma_maskMode = MASK411;
-        else if (vi_internal.Is420())
-          chroma_maskMode = (placement == PLACEMENT_MPEG1) ? MASK420 : (placement == PLACEMENT_TOPLEFT) ? MASK420_TOPLEFT : MASK420_MPEG2;
-        else if (vi_internal.Is422())
-          chroma_maskMode = (placement == PLACEMENT_MPEG1) ? MASK422 : (placement == PLACEMENT_TOPLEFT) ? MASK422_TOPLEFT : MASK422_MPEG2;
+        MaskMode chroma_maskMode = resolveChromaMaskMode(placement, vi_internal);
 
         const int xws = base->xSubSamplingShifts[1];
         const int yhs = base->ySubSamplingShifts[1];
         const int chroma_w = (xws > 0) ? ((base->xAccum() & ((1 << xws) - 1)) + w + (1 << xws) - 1) >> xws : w;
         const int chroma_h = (yhs > 0) ? ((base->yAccum() & ((1 << yhs) - 1)) + h + (1 << yhs) - 1) >> yhs : h;
         const int luma_mask_pitch_pixels = mask->GetPitchByIndex(0) / (int)sizeof(pixel_t);
-        const int luma_mask_advance = (chroma_maskMode == MASK420 || chroma_maskMode == MASK420_MPEG2 || chroma_maskMode == MASK420_TOPLEFT)
-                                      ? luma_mask_pitch_pixels * 2 : luma_mask_pitch_pixels;
+        // Vertical row advance per chroma output row, one luma-mask row group per
+        // chroma_maskMode's actual MaskVSubsample (blend_common.h):
+        // 4 for 4:1:0
+        // 2 for 4:2:0 and 4:4:0
+        // 1 for others (4:1:1/4:2:2, no vertical subsampling)
+        const int luma_mask_advance =
+          (chroma_maskMode == MASK410 || chroma_maskMode == MASK410_TOPLEFT) ? luma_mask_pitch_pixels * 4 :
+          (chroma_maskMode == MASK420 || chroma_maskMode == MASK420_MPEG2 || chroma_maskMode == MASK420_TOPLEFT ||
+           chroma_maskMode == MASK440 || chroma_maskMode == MASK440_TOPLEFT) ? luma_mask_pitch_pixels * 2 :
+          luma_mask_pitch_pixels;
         const int scratch_pitch = chroma_w * (int)sizeof(pixel_t);
         std::vector<pixel_t> scratch(chroma_w);
 
