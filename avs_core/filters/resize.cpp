@@ -119,7 +119,9 @@ void vertical_reduce_core(BYTE* dstp, const BYTE* srcp, int dst_pitch, int src_p
 VerticalReduceBy2::VerticalReduceBy2(PClip _child, IScriptEnvironment* env)
   : GenericVideoFilter(_child)
 {
-  if (vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA()) && (vi.NumComponents() > 1)) {
+  const bool hasSubsampledChroma = vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA()) && (vi.NumComponents() > 1);
+
+  if (hasSubsampledChroma) {
     const int mod = 2 << vi.GetPlaneHeightSubsampling(PLANAR_U);
     const int mask = mod - 1;
     if (vi.height & mask)
@@ -132,7 +134,8 @@ VerticalReduceBy2::VerticalReduceBy2(PClip _child, IScriptEnvironment* env)
   original_height = vi.height;
   vi.height >>= 1;
 
-  if (vi.height < 3) {
+  const int chroma_h_shift = hasSubsampledChroma ? vi.GetPlaneHeightSubsampling(PLANAR_U) : 0;
+  if (vi.height < (1 << chroma_h_shift)) {
     env->ThrowError("VerticalReduceBy2: Image too small to be reduced by 2.");
   }
 }
@@ -172,7 +175,9 @@ PVideoFrame VerticalReduceBy2::GetFrame(int n, IScriptEnvironment* env) {
 HorizontalReduceBy2::HorizontalReduceBy2(PClip _child, IScriptEnvironment* env)
   : GenericVideoFilter(_child)
 {
-  if (vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA()) && (vi.NumComponents() > 1)) {
+  const bool hasSubsampledChroma = vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA()) && (vi.NumComponents() > 1);
+
+  if (hasSubsampledChroma) {
     const int mod = 2 << vi.GetPlaneWidthSubsampling(PLANAR_U);
     const int mask = mod - 1;
     if (vi.width & mask)
@@ -188,6 +193,12 @@ HorizontalReduceBy2::HorizontalReduceBy2(PClip _child, IScriptEnvironment* env)
   pixelsize = vi.ComponentSize();
   source_width = vi.width;
   vi.width >>= 1;
+
+  // like VerticalReduceBy2's minimum size guard
+  const int chroma_w_shift = hasSubsampledChroma ? vi.GetPlaneWidthSubsampling(PLANAR_U) : 0;
+  if (vi.width < (1 << chroma_w_shift)) {
+    env->ThrowError("HorizontalReduceBy2: Image too small to be reduced by 2.");
+  }
 }
 
 template<typename pixel_t>

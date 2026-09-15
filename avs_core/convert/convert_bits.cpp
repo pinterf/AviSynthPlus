@@ -1200,77 +1200,37 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
 #endif
 
   // Set VideoInfo
-  if (target_bitdepth == 8) {
-    if (vi.NumComponents() == 1)
-      vi.pixel_type = VideoInfo::CS_Y8;
-    else if (vi.Is411())
-      vi.pixel_type = vi.IsYUVA() ? VideoInfo::CS_YUVA411 : VideoInfo::CS_YV411;
-    else if (vi.Is420() || vi.IsYV12())
-      vi.pixel_type = vi.IsYUVA() ? VideoInfo::CS_YUVA420 : VideoInfo::CS_YV12;
-    else if (vi.Is422())
-      vi.pixel_type = vi.IsYUVA() ? VideoInfo::CS_YUVA422 : VideoInfo::CS_YV16;
-    else if (vi.Is444())
-      vi.pixel_type = vi.IsYUVA() ? VideoInfo::CS_YUVA444 : VideoInfo::CS_YV24;
-    else if (vi.IsRGB48() || vi.IsRGB24())
-      vi.pixel_type = VideoInfo::CS_BGR24;
-    else if (vi.IsRGB64() || vi.IsRGB32())
-      vi.pixel_type = VideoInfo::CS_BGR32;
-    else if (vi.IsPlanarRGB())
-      vi.pixel_type = VideoInfo::CS_RGBP;
-    else if (vi.IsPlanarRGBA())
-      vi.pixel_type = VideoInfo::CS_RGBAP;
-    else
-      env->ThrowError("ConvertTo8bit: unsupported color space");
-
-    return;
-  }
-  else if (target_bitdepth > 8 && target_bitdepth <= 16) {
-    // set output vi format
-    if (vi.IsRGB24() || vi.IsRGB48()) {
-      vi.pixel_type = VideoInfo::CS_BGR48;
+  if (vi.IsPlanar()) {
+    // Y, YUV(A) or PlanarRGB(A): apply bitmask arithmetic CS_GENERIC_xxx | CS_Sample_Bits_N
+    if (vi.IsYV12()) // YV12 can have an exotic compatibility constant (I420/IYUV, U-plane-first)
+      vi.pixel_type = VideoInfo::CS_YV12; // override for uniform format handling
+    int new_bitdepth_bits;
+    switch (target_bitdepth) {
+    case 8: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_8; break;
+    case 10: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_10; break;
+    case 12: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_12; break;
+    case 14: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_14; break;
+    case 16: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_16; break;
+    case 32: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_32; break;
+    default:
+      env->ThrowError("ConvertBits: unsupported target bit-depth (%d)", target_bitdepth);
+      return;
     }
-    else if (vi.IsRGB32() || vi.IsRGB64()) {
-      vi.pixel_type = VideoInfo::CS_BGR64;
-    }
-    else {
-      // Y or YUV(A) or PlanarRGB(A)
-      if (vi.IsYV12()) // YV12 can have an exotic compatibility constant
-        vi.pixel_type = VideoInfo::CS_YV12; // override for known
-      int new_bitdepth_bits;
-      switch (target_bitdepth) {
-      case 8: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_8; break;
-      case 10: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_10; break;
-      case 12: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_12; break;
-      case 14: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_14; break;
-      case 16: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_16; break;
-      case 32: new_bitdepth_bits = VideoInfo::CS_Sample_Bits_32; break;
-      }
-      vi.pixel_type = (vi.pixel_type & ~VideoInfo::CS_Sample_Bits_Mask) | new_bitdepth_bits;
-    }
-    return;
-  }
-  else if (target_bitdepth == 32) {
-    if (vi.NumComponents() == 1)
-      vi.pixel_type = VideoInfo::CS_Y32;
-    else if (vi.Is411())
-      vi.pixel_type = vi.IsYUVA() ? VideoInfo::CS_YUVA411PS : VideoInfo::CS_YUV411PS;
-    else if (vi.Is420())
-      vi.pixel_type = vi.IsYUVA() ? VideoInfo::CS_YUVA420PS : VideoInfo::CS_YUV420PS;
-    else if (vi.Is422())
-      vi.pixel_type = vi.IsYUVA() ? VideoInfo::CS_YUVA422PS : VideoInfo::CS_YUV422PS;
-    else if (vi.Is444())
-      vi.pixel_type = vi.IsYUVA() ? VideoInfo::CS_YUVA444PS : VideoInfo::CS_YUV444PS;
-    else if (vi.IsPlanarRGB())
-      vi.pixel_type = VideoInfo::CS_RGBPS;
-    else if (vi.IsPlanarRGBA())
-      vi.pixel_type = VideoInfo::CS_RGBAPS;
-    else
-      env->ThrowError("ConvertToFloat: unsupported color space");
-
+    vi.pixel_type = (vi.pixel_type & ~VideoInfo::CS_Sample_Bits_Mask) | new_bitdepth_bits;
     return;
   }
 
-  env->ThrowError("ConvertBits: unsupported target bit-depth (%d)", target_bitdepth);
+  // Packed RGB (24/32/48/64): only 8/16-bit targets are valid, checked in Create
+  if (vi.IsRGB24() || vi.IsRGB48()) {
+    vi.pixel_type = target_bitdepth == 8 ? VideoInfo::CS_BGR24 : VideoInfo::CS_BGR48;
+    return;
+  }
+  if (vi.IsRGB32() || vi.IsRGB64()) {
+    vi.pixel_type = target_bitdepth == 8 ? VideoInfo::CS_BGR32 : VideoInfo::CS_BGR64;
+    return;
+  }
+
+  env->ThrowError("ConvertBits: unsupported color space");
 
 }
 

@@ -2478,7 +2478,7 @@ PClip FilteredResize::CreateResize(PClip clip, int target_width, int target_heig
   int chroma_placement = forced_chroma_placement >= 0 ? forced_chroma_placement : ChromaLocation_e::AVS_CHROMA_UNUSED;
   if (placement_name) {
     // no format-oriented defaults
-    if (vi.Is411() || vi.Is420() || vi.Is422()) {
+    if (vi.Is411() || vi.Is420() || vi.Is422() || vi.Is440() || vi.Is410()) {
       // placement explicite parameter like in ConvertToXXX or Text
       // input frame properties, if "auto"
       // When called from ConvertToXXX, chroma is not involved.

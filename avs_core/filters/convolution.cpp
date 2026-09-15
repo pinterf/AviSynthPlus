@@ -354,7 +354,7 @@ GeneralConvolution::GeneralConvolution(PClip _child, double _divisor, float _nBi
   bool _autoscale, bool _luma, bool _chroma, bool _alpha, IScriptEnvironment* _env)
   : GenericVideoFilter(_child), divisor(_divisor), nBias((int)_nBias), fBias(_nBias), autoscale(_autoscale), luma(_luma), chroma(_chroma), alpha(_alpha)
 {
-  if (vi.Is420() || vi.Is422() || vi.Is411()) {
+  if (vi.Is420() || vi.Is422() || vi.Is411() || vi.Is440() || vi.Is410()) {
     if (luma && chroma)
       _env->ThrowError("GeneralConvolution: both luma and chroma cannot be set for subsampled video formats");
   }

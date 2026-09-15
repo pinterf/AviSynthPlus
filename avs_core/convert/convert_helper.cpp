@@ -380,7 +380,7 @@ void matrix_parse_merge_with_props(bool rgb_in, bool rgb_out, const char* matrix
 
 void chromaloc_parse_merge_with_props(VideoInfo& vi, const char* chromaloc_name, const AVSMap* props, int& _ChromaLocation, int _ChromaLocation_Default, IScriptEnvironment* env) {
   if (props) {
-    if (vi.Is420() || vi.Is422() || vi.Is411()) { // yes, 411 can also have valid _ChromaLocation, if 'left'-ish one is given
+    if (vi.Is420() || vi.Is422() || vi.Is411() || vi.Is440() || vi.Is410()) {
       if (env->propNumElements(props, "_ChromaLocation") > 0) {
         _ChromaLocation_Default = (int)env->propGetIntSaturated(props, "_ChromaLocation", 0, nullptr);
       }

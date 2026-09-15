@@ -1033,7 +1033,7 @@ AVSValue __cdecl AddBorders::Create(AVSValue args, void*, IScriptEnvironment* en
   const int bottom = max(0, args[4].AsInt());
 
   int forced_chroma_placement = ChromaLocation_e::AVS_CHROMA_UNUSED;
-  if (vi.Is411() || vi.Is420() || vi.Is422()) {
+  if (vi.Is411() || vi.Is420() || vi.Is422() || vi.Is440() || vi.Is410()) {
      auto frame0 = args[0].AsClip()->GetFrame(0, env);
     const AVSMap* props = env->getFramePropsRO(frame0);
     if (props) {
@@ -1123,7 +1123,7 @@ AVSValue __cdecl Create_Letterbox(AVSValue args, void*, IScriptEnvironment* env)
   bottom = max(0, bottom);
 
   int forced_chroma_placement = ChromaLocation_e::AVS_CHROMA_UNUSED;
-  if (vi.Is411() || vi.Is420() || vi.Is422()) {
+  if (vi.Is411() || vi.Is420() || vi.Is422() || vi.Is440() || vi.Is410()) {
     auto frame0 = clip->GetFrame(0, env);
     const AVSMap* props = env->getFramePropsRO(frame0);
     if (props) {

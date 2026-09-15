@@ -118,6 +118,8 @@ SeparateColumns::SeparateColumns(PClip _child, int _interval, IScriptEnvironment
     env->ThrowError("SeparateColumns: YUV422 output width must be even.");
   if (vi.Is411() && vi.width & 3)
     env->ThrowError("SeparateColumns: YUV411 output width must be mod 4.");
+  if (vi.Is410() && vi.width & 3)
+    env->ThrowError("SeparateColumns: YUV410 output width must be mod 4.");
 }
 
 
@@ -506,6 +508,10 @@ SeparateRows::SeparateRows(PClip _child, int _interval, IScriptEnvironment* env)
 
   if (vi.Is420() && vi.height & 1)
     env->ThrowError("SeparateRows: YUV420 output height must be even.");
+  if (vi.Is440() && vi.height & 1)
+    env->ThrowError("SeparateRows: YUV440 output height must be even.");
+  if (vi.Is410() && vi.height & 3)
+    env->ThrowError("SeparateRows: YUV410 output height must be mod 4.");
 }
 
 
@@ -650,8 +656,10 @@ SeparateFields::SeparateFields(PClip _child, IScriptEnvironment* env)
 {
   if (vi.height & 1)
     env->ThrowError("SeparateFields: height must be even");
-  if (vi.Is420() && vi.height & 3)
-    env->ThrowError("SeparateFields: YUV420 height must be multiple of 4");
+  if ((vi.Is420() || vi.Is440()) && vi.height & 3)
+    env->ThrowError("SeparateFields: YUV420/YUV440 height must be multiple of 4");
+  if (vi.Is410() && vi.height & 7)
+    env->ThrowError("SeparateFields: YUV410 height must be multiple of 8");
   vi.height >>= 1;
   vi.MulDivFPS(2, 1);
   vi.num_frames *= 2;

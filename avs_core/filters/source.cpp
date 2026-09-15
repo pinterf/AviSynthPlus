@@ -371,10 +371,8 @@ static AVSValue __cdecl Create_BlankClip(AVSValue args, void*, IScriptEnvironmen
       int pixel_type = GetPixelTypeFromName(args[4].AsString());
       if(pixel_type == VideoInfo::CS_UNKNOWN)
       {
-          env->ThrowError("BlankClip: pixel_type must be \"RGB32\", \"RGB24\", \"YV12\", \"YV24\", \"YV16\", \"Y8\", \n"\
-              "\"YUV411P?\",\"YUV420P?\",\"YUV422P?\",\"YUV444P?\",\"Y?\",\n"\
-              "\"RGB48\",\"RGB64\",\"RGBP\",\"RGBP?\",\n"\
-              "\"YV411\" or \"YUY2\"");
+          env->ThrowError("BlankClip: invalid pixel_type \"%s\" (e.g. \"YV12\", \"YUV422P10\", \"RGB32\", \"RGBPS\")",
+              args[4].AsString());
       }
       vi.pixel_type = pixel_type;
   }
