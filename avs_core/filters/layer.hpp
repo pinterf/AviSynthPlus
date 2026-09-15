@@ -107,10 +107,7 @@ static void layer_yuv_mul_c_inner(BYTE* dstp8, const BYTE* ovrp8, const BYTE* ma
     dstp += dst_pitch;
     ovrp += overlay_pitch;
     if constexpr (has_alpha) {
-      if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT)
-        maskp += mask_pitch * 2;
-      else
-        maskp += mask_pitch;
+      maskp += mask_pitch * MaskVSubsample<maskMode>;
     }
   }
 }
@@ -172,10 +169,7 @@ static void layer_yuv_mul_f_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* maskp8
     dstp += dst_pitch;
     ovrp += overlay_pitch;
     if constexpr (has_alpha) {
-      if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT)
-        maskp += mask_pitch * 2;
-      else
-        maskp += mask_pitch;
+      maskp += mask_pitch * MaskVSubsample<maskMode>;
     }
   }
 }
@@ -233,8 +227,8 @@ static void layer_yuv_lighten_darken_c(
   if constexpr (has_alpha)
     mask_pitch /= sizeof(pixel_t);
 
-  const int cwidth = (maskMode == MASK444) ? width : (maskMode == MASK411) ? width >> 2 : width >> 1; // 444:/1  420,422:/2  411:/4
-  const int cheight = (maskMode == MASK444 || maskMode == MASK422 || maskMode == MASK422_MPEG2 || maskMode == MASK422_TOPLEFT || maskMode == MASK411) ? height : height >> 1; // 444,422,411:/1  420:/2
+  const int cwidth = width / MaskHSubsample<maskMode>;
+  const int cheight = height / MaskVSubsample<maskMode>;
 
   // In lighten/darken we need 3 buffers:
   std::vector<pixel_t> ovr_buffer;
@@ -304,21 +298,11 @@ static void layer_yuv_lighten_darken_c(
       if constexpr (maskMode == MASK444)
         dstp[x] = (pixel_t)magic_div_rt<pixel_t>((uint32_t)dstp[x] * inv_alpha + (uint32_t)ovrp[x] * alpha_eff + half, magic);
     }
-    if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT) {
-      dstp += dst_pitch * 2; // skip vertical subsampling
-      ovrp += overlay_pitch * 2;
-      if constexpr (has_alpha) {
-        //dstp_a += dst_pitch * 2;
-        maskp += mask_pitch * 2;
-      }
-    }
-    else {
-      dstp += dst_pitch;
-      ovrp += overlay_pitch;
-      if constexpr (has_alpha) {
-        //dstp_a += dst_pitch;
-        maskp += mask_pitch;
-      }
+    dstp += dst_pitch * MaskVSubsample<maskMode>;
+    ovrp += overlay_pitch * MaskVSubsample<maskMode>;
+    if constexpr (has_alpha) {
+      //dstp_a += dst_pitch * MaskVSubsample<maskMode>;
+      maskp += mask_pitch * MaskVSubsample<maskMode>;
     }
 
     if constexpr (!lumaonly) {
@@ -372,8 +356,8 @@ static void layer_yuv_lighten_darken_f_c(
   if constexpr (has_alpha)
     mask_pitch /= sizeof(float);
 
-  const int cwidth = (maskMode == MASK444) ? width : (maskMode == MASK411) ? width >> 2 : width >> 1; // 444:/1  420,422:/2  411:/4
-  const int cheight = (maskMode == MASK444 || maskMode == MASK422 || maskMode == MASK422_MPEG2 || maskMode == MASK422_TOPLEFT || maskMode == MASK411) ? height : height >> 1; // 444,422,411:/1  420:/2
+  const int cwidth = width / MaskHSubsample<maskMode>;
+  const int cheight = height / MaskVSubsample<maskMode>;
 
   // In lighten/darken we need 3 buffers:
   std::vector<float> ovr_buffer;
@@ -422,21 +406,11 @@ static void layer_yuv_lighten_darken_f_c(
       if constexpr (maskMode == MASK444)
         dstp[x] = dstp[x] + (ovrp[x] - dstp[x]) * alpha_eff;
     }
-    if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT) {
-      dstp += dst_pitch * 2; // skip vertical subsampling
-      ovrp += overlay_pitch * 2;
-      if constexpr (has_alpha) {
-        //dstp_a += dst_pitch * 2;
-        maskp += mask_pitch * 2;
-      }
-    }
-    else {
-      dstp += dst_pitch;
-      ovrp += overlay_pitch;
-      if constexpr (has_alpha) {
-        //dstp_a += dst_pitch;
-        maskp += mask_pitch;
-      }
+    dstp += dst_pitch * MaskVSubsample<maskMode>;
+    ovrp += overlay_pitch * MaskVSubsample<maskMode>;
+    if constexpr (has_alpha) {
+      //dstp_a += dst_pitch * MaskVSubsample<maskMode>;
+      maskp += mask_pitch * MaskVSubsample<maskMode>;
     }
 
     if constexpr (!lumaonly) {
@@ -491,7 +465,29 @@ static void get_layer_yuv_lighten_darken_functions(bool isLighten, int placement
 
     if (vi.Is411())
     {
-      YUV_LIGHTEN_DARKEN_DISPATCH(LIGHTEN, MASK411, false, false)
+      // No standard siting for 4:1:1; 'top_left'/default matches ffmpeg's swscale
+      // zero-offset behavior, 'mpeg1' (center) stays opt-in.
+      if (placement == PLACEMENT_MPEG1)
+        YUV_LIGHTEN_DARKEN_DISPATCH(LIGHTEN, MASK411, false, false)
+      else
+        YUV_LIGHTEN_DARKEN_DISPATCH(LIGHTEN, MASK411_TOPLEFT, false, false)
+    }
+    else if (vi.Is440())
+    {
+      // No standard siting for 4:4:0 either; same binary split as 4:1:1/4:1:0:
+      // only MPEG1 (real centered average) is distinct, MPEG2 and TOPLEFT are
+      // indistinguishable on a format with no H subsampling.
+      if (placement == PLACEMENT_MPEG1)
+        YUV_LIGHTEN_DARKEN_DISPATCH(LIGHTEN, MASK440, false, false)
+      else
+        YUV_LIGHTEN_DARKEN_DISPATCH(LIGHTEN, MASK440_TOPLEFT, false, false)
+    }
+    else if (vi.Is410())
+    {
+      if (placement == PLACEMENT_MPEG1)
+        YUV_LIGHTEN_DARKEN_DISPATCH(LIGHTEN, MASK410, false, false)
+      else
+        YUV_LIGHTEN_DARKEN_DISPATCH(LIGHTEN, MASK410_TOPLEFT, false, false)
     }
     else if (vi.Is420())
     {
@@ -521,8 +517,25 @@ static void get_layer_yuv_lighten_darken_functions(bool isLighten, int placement
   else {
     // darken
     if (vi.Is411()) {
-      YUV_LIGHTEN_DARKEN_DISPATCH(DARKEN, MASK411, false, false)
-    } else if (vi.Is420())
+      if (placement == PLACEMENT_MPEG1)
+        YUV_LIGHTEN_DARKEN_DISPATCH(DARKEN, MASK411, false, false)
+      else
+        YUV_LIGHTEN_DARKEN_DISPATCH(DARKEN, MASK411_TOPLEFT, false, false)
+    }
+    else if (vi.Is440()) {
+      // Same binary split as LIGHTEN's 4:4:0 case above.
+      if (placement == PLACEMENT_MPEG1)
+        YUV_LIGHTEN_DARKEN_DISPATCH(DARKEN, MASK440, false, false)
+      else
+        YUV_LIGHTEN_DARKEN_DISPATCH(DARKEN, MASK440_TOPLEFT, false, false)
+    }
+    else if (vi.Is410()) {
+      if (placement == PLACEMENT_MPEG1)
+        YUV_LIGHTEN_DARKEN_DISPATCH(DARKEN, MASK410, false, false)
+      else
+        YUV_LIGHTEN_DARKEN_DISPATCH(DARKEN, MASK410_TOPLEFT, false, false)
+    }
+    else if (vi.Is420())
     {
       if (placement == PLACEMENT_MPEG1)
         YUV_LIGHTEN_DARKEN_DISPATCH(DARKEN, MASK420, false, false)
@@ -570,11 +583,38 @@ static void get_layer_yuv_mul_functions(
   {
     if (vi.Is411())
     {
-      if (hasAlpha) {
-        YUV_MUL_DISPATCH(MASK411, true, true)
+      // No standard siting for 4:1:1; 'top_left'/default matches ffmpeg's swscale
+      // zero-offset behavior, 'mpeg1' (center) stays opt-in.
+      if (placement == PLACEMENT_MPEG1) {
+        if (hasAlpha) { YUV_MUL_DISPATCH(MASK411, true, true) }
+        else          { YUV_MUL_DISPATCH(MASK411, true, false) }
       }
       else {
-        YUV_MUL_DISPATCH(MASK411, true, false)
+        if (hasAlpha) { YUV_MUL_DISPATCH(MASK411_TOPLEFT, true, true) }
+        else          { YUV_MUL_DISPATCH(MASK411_TOPLEFT, true, false) }
+      }
+    }
+    else if (vi.Is440())
+    {
+      // Same binary split as 4:1:1/4:1:0 above: only MPEG1 is the distinct average case.
+      if (placement == PLACEMENT_MPEG1) {
+        if (hasAlpha) { YUV_MUL_DISPATCH(MASK440, true, true) }
+        else          { YUV_MUL_DISPATCH(MASK440, true, false) }
+      }
+      else {
+        if (hasAlpha) { YUV_MUL_DISPATCH(MASK440_TOPLEFT, true, true) }
+        else          { YUV_MUL_DISPATCH(MASK440_TOPLEFT, true, false) }
+      }
+    }
+    else if (vi.Is410())
+    {
+      if (placement == PLACEMENT_MPEG1) {
+        if (hasAlpha) { YUV_MUL_DISPATCH(MASK410, true, true) }
+        else          { YUV_MUL_DISPATCH(MASK410, true, false) }
+      }
+      else {
+        if (hasAlpha) { YUV_MUL_DISPATCH(MASK410_TOPLEFT, true, true) }
+        else          { YUV_MUL_DISPATCH(MASK410_TOPLEFT, true, false) }
       }
     }
     else if (vi.Is420())
@@ -694,8 +734,8 @@ static void layer_yuv_mulovr_c(
   const int      half            = max_pixel_value / 2; // rounding bias for magic_div
   const uint32_t half_pix        = (uint32_t)(max_pixel_value / 2); // integer chroma neutral
 
-  const int cwidth  = (maskMode == MASK444) ? width  : (maskMode == MASK411) ? width >> 2 : width >> 1;
-  const int cheight = (maskMode == MASK444 || maskMode == MASK422 || maskMode == MASK422_MPEG2 || maskMode == MASK422_TOPLEFT || maskMode == MASK411) ? height : height >> 1;
+  const int cwidth  = width / MaskHSubsample<maskMode>;
+  const int cheight = height / MaskVSubsample<maskMode>;
 
   std::vector<pixel_t> ovr_y_buffer;
   std::vector<pixel_t> mask_buffer;
@@ -730,18 +770,10 @@ static void layer_yuv_mulovr_c(
         dstp[x] = (pixel_t)magic_div_rt<pixel_t>((uint32_t)dstp[x] * inv_keep + half, magic);
     }
 
-    if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT) {
-      dstp  += dst_pitch * 2;
-      ovrp  += overlay_pitch * 2;
-      if constexpr (has_alpha)
-        maskp += mask_pitch * 2;
-    }
-    else {
-      dstp  += dst_pitch;
-      ovrp  += overlay_pitch;
-      if constexpr (has_alpha)
-        maskp += mask_pitch;
-    }
+    dstp  += dst_pitch * MaskVSubsample<maskMode>;
+    ovrp  += overlay_pitch * MaskVSubsample<maskMode>;
+    if constexpr (has_alpha)
+      maskp += mask_pitch * MaskVSubsample<maskMode>;
 
     if constexpr (!lumaonly) {
       dstp_u += dst_pitchUV;
@@ -788,8 +820,8 @@ static void layer_yuv_mulovr_f_c(
   if constexpr (has_alpha)
     mask_pitch /= sizeof(float);
 
-  const int cwidth  = (maskMode == MASK444) ? width  : (maskMode == MASK411) ? width >> 2 : width >> 1;
-  const int cheight = (maskMode == MASK444 || maskMode == MASK422 || maskMode == MASK422_MPEG2 || maskMode == MASK422_TOPLEFT || maskMode == MASK411) ? height : height >> 1;
+  const int cwidth  = width / MaskHSubsample<maskMode>;
+  const int cheight = height / MaskVSubsample<maskMode>;
 
   std::vector<float> ovr_y_buffer;
   std::vector<float> mask_buffer;
@@ -817,18 +849,10 @@ static void layer_yuv_mulovr_f_c(
         dstp[x] *= inv_keep;
     }
 
-    if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT) {
-      dstp  += dst_pitch * 2;
-      ovrp  += overlay_pitch * 2;
-      if constexpr (has_alpha)
-        maskp += mask_pitch * 2;
-    }
-    else {
-      dstp  += dst_pitch;
-      ovrp  += overlay_pitch;
-      if constexpr (has_alpha)
-        maskp += mask_pitch;
-    }
+    dstp  += dst_pitch * MaskVSubsample<maskMode>;
+    ovrp  += overlay_pitch * MaskVSubsample<maskMode>;
+    if constexpr (has_alpha)
+      maskp += mask_pitch * MaskVSubsample<maskMode>;
 
     if constexpr (!lumaonly) {
       dstp_u += dst_pitchUV;
@@ -873,7 +897,17 @@ static void get_layer_yuv_mulovr_functions(
     MULOVR_HA(MASK444, true)
   }
   else if (vi.Is411()) {
-    MULOVR_HA(MASK411, false)
+    if (placement == PLACEMENT_MPEG1) { MULOVR_HA(MASK411, false) }
+    else                              { MULOVR_HA(MASK411_TOPLEFT, false) }
+  }
+  else if (vi.Is440()) {
+    // Same binary split as 4:1:1/4:1:0: only MPEG1 is the distinct average case.
+    if (placement == PLACEMENT_MPEG1) { MULOVR_HA(MASK440, false) }
+    else                              { MULOVR_HA(MASK440_TOPLEFT, false) }
+  }
+  else if (vi.Is410()) {
+    if (placement == PLACEMENT_MPEG1) { MULOVR_HA(MASK410, false) }
+    else                              { MULOVR_HA(MASK410_TOPLEFT, false) }
   }
   else if (vi.Is420()) {
     if      (placement == PLACEMENT_MPEG1)    { MULOVR_HA(MASK420,         false) }
@@ -902,18 +936,7 @@ static void get_layer_yuv_add_masked_functions(
   /*out*/masked_merge_float_fn_t** layer_f_fn)
 {
   // Use the unified (Layer,Overlay) masked merge functions
-  // Determine MaskMode from format and placement
-  MaskMode maskMode = MASK444;
-  if (is_chroma) {
-    if (vi.Is411())
-      maskMode = MASK411;
-    else if (vi.Is420())
-      maskMode = (placement == PLACEMENT_MPEG1) ? MASK420 : (placement == PLACEMENT_TOPLEFT) ? MASK420_TOPLEFT : MASK420_MPEG2;
-    else if (vi.Is422())
-      maskMode = (placement == PLACEMENT_MPEG1) ? MASK422 : (placement == PLACEMENT_TOPLEFT) ? MASK422_TOPLEFT : MASK422_MPEG2;
-    // Is444() / IsY(): stay MASK444
-  }
-  // is_chroma=false (luma): always MASK444
+  MaskMode maskMode = is_chroma ? resolveChromaMaskMode(placement, vi) : MASK444;
   *layer_fn = get_overlay_blend_masked_fn_c(is_chroma, maskMode);
   *layer_f_fn = get_overlay_blend_masked_float_fn_c(is_chroma, maskMode);
 

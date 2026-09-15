@@ -230,18 +230,7 @@ void get_layer_yuv_masked_add_functions_sse41(
   // only masked merge is left here, simple weighted blend is already handled
 
   // Use the unified (Layer,Overlay) masked merge functions
-  // Determine MaskMode from format and placement
-  MaskMode maskMode = MASK444;
-  if (is_chroma) {
-    if (vi.Is411())
-      maskMode = MASK411;
-    else if (vi.Is420())
-      maskMode = (placement == PLACEMENT_MPEG1) ? MASK420 : (placement == PLACEMENT_TOPLEFT) ? MASK420_TOPLEFT : MASK420_MPEG2;
-    else if (vi.Is422())
-      maskMode = (placement == PLACEMENT_MPEG1) ? MASK422 : (placement == PLACEMENT_TOPLEFT) ? MASK422_TOPLEFT : MASK422_MPEG2;
-    // Is444() / IsY(): stay MASK444
-  }
-  // is_chroma=false (luma): always MASK444
+  MaskMode maskMode = is_chroma ? resolveChromaMaskMode(placement, vi) : MASK444;
 
   *layer_fn = get_overlay_blend_masked_fn_sse41(is_chroma, maskMode);
   *layer_f_fn = get_overlay_blend_masked_float_fn_sse41(is_chroma, maskMode);

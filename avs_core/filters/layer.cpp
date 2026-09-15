@@ -1070,6 +1070,20 @@ ShowChannel::ShowChannel(PClip _child, const char* pixel_type, int _channel, ISc
         env->ThrowError("Show%s: width must be mod 4 for 4:1:1 target", ShowText[orig_channel]);
       }
     }
+    if (vi.Is440()) {
+      // 4:4:0 has no horizontal chroma subsampling, so no width constraint here.
+      if (vi.height & 1) {
+        env->ThrowError("Show%s: height must be mod 2 for 4:4:0 target", ShowText[orig_channel]);
+      }
+    }
+    if (vi.Is410()) {
+      if (vi.width & 3) {
+        env->ThrowError("Show%s: width must be mod 4 for 4:1:0 target", ShowText[orig_channel]);
+      }
+      if (vi.height & 3) {
+        env->ThrowError("Show%s: height must be mod 4 for 4:1:0 target", ShowText[orig_channel]);
+      }
+    }
 
     target_bits_per_pixel = vi.BitsPerComponent();
   }
