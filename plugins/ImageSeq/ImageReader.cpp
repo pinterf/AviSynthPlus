@@ -127,8 +127,18 @@ ImageReader::ImageReader(const char * _base_name, const int _start, const int _e
         else if (infoHeader.biPlanes == 3) {
           if (infoHeader.biBitCount == 24)
             vi.pixel_type = VideoInfo::CS_YV24;
-          else if (infoHeader.biBitCount == 16)
-            vi.pixel_type = VideoInfo::CS_YV16;
+          else if (infoHeader.biBitCount == 16) {
+            // YV16 (4:2:2) and YUV440 (4:4:0) both occupy 16 bits/pixel
+            // YV16 keeps precedence, before YUV440 it was the only one at 16bpp
+            if (!lstrcmpi(_pixel, "rgb24")) // Hack - the default text is "rgb24"
+              vi.pixel_type = VideoInfo::CS_YV16;
+            else if (!lstrcmpi(_pixel, "yv16"))
+              vi.pixel_type = VideoInfo::CS_YV16;
+            else if (!lstrcmpi(_pixel, "yuv440"))
+              vi.pixel_type = VideoInfo::CS_YUV440;
+            else
+              env->ThrowError("ImageReader: 16 bit, 3 plane EBMP: Pixel_type must be \"YV16\" or \"YUV440\".");
+          }
           else if (infoHeader.biBitCount == 12) {
             if (!lstrcmpi(_pixel, "rgb24")) // Hack - the default text is "rgb24"
               vi.pixel_type = VideoInfo::CS_YV12;
@@ -139,6 +149,8 @@ ImageReader::ImageReader(const char * _base_name, const int _start, const int _e
             else
               env->ThrowError("ImageReader: 12 bit, 3 plane EBMP: Pixel_type must be \"YV12\" or \"YV411\".");
           }
+          else if (infoHeader.biBitCount == 9)
+            vi.pixel_type = VideoInfo::CS_YUV410; // 4:1:0 specific, no other 3-plane formats have this bpp
           else
             env->ThrowError("ImageReader: %d bit, 3 plane EBMP is unsupported.", infoHeader.biBitCount);
         }
