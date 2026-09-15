@@ -92,13 +92,23 @@ private:
 
   const char* output_pixel_format_override;
 
-  int placement; // PLACEMENT_MPEG2 (default) or PLACEMENT_MPEG1
+  int placement; // PLACEMENT_MPEG2 (default), PLACEMENT_MPEG1 or PLACEMENT_TOPLEFT
+  const char* placementName;
+  // raw "mpeg2"/"mpeg1"/"top_left" string
+  // Role 1: passed straight through as ChromaInPlacement/ChromaOutPlacement to
+  // ConvertToYUV4xx calls in the forced-444 (use444=true) round trip, so input
+  // siting and the reconstructed output siting always match.
+  // Role 2: native, non-444 paths are using for masked-blend chroma mask downsampling.
+  // FIXME: check that base/overlay/mask's own chroma siting all agree with it and each other
 
   bool isInternalRGB; // must be planar rgb
   bool isInternalGrey;
   bool isInternal444;
   bool isInternal422;
   bool isInternal420;
+  bool isInternal411;
+  bool isInternal440;
+  bool isInternal410;
 
   PClip child444;
 

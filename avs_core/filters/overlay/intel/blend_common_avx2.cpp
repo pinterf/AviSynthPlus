@@ -296,6 +296,12 @@ masked_merge_fn_t* get_overlay_blend_masked_fn_avx2(bool is_chroma, MaskMode mas
   case MASK422_MPEG2:    DISPATCH_OVERLAY_BLEND_AVX2(MASK422_MPEG2)
   case MASK422_TOPLEFT:  DISPATCH_OVERLAY_BLEND_AVX2(MASK422_TOPLEFT)
   case MASK411:          DISPATCH_OVERLAY_BLEND_AVX2(MASK411)
+  case MASK411_TOPLEFT:  DISPATCH_OVERLAY_BLEND_AVX2(MASK411_TOPLEFT)
+  case MASK440:          DISPATCH_OVERLAY_BLEND_AVX2(MASK440)
+  case MASK440_TOPLEFT:  DISPATCH_OVERLAY_BLEND_AVX2(MASK440_TOPLEFT)
+  case MASK410:          DISPATCH_OVERLAY_BLEND_AVX2(MASK410)
+  case MASK410_TOPLEFT:  DISPATCH_OVERLAY_BLEND_AVX2(MASK410_TOPLEFT)
+  case MASK_MODE_COUNT: break;
   }
 #undef DISPATCH_OVERLAY_BLEND_AVX2
   return masked_merge_avx2_impl<MASK444>; // unreachable
@@ -326,6 +332,16 @@ void do_fill_chroma_row_avx2(
     prepare_effective_mask_for_row_avx2<MASK422_MPEG2, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK422_TOPLEFT:
     prepare_effective_mask_for_row_avx2<MASK422_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK440:
+    prepare_effective_mask_for_row_avx2<MASK440, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK410:
+    prepare_effective_mask_for_row_avx2<MASK410, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK411_TOPLEFT:
+    prepare_effective_mask_for_row_avx2<MASK411_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK440_TOPLEFT:
+    prepare_effective_mask_for_row_avx2<MASK440_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK410_TOPLEFT:
+    prepare_effective_mask_for_row_avx2<MASK410_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   default: break;
   }
 }
@@ -357,6 +373,16 @@ void do_fill_chroma_row_float_avx2(
     prepare_effective_mask_for_row_float_avx2<MASK422_MPEG2,    full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
   case MASK422_TOPLEFT:
     prepare_effective_mask_for_row_float_avx2<MASK422_TOPLEFT,  full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK440:
+    prepare_effective_mask_for_row_float_avx2 < MASK440, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK410:
+    prepare_effective_mask_for_row_float_avx2 < MASK410, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK411_TOPLEFT:
+    prepare_effective_mask_for_row_float_avx2 < MASK411_TOPLEFT, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK440_TOPLEFT:
+    prepare_effective_mask_for_row_float_avx2 < MASK440_TOPLEFT, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK410_TOPLEFT:
+    prepare_effective_mask_for_row_float_avx2 < MASK410_TOPLEFT, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
   default: break;
   }
 }
@@ -380,6 +406,12 @@ masked_merge_float_fn_t* get_overlay_blend_masked_float_fn_avx2(bool is_chroma, 
   case MASK422_MPEG2:    DISPATCH_OVERLAY_BLEND_FLOAT_AVX2(MASK422_MPEG2)
   case MASK422_TOPLEFT:  DISPATCH_OVERLAY_BLEND_FLOAT_AVX2(MASK422_TOPLEFT)
   case MASK411:          DISPATCH_OVERLAY_BLEND_FLOAT_AVX2(MASK411)
+  case MASK411_TOPLEFT:  DISPATCH_OVERLAY_BLEND_FLOAT_AVX2(MASK411_TOPLEFT)
+  case MASK440:          DISPATCH_OVERLAY_BLEND_FLOAT_AVX2(MASK440)
+  case MASK440_TOPLEFT:  DISPATCH_OVERLAY_BLEND_FLOAT_AVX2(MASK440_TOPLEFT)
+  case MASK410:          DISPATCH_OVERLAY_BLEND_FLOAT_AVX2(MASK410)
+  case MASK410_TOPLEFT:  DISPATCH_OVERLAY_BLEND_FLOAT_AVX2(MASK410_TOPLEFT)
+  case MASK_MODE_COUNT: break;
   }
 #undef DISPATCH_OVERLAY_BLEND_FLOAT_AVX2
   return masked_merge_float_avx2_impl<MASK444>; // unreachable

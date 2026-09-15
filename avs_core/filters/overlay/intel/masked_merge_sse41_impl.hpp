@@ -160,7 +160,7 @@ static AVS_FORCEINLINE void masked_merge_sse41_impl_inner(
   if (bits_per_pixel == 8) {
     const uint8_t* maskp = reinterpret_cast<const uint8_t*>(mask);
     const int mpx      = mask_pitch;
-    const int mask_adv = (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT) ? mpx * 2 : mpx;
+    const int mask_adv = mpx * MaskVSubsample<maskMode>;
 
     std::vector<uint8_t> eff_buf;
     if constexpr (maskMode != MASK444 || !full_opacity) eff_buf.resize(width);
@@ -177,7 +177,7 @@ static AVS_FORCEINLINE void masked_merge_sse41_impl_inner(
 
   const uint16_t* maskp = reinterpret_cast<const uint16_t*>(mask);
   const int mpx      = mask_pitch / 2;
-  const int mask_adv = (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT) ? mpx * 2 : mpx;
+  const int mask_adv = mpx * MaskVSubsample<maskMode>;
 
   std::vector<uint16_t> eff_buf;
   if constexpr (maskMode != MASK444 || !full_opacity) eff_buf.resize(width);
@@ -217,7 +217,7 @@ static void masked_merge_float_sse41_impl_inner(
 {
   const float* maskp = reinterpret_cast<const float*>(mask);
   const int mpx = mask_pitch / sizeof(float);
-  const int mask_adv = (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT) ? mpx * 2 : mpx;
+  const int mask_adv = mpx * MaskVSubsample<maskMode>;
 
   std::vector<float> eff_buf;
   if constexpr (maskMode != MASK444 || !full_opacity) eff_buf.resize(width);

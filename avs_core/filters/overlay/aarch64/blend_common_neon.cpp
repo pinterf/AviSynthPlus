@@ -269,8 +269,12 @@ static void masked_merge_neon_impl(
 
       p1   += p1_pitch;
       p2   += p2_pitch;
-      // 4:2:0 modes: each chroma output row maps to 2 luma mask rows
-      if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT)
+      // 4:2:0/4:4:0 modes: each chroma output row maps to 2 luma mask rows;
+      // 4:1:0 maps to 4.
+      if constexpr (maskMode == MASK410 || maskMode == MASK410_TOPLEFT)
+        maskp += mask_pitch_px * 4;
+      else if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT ||
+                          maskMode == MASK440 || maskMode == MASK440_TOPLEFT)
         maskp += mask_pitch_px * 2;
       else
         maskp += mask_pitch_px;
@@ -330,7 +334,10 @@ static void masked_merge_neon_impl(
 
       p1   += p1_pitch;
       p2   += p2_pitch;
-      if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT)
+      if constexpr (maskMode == MASK410 || maskMode == MASK410_TOPLEFT)
+        maskp += mask_pitch_px * 4;
+      else if constexpr (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT ||
+                          maskMode == MASK440 || maskMode == MASK440_TOPLEFT)
         maskp += mask_pitch_px * 2;
       else
         maskp += mask_pitch_px;
@@ -366,12 +373,17 @@ void masked_merge_neon_dispatch(BYTE* p1, const BYTE* p2, const BYTE* mask,
 // One instantiation per MaskMode — no is_chroma dimension (subtract removed, formula identical for luma and chroma).
 template void masked_merge_neon_dispatch<MASK444>       (BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
 template void masked_merge_neon_dispatch<MASK411>       (BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
+template void masked_merge_neon_dispatch<MASK411_TOPLEFT>(BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
 template void masked_merge_neon_dispatch<MASK420>       (BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
 template void masked_merge_neon_dispatch<MASK420_MPEG2> (BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
 template void masked_merge_neon_dispatch<MASK420_TOPLEFT>(BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
 template void masked_merge_neon_dispatch<MASK422>       (BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
 template void masked_merge_neon_dispatch<MASK422_MPEG2> (BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
 template void masked_merge_neon_dispatch<MASK422_TOPLEFT>(BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
+template void masked_merge_neon_dispatch<MASK440>       (BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
+template void masked_merge_neon_dispatch<MASK440_TOPLEFT>(BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
+template void masked_merge_neon_dispatch<MASK410>       (BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
+template void masked_merge_neon_dispatch<MASK410_TOPLEFT>(BYTE*, const BYTE*, const BYTE*, int, int, int, int, int, int, int);
 
 // ============================================================
 // masked_merge_float_neon
@@ -498,6 +510,12 @@ masked_merge_fn_t* get_overlay_blend_masked_fn_neon(bool is_chroma, MaskMode mas
   case MASK422_MPEG2:    DISPATCH_OVERLAY_BLEND_NEON(MASK422_MPEG2)
   case MASK422_TOPLEFT:  DISPATCH_OVERLAY_BLEND_NEON(MASK422_TOPLEFT)
   case MASK411:          DISPATCH_OVERLAY_BLEND_NEON(MASK411)
+  case MASK411_TOPLEFT:  DISPATCH_OVERLAY_BLEND_NEON(MASK411_TOPLEFT)
+  case MASK440:          DISPATCH_OVERLAY_BLEND_NEON(MASK440)
+  case MASK440_TOPLEFT:  DISPATCH_OVERLAY_BLEND_NEON(MASK440_TOPLEFT)
+  case MASK410:          DISPATCH_OVERLAY_BLEND_NEON(MASK410)
+  case MASK410_TOPLEFT:  DISPATCH_OVERLAY_BLEND_NEON(MASK410_TOPLEFT)
+  case MASK_MODE_COUNT: break;
   }
 #undef DISPATCH_OVERLAY_BLEND_NEON
   return masked_merge_neon_dispatch<MASK444>; // unreachable
@@ -715,6 +733,19 @@ static const float* prepare_effective_mask_for_row_float_neon(
       fill_mask420_topleft_float_neon<full_opacity>(dst, maskp, mask_pitch, width, opacity);
     else if constexpr (maskMode == MASK411)
       fill_mask411_float_neon<full_opacity>(dst, maskp, width, opacity);
+    else if constexpr (maskMode == MASK440 || maskMode == MASK410 ||
+                        maskMode == MASK410_TOPLEFT || maskMode == MASK440_TOPLEFT || maskMode == MASK411_TOPLEFT) {
+      // No NEON kernel yet for these obscure ratios (4:4:0 1x2 block, 4:1:0 4x4 block) —
+      // scalar C fallback, same shape as the plain-C rowprep in blend_common.h.
+      float mask_right = 0.0f; // unused (only MPEG2 sliding-window modes need it)
+      for (int x = 0; x < width; ++x) {
+        const float avg = calculate_effective_mask_f<maskMode>(maskp, x, mask_pitch, mask_right);
+        if constexpr (full_opacity)
+          dst[x] = avg;
+        else
+          dst[x] = avg * opacity;
+      }
+    }
     return dst;
   }
 }
@@ -751,8 +782,11 @@ static void masked_merge_float_neon_impl_inner(
 {
   const float* maskp = reinterpret_cast<const float*>(mask);
   const int mpx      = mask_pitch / (int)sizeof(float);
-  const int mask_adv = (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT)
-                       ? mpx * 2 : mpx;
+  const int mask_adv =
+    (maskMode == MASK410 || maskMode == MASK410_TOPLEFT) ? mpx * 4 :
+    (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT ||
+     maskMode == MASK440 || maskMode == MASK440_TOPLEFT) ? mpx * 2 :
+    mpx;
 
   std::vector<float> eff_buf;
   if constexpr (maskMode != MASK444 || !full_opacity) eff_buf.resize(width);
@@ -800,6 +834,12 @@ masked_merge_float_fn_t* get_overlay_blend_masked_float_fn_neon(bool is_chroma, 
   case MASK422_MPEG2:    DISPATCH_OVERLAY_BLEND_FLOAT_NEON(MASK422_MPEG2)
   case MASK422_TOPLEFT:  DISPATCH_OVERLAY_BLEND_FLOAT_NEON(MASK422_TOPLEFT)
   case MASK411:          DISPATCH_OVERLAY_BLEND_FLOAT_NEON(MASK411)
+  case MASK411_TOPLEFT:  DISPATCH_OVERLAY_BLEND_FLOAT_NEON(MASK411_TOPLEFT)
+  case MASK440:          DISPATCH_OVERLAY_BLEND_FLOAT_NEON(MASK440)
+  case MASK440_TOPLEFT:  DISPATCH_OVERLAY_BLEND_FLOAT_NEON(MASK440_TOPLEFT)
+  case MASK410:          DISPATCH_OVERLAY_BLEND_FLOAT_NEON(MASK410)
+  case MASK410_TOPLEFT:  DISPATCH_OVERLAY_BLEND_FLOAT_NEON(MASK410_TOPLEFT)
+  case MASK_MODE_COUNT: break;
   }
 #undef DISPATCH_OVERLAY_BLEND_FLOAT_NEON
   return masked_merge_float_neon_impl<MASK444>; // unreachable
@@ -833,11 +873,21 @@ void do_fill_chroma_row_neon(
     prepare_effective_mask_for_row<MASK422_MPEG2,    pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK422_TOPLEFT:
     prepare_effective_mask_for_row<MASK422_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK440:
+    prepare_effective_mask_for_row<MASK440,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK410:
+    prepare_effective_mask_for_row<MASK410,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK411_TOPLEFT:
+    prepare_effective_mask_for_row<MASK411_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK440_TOPLEFT:
+    prepare_effective_mask_for_row<MASK440_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+  case MASK410_TOPLEFT:
+    prepare_effective_mask_for_row<MASK410_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   default: break;
   }
 }
 
-template void do_fill_chroma_row_neon<uint8_t,  true> (std::vector<uint8_t>&,  const uint8_t*,  int, int, MaskMode, int, int, MagicDiv);
+template void do_fill_chroma_row_neon<uint8_t,  true>(std::vector<uint8_t>&,  const uint8_t*,  int, int, MaskMode, int, int, MagicDiv);
 template void do_fill_chroma_row_neon<uint8_t,  false>(std::vector<uint8_t>&,  const uint8_t*,  int, int, MaskMode, int, int, MagicDiv);
 template void do_fill_chroma_row_neon<uint16_t, true> (std::vector<uint16_t>&, const uint16_t*, int, int, MaskMode, int, int, MagicDiv);
 template void do_fill_chroma_row_neon<uint16_t, false>(std::vector<uint16_t>&, const uint16_t*, int, int, MaskMode, int, int, MagicDiv);
@@ -863,9 +913,19 @@ void do_fill_chroma_row_float_neon(
     prepare_effective_mask_for_row_float_neon<MASK422_MPEG2,    full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
   case MASK422_TOPLEFT:
     prepare_effective_mask_for_row_float_neon<MASK422_TOPLEFT,  full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK440:
+    prepare_effective_mask_for_row_float_neon<MASK440,          full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK410:
+    prepare_effective_mask_for_row_float_neon<MASK410,          full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK411_TOPLEFT:
+    prepare_effective_mask_for_row_float_neon<MASK411_TOPLEFT,  full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK440_TOPLEFT:
+    prepare_effective_mask_for_row_float_neon<MASK440_TOPLEFT,  full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
+  case MASK410_TOPLEFT:
+    prepare_effective_mask_for_row_float_neon<MASK410_TOPLEFT,  full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity); break;
   default: break;
   }
 }
 
-template void do_fill_chroma_row_float_neon<true> (std::vector<float>&, const float*, int, int, MaskMode, float);
+template void do_fill_chroma_row_float_neon<true>(std::vector<float>&, const float*, int, int, MaskMode, float);
 template void do_fill_chroma_row_float_neon<false>(std::vector<float>&, const float*, int, int, MaskMode, float);
