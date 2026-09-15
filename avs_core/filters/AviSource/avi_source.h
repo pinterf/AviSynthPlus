@@ -61,6 +61,7 @@ class TemporalBuffer {
 public:
   TemporalBuffer(const VideoInfo& vi, bool bMediaPad,
     AVI_SpecialFormats specf,
+    bool bSwapUV,
     IScriptEnvironment* env);
   ~TemporalBuffer() {}
   int GetPitch(int plane=PLANAR_Y) {
@@ -96,6 +97,11 @@ class AVISource : public IClip {
   bool bInvertFrames;
   bool bMediaPad;
   AVI_SpecialFormats specf;
+  // True for raw fourCCs whose on-disk plane order is U-then-V (e.g. FFmpeg/VLC's
+  // 'I4xx' family) while the exposed vi.pixel_type stays our one canonical V-first
+  // constant (CS_YUV410/CS_YV411/CS_YUV440/...) - no second UPlaneFirst pixel_type
+  // is added to the public format list; the swap happens once here at import instead.
+  bool bSwapUV;
 
   PVideoFrame last_frame;
   int last_frame_no;

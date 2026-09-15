@@ -66,6 +66,7 @@ static void __cdecl free_buffer(void* buff, IScriptEnvironment* env)
 
 TemporalBuffer::TemporalBuffer(const VideoInfo& vi, bool bMediaPad,
   AVI_SpecialFormats specf,
+  bool bSwapUV,
   IScriptEnvironment* env)
 {
   int heightY = vi.height;
@@ -164,7 +165,9 @@ TemporalBuffer::TemporalBuffer(const VideoInfo& vi, bool bMediaPad,
     pV = pU + sizeY; // R
     if (vi.IsPlanarRGBA())
       pA = pV + sizeY; // A
-  } else if (vi.pixel_type & VideoInfo::CS_UPlaneFirst) {
+  } else if (((vi.pixel_type & VideoInfo::CS_UPlaneFirst) != 0) != bSwapUV) {
+    // physical order: U then V.
+    // vi dependent like CS_I420, or the caller sets it (contrary to vi stays at V-first format)
     pU = pY + sizeY;
     pV = pU + sizeUV;
   } else {
@@ -531,8 +534,19 @@ void AVISource::LocateVideoCodec(const char fourCC[], IScriptEnvironment* env) {
     vi.pixel_type = VideoInfo::CS_YV24;
   } else if (pbiSrc->biCompression == MAKEFOURCC('Y', 'V', '1', '6')) {
     vi.pixel_type = VideoInfo::CS_YV16;
-  } else if (pbiSrc->biCompression == MAKEFOURCC('Y', '4', '1', 'B')) {
+  } else if (pbiSrc->biCompression == MAKEFOURCC('Y', '4', '1', 'B')) { // 4:1:1 V,U order
     vi.pixel_type = VideoInfo::CS_YV411;
+  } else if (pbiSrc->biCompression == MAKEFOURCC('Y', 'V', 'U', '9')) { // YVU9 (classic 4:1:0 raw, V,U order)
+    vi.pixel_type = VideoInfo::CS_YUV410;
+  } else if (pbiSrc->biCompression == MAKEFOURCC('I', '4', '1', '0')) { // FFmpeg 'I4xx' family: U,V order
+    vi.pixel_type = VideoInfo::CS_YUV410;
+    bSwapUV = true;
+  } else if (pbiSrc->biCompression == MAKEFOURCC('I', '4', '1', '1')) { // 4:1:1 U,V order
+    vi.pixel_type = VideoInfo::CS_YV411;
+    bSwapUV = true;
+  } else if (pbiSrc->biCompression == MAKEFOURCC('I', '4', '4', '0')) { // 4:4:0 U,V order
+    vi.pixel_type = VideoInfo::CS_YUV440;
+    bSwapUV = true;
   }
   else if (pbiSrc->biCompression == MAKEFOURCC('B', 'R', 'A', 64)) { // BRA@ ie. BRA[64]
     vi.pixel_type = VideoInfo::CS_BGR64;
@@ -776,6 +790,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
 
   specf = AVI_SpecialFormats::none;
   bMediaPad = false;
+  bSwapUV = false;
   frame = 0;
 
   auto filename_w = utf8 ? Utf8ToWideChar(filename) : AnsiToWideChar(filename);
@@ -878,6 +893,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
           bool fv408  = pixel_type[0] == 0 || lstrcmpi(pixel_type, "v408") == 0;
 
           bool fYV411 = pixel_type[0] == 0 || lstrcmpi(pixel_type, "YV411") == 0;
+          bool fYUV410 = pixel_type[0] == 0 || lstrcmpi(pixel_type, "YUV410") == 0 || lstrcmpi(pixel_type, "YVU9") == 0;
           bool fYUY2  = pixel_type[0] == 0 || lstrcmpi(pixel_type, "YUY2" ) == 0;
           bool fRGB32 = pixel_type[0] == 0 || lstrcmpi(pixel_type, "RGB32") == 0;
           bool fRGB24 = pixel_type[0] == 0 || lstrcmpi(pixel_type, "RGB24") == 0;
@@ -933,7 +949,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
             forcedType = false;
           }
           else if (lstrcmpi(pixel_type, "FULL") == 0) {
-            fY8 = fYV12 = fYV16 = fYV24 = fYV411 = fYUY2 = fRGB32 = fRGB24 = fRGB48 = fRGB64 = true;
+            fY8 = fYV12 = fYV16 = fYV24 = fYV411 = fYUV410 = fYUY2 = fRGB32 = fRGB24 = fRGB48 = fRGB64 = true;
             fYUV420P10 = true;
             fYUV420P16 = true;
             fYUV422P10 = true;
@@ -948,7 +964,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
             forcedType = false;
           }
 
-          if (!(fY8 || fYV12 || fYV16 || fYV24 || fYV411 || fYUY2 || fRGB32 || fRGB24 || fRGB48 || fRGB64
+          if (!(fY8 || fYV12 || fYV16 || fYV24 || fYV411 || fYUV410 || fYUY2 || fRGB32 || fRGB24 || fRGB48 || fRGB64
             || fv308 || fv408
             || fYUV420P10 || fP010
             || fYUV420P16 || fP016
@@ -961,7 +977,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
             || fr210 || fR10k
             || fGrayscale
             ))
-            env->ThrowError("AVISource: requested format must be one of YV12/16/24, YV411, YUY2, Y8, Y, RGBP, RGBP10, r210, R10k, RGB24/32/48/64, YUV420P10/16, YUV422P10/16, YUV444P10/16, v210, P010/16, P210/16, v410, Y410, Y416, v308, v408, AUTO or FULL");
+            env->ThrowError("AVISource: requested format must be one of YV12/16/24, YV411, YUV410, YUY2, Y8, Y, RGBP, RGBP10, r210, R10k, RGB24/32/48/64, YUV420P10/16, YUV422P10/16, YUV444P10/16, v210, P010/16, P210/16, v410, Y410, Y416, v308, v408, AUTO or FULL");
 
           // try to decompress to YV12, YV411, YV16, YV24, YUY2, Y8, RGB32, and RGB24, RGB48, RGB64, YUV422P10 in turn
           memset(&biDst, 0, sizeof(BITMAPINFOHEADER));
@@ -1026,6 +1042,20 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
               bOpen = false;  // Skip further attempts
             } else if (forcedType) {
                env->ThrowError("AVISource: the video decompressor couldn't produce YV411 output");
+            }
+          }
+
+          // YUV410 (YVU9)
+          if (fYUV410 && bOpen) {
+            vi.pixel_type = VideoInfo::CS_YUV410;
+            biDst.biSizeImage = vi.BMPSize();
+            biDst.biCompression = MAKEFOURCC('Y', 'V', 'U', '9');
+            biDst.biBitCount = 9; // YVU9 average bpp: 8 (Y) + 2*0.5 (1/4 res U/V)
+            if (ICERR_OK == ICDecompressQuery(hic, pbiSrc, &biDst)) {
+              _RPT0(0,"AVISource: Opening as YUV410.\n");
+              bOpen = false;  // Skip further attempts
+            } else if (forcedType) {
+               env->ThrowError("AVISource: the video decompressor couldn't produce YUV410 output");
             }
           }
 
@@ -1579,7 +1609,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
     if (mode != MODE_WAV) {
       bMediaPad = !(!bMediaPad && !vi.IsY8() && vi.IsPlanar());
       int keyframe = pvideo->NearestKeyFrame(0);
-      frame = new TemporalBuffer(vi, bMediaPad, specf, env);
+      frame = new TemporalBuffer(vi, bMediaPad, specf, bSwapUV, env);
 
       LRESULT error = DecompressFrame(keyframe, false, env);
       if (error != ICERR_OK)   // shutdown, if init not succesful.
