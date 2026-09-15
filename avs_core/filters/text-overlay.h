@@ -90,11 +90,12 @@
  * output pixel is derived by spatially downsampling the corresponding luma-
  * resolution mask row(s) using prepare_effective_mask_for_row<MaskMode,...>
  * (from overlay/blend_common.h).  The MaskMode encodes both the subsampling
- * ratio (4:4:4, 4:2:2, 4:2:0, 4:1:1) and the chroma siting (CENTER (MPEG1) / LEFT (MPEG2) /
+ * ratio (4:4:4, 4:2:2, 4:2:0, 4:1:1, 4:4:0, 4:1:0) and the chroma siting (CENTER (MPEG1) / LEFT (MPEG2) /
  * TOP_LEFT), giving correct chroma placement rather than a naive box average.
  *
- * Eight MaskModes cover all supported combinations.  rowprep_fns[8] holds one
- * function pointer per MaskMode, with the best available SIMD tier (AVX2 /
+ * rowprep_fns[MASK_MODE_COUNT] holds one function pointer per MaskMode, sized
+ * by the MaskMode enum's own sentinel count (not a literal, so it can't silently
+ * fall out of sync with the enum again), with the best available SIMD tier (AVX2 /
  * SSE4.1 / scalar) selected once at construction time from cpuFlags.  Apply()
  * computes the actual MaskMode at call time from the VideoInfo subsampling
  * factors and the stored chromaplacement member, so the same Antialiaser
@@ -163,7 +164,7 @@ private:
   uint16_t* soa_buf;   // single allocation: w_stride * h * 4 uint16_t
   int w_stride;        // padded row stride (>= w, multiple of 32)
   std::vector<uint16_t> uv_buf_ba, uv_buf_u, uv_buf_v; // scratch for ApplyPlanar_SoA UV section, sized w
-  rowprep_u16_fn_t rowprep_fns[8];  // one per MaskMode, SIMD variant selected at construction
+  rowprep_u16_fn_t rowprep_fns[MASK_MODE_COUNT];  // one per MaskMode, SIMD variant selected at construction
   int chromaplacement;              // PLACEMENT_MPEG1/MPEG2/TOPLEFT — used in Apply() per-call
   HDC hdcAntialias;
   HBITMAP hbmAntialias;

@@ -49,10 +49,15 @@
 
 enum ChromaLocationMode {
   CENTER_411,
+  TOPLEFT_411, // point sample, co-sited left (411 has no vertical subsampling)
   CENTER_420,
   LEFT_420,
   CENTER_422,
-  LEFT_422
+  LEFT_422,
+  CENTER_440,
+  TOPLEFT_440, // point sample, co-sited top (440 has no horizontal subsampling)
+  CENTER_410,
+  TOPLEFT_410  // point sample, co-sited top-left
 };
 
 typedef struct BBX {
