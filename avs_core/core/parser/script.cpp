@@ -1632,6 +1632,7 @@ static const std::map<int, std::string> pixel_format_table =
   {VideoInfo::CS_YUV410P16 , "YUV410P16"},
   {VideoInfo::CS_YUV410PS  , "YUV410PS"},
 
+  {VideoInfo::CS_YUVA410    , "YUVA410"},
   {VideoInfo::CS_YUVA410P10 , "YUVA410P10"},
   {VideoInfo::CS_YUVA410P12 , "YUVA410P12"},
   {VideoInfo::CS_YUVA410P14 , "YUVA410P14"},
@@ -1652,6 +1653,7 @@ static const std::multimap<int, std::string> pixel_format_table_ex =
   {VideoInfo::CS_YV16 , "YUV422"},
   {VideoInfo::CS_YV12 , "YUV420"},
   {VideoInfo::CS_YV411, "YUV411"},
+  {VideoInfo::CS_YUV410, "YUV410"},
   {VideoInfo::CS_RGBP , "RGBP8"},
   {VideoInfo::CS_RGBAP, "RGBAP8"},
   {VideoInfo::CS_YV24 , "YUV444P8"},
