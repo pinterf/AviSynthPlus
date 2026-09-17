@@ -289,13 +289,13 @@ Turn::Turn(PClip c, int direction, IScriptEnvironment* env) : GenericVideoFilter
             int mod_v = vi.IsRGB() ? 1 : (1 << vi.GetPlaneHeightSubsampling(PLANAR_U));
             if (mod_h != mod_v)
             {
-                if (vi.width % mod_h)
+                if (vi.height % mod_h)
                 {
-                    env->ThrowError("Turn: Planar data must have MOD %d height.", mod_h);
+                    env->ThrowError("Turn: Planar data would not have MOD %d width after the turn.", mod_h);
                 }
-                if (vi.height % mod_v)
+                if (vi.width % mod_v)
                 {
-                    env->ThrowError("Turn: Planar data must have MOD %d width.", mod_v);
+                    env->ThrowError("Turn: Planar data would not have MOD %d height after the turn.", mod_v);
                 }
                 SetUVSource(mod_h, mod_v, env);
             }
