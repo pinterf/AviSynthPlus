@@ -2555,11 +2555,12 @@ AVSValue IsFloatUvZeroBased(AVSValue args, void*, IScriptEnvironment*)
 AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
 {
   //  { "BuildPixelType", BUILTIN_FUNC_PREFIX, "[family]s[bits]i[chroma]i[compat]b[oldnames]b[sample_clip]c", BuildPixelType }, // 180517-
-  // family: YUV, YUVA, RGB, RGBA, Y
+  // family: YUV, YUVA, RGB, RGBA, Y, YA
   // bits: 8, 10, 12, 14, 16, 32
-  // chroma: for YUV(A) 420,422,444,411. Ignored for RGB(A) and Y
+  // chroma: for YUV(A) 420,422,444,411,440,410. Ignored for RGB(A), Y and YA
   // compat (default false): returns packed rgb formats for 8/16 bits (RGB default: planar RGB)
-  // oldnames (default false): returns YV12/YV16/YV24 instead of YUV420P8/YUV422P8/YUV444P8
+  // oldnames (default false): returns YV12/YV16/YV24/YV411/YUV9 instead of
+  // YUV420P8/YUV422P8/YUV444P8/YUV411P8/YUV410P8 (no legacy short name for YUV440)
   // sample_clip: when supported, its format is overridden by specified parameters (e.g. only change bits=10)
 
   const bool hasTemplate = args[5].Defined();
@@ -2573,8 +2574,10 @@ AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
   if (!args[0].Defined() && hasTemplate) {
     // no family parameter: use template
     VideoInfo const &vi = args[5].AsClip()->GetVideoInfo();
-    if (vi.IsY())
+    if (vi.IsY()) // Must be checked before IsYUV
       family = "Y";
+    else if (vi.IsYA()) // Must be checked before IsYUVA
+      family = "YA";
     else if (vi.IsPlanar()) {
       if (vi.IsYUV())
         family = "YUV";
@@ -2604,8 +2607,9 @@ AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
   const bool isRGB = family == "RGB";
   const bool isRGBA = family == "RGBA";
   const bool isY = family == "Y";
+  const bool isYA = family == "YA";
 
-  if(!isYUV && !isYUVA && !isRGB && !isRGBA && !isY)
+  if(!isYUV && !isYUVA && !isRGB && !isRGBA && !isY && !isYA)
     env->ThrowError("BuildPixelType error: wrong 'family'.", family.c_str());
 
   int bits;
@@ -2631,6 +2635,8 @@ AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
       else if (hs == 1 && vs == 0) chroma = 422;
       else if (hs == 1 && vs == 1) chroma = 420;
       else if (hs == 2 && vs == 0) chroma = 411;
+      else if (hs == 0 && vs == 1) chroma = 440;
+      else if (hs == 2 && vs == 2) chroma = 410;
       else
         env->ThrowError("BuildPixelType error: sample_clip has invalid chroma subsampling.");
     }
@@ -2642,8 +2648,8 @@ AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
     chroma = 444; // n/a
   }
 
-  if(chroma != 444 && chroma != 422 && chroma != 420 && chroma != 411)
-    env->ThrowError("BuildPixelType error: 'chroma' must be 444, 422, 420 or 411.");
+  if(chroma != 444 && chroma != 422 && chroma != 420 && chroma != 411 && chroma != 440 && chroma != 410)
+    env->ThrowError("BuildPixelType error: 'chroma' must be 444, 422, 420, 411, 440 or 410.");
 
   // packed RGB compatibility formats only for RGB(A)
   const bool compat = isRGB || isRGBA ? args[3].AsBool(false) : false;
@@ -2666,7 +2672,7 @@ AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
 
   std::string format;
 
-  if (isYUV || isYUVA || isY)
+  if (isYUV || isYUVA || isY || isYA)
     format = family;
   else if (isRGB)
     format = "RGBP";
@@ -2682,6 +2688,10 @@ AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
       format += "420";
     else if (chroma == 411)
       format += "411";
+    else if (chroma == 440)
+      format += "440";
+    else if (chroma == 410)
+      format += "410";
 
     format = format + "P";
   }
@@ -2696,6 +2706,8 @@ AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
     else if (format == "YUV422" || format == "YUV422P8") format = "YV16";
     else if (format == "YUV444" || format == "YUV444P8") format = "YV24";
     else if (format == "YUV411" || format == "YUV411P8") format = "YV411";
+    else if (format == "YUV410" || format == "YUV410P8") format = "YUV9";
+    // no legacy short name for YUV440
   }
 
   return env->SaveString(format.c_str());
