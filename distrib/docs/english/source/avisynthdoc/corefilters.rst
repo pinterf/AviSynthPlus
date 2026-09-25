@@ -40,6 +40,8 @@ Color conversion and adjustment filters
 These filters can be used to change the color format or adjust the colors of
 a clip.
 
+- :doc:`BuildPixelType <corefilters/buildpixeltype>` Builds a ``pixel_type`` format name
+  string from a colorspace family, bit depth, chroma subsampling and/or a template clip.
 - :doc:`ColorYUV <corefilters/coloryuv>` Adjusts colors and luma independently.
 - :doc:`ConvertBackToYUY2 / ConvertToRGB / ConvertToRGB24 / ConvertToRGB32 /
   ConvertToYUY2 / ConvertToY8 / ConvertToYV411 / ConvertToYV12 / ConvertToYV16 /

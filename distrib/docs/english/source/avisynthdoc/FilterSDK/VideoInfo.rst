@@ -396,7 +396,7 @@ IsYV24, IsYV16, IsYV12 and IsY8.
 
 
 Is440 / Is410 / Is411 / IsYA (AviSynth+)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Added in v13:
 
@@ -424,6 +424,7 @@ IsYUVA / IsPlanarRGB / IsPlanarRGBA (AviSynth+)
 
 For checking further Avisynth+ specific formats:
 YUV with alpha plane, planar RGB with and without an alpha plane.
+Note: YA8-YAS returns true as well. (YA formats are set both as YUVA and Interleaved)
 
 
 IsColorSpace / IsSameColorspace / IsPlanar

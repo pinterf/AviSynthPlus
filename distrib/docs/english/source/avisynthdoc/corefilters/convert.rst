@@ -176,12 +176,15 @@ conversion at any bit depth.)
          int bits, bool quality] )
 
 
-*Y-only*
+*Y-only, Y+Alpha*
 ::
 
     ConvertToY8(clip [, string matrix, int bits, bool quality] )] )
     ConvertToY(clip [, string matrix, int bits, bool quality] ) ] )
+    ConvertToYA(clip [, string matrix, int bits, bool quality] ) ] )
 
+
+.. _color-formats:
 
 Color formats
 -------------
@@ -249,7 +252,18 @@ or the target placement is different from the source chroma placement read from 
 Such functions are ``ConvertToYV12``/``ConvertToYUV420``/``ConvertToYUVA420`` or
 ``ConvertToYV16``/``ConvertToYUV422``/``ConvertToYUVA422`` or
 ``ConvertToYV411``/``ConvertToYUV411``/``ConvertToYUVA411`` or
-``ConvertToYUV440``/``ConvertToYUVA440`` or ``ConvertToYUV410``/``ConvertToYUVA410``.
+``ConvertToYUV440``/``ConvertToYUVA440`` or ``ConvertToYUV410``/``ConvertToYUVA410`` or
+``ConvertToY``/``ConvertToYA``.
+
+For a source that already has alpha, the non-``A`` name of such a pair does not necessarily
+strip it: a **planar** alpha source (PlanarRGBA, any YUVA format, YA) keeps its alpha through
+the non-``A`` name too (e.g. ``PlanarRGBA.ConvertToYUV420()`` or ``PlanarRGBA.ConvertToY()``
+still produce an alpha-bearing result) - only the legacy 8-bit-only names
+(``ConvertToY8``, ``ConvertToYV12``, ``ConvertToYV16``, ``ConvertToYV24``, ``ConvertToYV411``)
+always strip it. A **packed** RGB32/64 source is the exception: its alpha survives only through
+the explicit ``A``-suffixed name (or ``ConvertToYA``); ``ConvertToY``/``ConvertToYUV420``/etc.
+on RGB32/64 always drop it. Convert to ``ConvertToPlanarRGBA`` first if a packed source's alpha
+needs to survive a non-``A``-suffixed conversion.
 
 ``ConvertToRGB`` (without numeric suffix) is adaptive:
 
@@ -796,6 +810,7 @@ Color conversions
 |          || Add ChromaOutPlacement to 4:1:1 (YUV411/YUVA411) functions|
 |          || 4:1:1 ChromaInPlacement: allow "center"; default to "left"|
 |          || Add ConvertToYUV(A)440 / ConvertToYUV(A)410 (4:4:0, 4:1:0)|
+|          || Add ConvertToYA (Y+Alpha)                                 |
 +----------+------------------------------------------------------------+
 | v3.7.3   || Added "sinpow",  "sinclin2" and "userdefined2" to         |
 |          |  chromaresampler options                                   |
@@ -817,4 +832,4 @@ Color conversions
 | v2.50    | ConvertToYV12                                              |
 +----------+------------------------------------------------------------+
 
-$Date: 2026/03/06 20:20:00 $
+$Date: 2026/09/25 21:05:00 $

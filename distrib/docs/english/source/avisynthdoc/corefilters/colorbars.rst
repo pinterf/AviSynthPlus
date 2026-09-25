@@ -1,10 +1,10 @@
 =======================
 ColorBars / ColorBarsHD
 =======================
-The `ColorBars`_. `ColorBarsHD`_ and `ColorBarsUHD`_ filters generate a video clip containing
-`SMPTE color bars`_ scaled to any image size. 
+The `ColorBars`_. `ColorBarsHD`_ and :ref:`ColorBarsUHD <ColorBarsUHD>` filters generate a video clip containing
+`SMPTE color bars`_ scaled to any image size.
 
-You can find `ColorBarsUHD`_ in a separate document, here we describe the first two version.
+You can find :ref:`ColorBarsUHD <ColorBarsUHD>` in a separate document, here we describe the first two version.
 Both filters also generate audio, see the `audio`_ section for details.
 
 .. _ColorBars:
@@ -39,9 +39,13 @@ RGB output formats use the same primaries directly in studio-swing encoding.
 
 .. describe:: pixel_type
 
-    Set color format of the returned clip. May be any of the following: "RGB24",
-    "RGB32", "RGB48", "RGB64", "YUY2", "YV12", "YV16" "YV24", "YV411", or any
-    planar RGBPx, RGBAPx, YUV4xxPx, YUVA4xxPx format.
+    Set color format of the returned clip. Any color format is accepted, at
+    any bit depth, **except** the chroma-less ``Y`` and ``YA`` (Y+Alpha)
+    families.
+
+    Width/height constraints apply for subsampled formats, same as for any
+    other filter (e.g. 4:2:0 needs even width and height; 4:1:1 needs width
+    divisible by 4).
 
     Default: "RGB32"
 
@@ -129,7 +133,7 @@ Video levels shown below with the subscript "d" are assumed to be scaled by 2^(b
 For example, 235\ |d| at bit depth 10 becomes 235 × 2^(10-8) = 235 × 4 = 940.
 
 * see `Deep Color`_
-* see `AviSynthPlus color formats`_
+* see :ref:`AviSynthPlus color formats <color-formats>`
 
 TV range
 --------
@@ -416,6 +420,7 @@ Changelog
 |                  |  the explanation is included in this documentation.     |
 |                  || Fix: "staticframes"=false parameter copied U instead   |
 |                  |  of A for alpha plane.                                  |
+|                  || ColorBars: add support for 4:1:1, 4:4:0 and 4:1:0      |
 +------------------+---------------------------------------------------------+
 | AviSynth+ 3.4.0  || ColorBars: add support for all YUV(A)422 formats and   |
 |                  |  RGB24, RGB48, YV411.                                   |
@@ -433,7 +438,7 @@ Changelog
 | AviSynth 2.5.5   | Width and height parameters are now named and optional. |
 +------------------+---------------------------------------------------------+
 
-$Date: 2026/02/19 09:57:00 $
+$Date: 2026/09/25 21:04:00 $
 
 .. _SMPTE color bars:
     https://en.wikipedia.org/wiki/SMPTE_color_bars
@@ -447,8 +452,6 @@ $Date: 2026/02/19 09:57:00 $
     https://www.itu.int/rec/R-REC-BT.601-7-201103-I/en
 .. _Deep Color:
     http://avisynth.nl/index.php/High_bit-depth_Support_with_Avisynth#What_is_Deep_Color.3F
-.. _AviSynthPlus color formats:
-    http://avisynth.nl/index.php/Avisynthplus_color_formats
 .. _[1]:
     http://trac.ffmpeg.org/wiki/FilteringGuide#multipleinputoverlayin2x2grid
 .. _PLUGE:

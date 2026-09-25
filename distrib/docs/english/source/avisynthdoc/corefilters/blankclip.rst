@@ -99,7 +99,11 @@ Syntax and Parameters
     | **32** | RGBAPS  | YUVA444PS  | YUVA422PS   | YUVA420PS  |        |
     +--------+---------+------------+-------------+------------+--------+
     | **Note**: 8-bit color formats (``YV411, YUV411, YUV411P8``) were  |
-    | omitted from the table.                                           |
+    | omitted from the table, as are the other 4:1:1/4:4:0/4:1:0        |
+    | ratios and the Y+Alpha formats (``YA8``/``YA10``/``YA12``/        |
+    | ``YA14``/``YA16``/``YAS`` - Y plus a full-size alpha plane, no    |
+    | chroma; see the ``colors`` parameter note below for the array     |
+    | size this format requires).                                       |
     +--------+---------+------------+-------------+------------+--------+
 
     Default: "RGB32"
@@ -164,6 +168,8 @@ Syntax and Parameters
       :doc:`colors <../syntax/syntax_colors>` page for more information on
       specifying colors.
 
+    .. _yuv-colors:
+
     * For YUV clips, colors are converted from full range (0–255) to limited
       range (16–235) `Rec.601`_.
     * Use ``color_yuv`` to specify full range YUV values or a color with a
@@ -184,6 +190,20 @@ Syntax and Parameters
     unscaled color values.
 
     Color order: Y,U,V,A or R,G,B,A
+
+    .. note::
+
+       **Y+Alpha formats** (``YA8``/``YA10``/``YA12``/``YA14``/``YA16``/``YAS`` -
+       2 real components, Y and alpha, no chroma at all) accept either the full
+       4-element ``[Y, U, V, A]`` array - with the (unused) U and V slots present
+       as placeholders, keeping the same "always Y,U,V,A order" convention used
+       for every other alpha format - or a tight 2-element ``[Y, A]`` array,
+       since there is no chroma to hold a place for.
+
+       ::
+
+           BlankClip(pixel_type="YA8", colors=[16, 0, 0, 255]) ' Y=16, A=255 (opaque)
+           BlankClip(pixel_type="YA8", colors=[16, 255])       ' same, tight form
 
 
 Examples
@@ -237,6 +257,9 @@ Changelog
 +-----------------+--------------------------------------------------------------+
 | Version         | Changes                                                      |
 +=================+==============================================================+
+| AviSynth+ 3.7.6 | Added Y+Alpha (``YA8``/``YA10``/.../``YAS``) pixel_type      |
+|                 | support.                                                     |
++-----------------+--------------------------------------------------------------+
 | AviSynth+ r2487 || BlankClip: new ``colors`` parameter.                        |
 |                 || Added support for the remaining 10-12-14-bit color formats. |
 +-----------------+--------------------------------------------------------------+
@@ -252,7 +275,7 @@ Changelog
 | AviSynth 2.5.5  | Added ``color_yuv`` parameter.                               |
 +-----------------+--------------------------------------------------------------+
 
-$Date: 2022/09/17 20:09:50 $
+$Date: 2026/09/25 21:04:00 $
 
 .. _Rec.601:
     https://en.wikipedia.org/wiki/Rec._601
