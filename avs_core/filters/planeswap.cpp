@@ -109,7 +109,9 @@ static void yuy2_swap_c(const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pit
 AVSValue __cdecl SwapUV::CreateSwapUV(AVSValue args, void* , IScriptEnvironment* env)
 {
   PClip p = args[0].AsClip();
-  if (p->GetVideoInfo().NumComponents() == 1)
+  if (p->GetVideoInfo().IsY() || p->GetVideoInfo().IsYA())
+    return p;
+  if (p->GetVideoInfo().NumComponents() == 1) // only RAW_32 left, old code worked like this
     return p;
   return new SwapUV(p, env);
 }
@@ -848,7 +850,9 @@ CombinePlanes::CombinePlanes(PClip _child, PClip _clip2, PClip _clip3, PClip _cl
     bool isAlpha = ch == 'A';
     if(!isRGB && !isYUV && !isAlpha)
       env->ThrowError("CombinePlanes: invalid plane definifion :%s", planes);
-    if((targetIsYUV && isRGB) || (!targetIsYUV && isYUV) || (!targetHasAlpha && isAlpha) || (targetIsY && ch!='Y'))
+    // targetIsYUV is also true for YA (IsYUVA(), check YA separately
+    if((targetIsYUV && isRGB) || (!targetIsYUV && isYUV) || (!targetHasAlpha && isAlpha) || (targetIsY && ch!='Y') ||
+      (vi_default.IsYA() && (ch=='U' || ch=='V')))
       env->ThrowError("CombinePlanes: target has no such plane %c", ch);
 
     int current_target_plane;
@@ -892,7 +896,9 @@ CombinePlanes::CombinePlanes(PClip _child, PClip _clip2, PClip _clip3, PClip _cl
       bool isAlpha = ch == 'A';
       if(!isRGB && !isYUV && !isAlpha)
         env->ThrowError("CombinePlanes: invalid source plane definifion :%s", planes);
-      if((sourceIsYUV && isRGB) || (!sourceIsYUV && isYUV) || (!sourceHasAlpha && isAlpha) || (sourceIsY && ch!='Y'))
+      // Same YA/IsYUVA check like above
+      if((sourceIsYUV && isRGB) || (!sourceIsYUV && isYUV) || (!sourceHasAlpha && isAlpha) || (sourceIsY && ch!='Y') ||
+        (src_vi.IsYA() && (ch=='U' || ch=='V')))
         env->ThrowError("CombinePlanes: source has no such plane %c", ch);
       // todo lambda
       int current_source_plane;
@@ -926,21 +932,32 @@ PVideoFrame __stdcall CombinePlanes::GetFrame(int n, IScriptEnvironment* env) {
     // we have only one clip, plane shuffle is valid if target has less plane that defined in source
     PVideoFrame src = clips[0]->GetFrame(n, env);
 
-    int planes_y[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-    int planes_r[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
-    int *planes = (vi_src.IsYUV() || vi_src.IsYUVA()) ? planes_y : planes_r;
+    int planes_y[4]  = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+    int planes_r[4]  = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
+    int planes_ya[2] = { PLANAR_Y, PLANAR_A };
+    int *planes = vi_src.IsYA() ? planes_ya : (vi_src.IsYUV() || vi_src.IsYUVA()) ? planes_y : planes_r;
 
-    int Offsets[4];
-    int Pitches[4], NewPitches[4];
-    int RowSizes[4], NewRowSizes[4];
+    int Offsets[4] = {};
+    int Pitches[4] = {}, NewPitches[4] = {};
+    int RowSizes[4] = {}, NewRowSizes[4] = {};
 
-    int RelOffsets[4];
+    int RelOffsets[4] = {};
 
+    // Fill by logical position (Y=0,U=1,V=2,A=3)
+    // Instead of physical (YA: A is physical 1, logical 3)
     for (int i = 0; i < vi_src.NumComponents(); i++) {
-      Offsets[i] = src->GetOffset(planes[i]);
-      Pitches[i] = NewPitches[i] = src->GetPitch(planes[i]);
-      RowSizes[i] = NewRowSizes[i] = src->GetRowSize(planes[i]);
-      RelOffsets[i] = 0;
+      const int plane = planes[i];
+      int logical_index;
+      switch (plane) {
+      case PLANAR_Y: case PLANAR_G: logical_index = 0; break;
+      case PLANAR_U: case PLANAR_B: logical_index = 1; break;
+      case PLANAR_V: case PLANAR_R: logical_index = 2; break;
+      default: /* PLANAR_A */       logical_index = 3; break;
+      }
+      Offsets[logical_index] = src->GetOffset(plane);
+      Pitches[logical_index] = NewPitches[logical_index] = src->GetPitch(plane);
+      RowSizes[logical_index] = NewRowSizes[logical_index] = src->GetRowSize(plane);
+      RelOffsets[logical_index] = 0;
     }
 
     for (int i = 0; i < planecount; i++) {
@@ -979,6 +996,11 @@ PVideoFrame __stdcall CombinePlanes::GetFrame(int n, IScriptEnvironment* env) {
     else if (vi.NumComponents() == 3) {
       dst = env->SubframePlanar(src, RelOffsets[0], NewPitches[0], NewRowSizes[0], src->GetHeight(),
         RelOffsets[1], RelOffsets[2], NewPitches[1]);
+    }
+    else if (vi.IsYA()) {
+      // dummy 0 offset/pitch for the unused U/V args.
+      dst = env->SubframePlanarA(src, RelOffsets[0], NewPitches[0], NewRowSizes[0], src->GetHeight(),
+        0, 0, 0, RelOffsets[3]);
     }
     else {
       dst = env->Subframe(src, RelOffsets[0], NewPitches[0], NewRowSizes[0], src->GetHeight());
@@ -1045,6 +1067,7 @@ PVideoFrame __stdcall CombinePlanes::GetFrame(int n, IScriptEnvironment* env) {
     // 
     // clip #0 format does not match with the output, maybe it is a single plane
     // let's try with the second (clip #1) if it can be used
+    // Optimization trick is intentionally not extended to Y+A (IsYA(), NumComponents()==2)
     if (clips[1]->GetVideoInfo().IsSameColorspace(vi) &&
       // the rest plane IDs are matching between source and target
       vi.NumComponents() >= 3 && target_planes[1] == source_planes[1] && target_planes[2] == source_planes[2] &&

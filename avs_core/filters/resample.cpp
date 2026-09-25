@@ -1283,8 +1283,8 @@ static void GetCenterShiftForResizers(double& center_pos_luma, double& center_po
   double center_pos_h_chroma = 0.0;
   double center_pos_v_chroma = 0.0;
 
-  // chroma, only if applicable
-  if (vi.IsPlanar() && vi.NumComponents() > 1 && !vi.IsRGB()) {
+  // chroma, only if applicable (YA NumComponents()==2)
+  if (vi.IsPlanar() && vi.NumComponents() > 1 && !vi.IsRGB() && !vi.IsYA()) {
     double cp_s_h = 0;
     double cp_s_v = 0;
 
@@ -1349,7 +1349,7 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
 
   pixelsize = vi.ComponentSize(); // AVS16
   bits_per_pixel = vi.BitsPerComponent();
-  grey = vi.IsY();
+  grey = vi.IsY() || vi.IsYA();
 
   bool isRGBPfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
 
@@ -1619,7 +1619,7 @@ PVideoFrame __stdcall FilteredResizeH::GetFrame(int n, IScriptEnvironment* env)
         resampler_luma(temp_2, temp_1, temp_2_pitch, temp_1_pitch, resampling_program_chroma, src_chroma_height, dst_chroma_width, bits_per_pixel);
         turn_left(temp_2, dst->GetWritePtr(PLANAR_V), dst_chroma_height * pixelsize, dst_chroma_width, temp_2_pitch, dst->GetPitch(PLANAR_V));
       }
-      if (vi.IsYUVA() || vi.IsPlanarRGBA())
+      if (vi.IsYUVA() || vi.IsPlanarRGBA()) // YA is covered by IsYUVA
       {
         turn_right(src->GetReadPtr(PLANAR_A), temp_1, src_width * pixelsize, src_height, src->GetPitch(PLANAR_A), temp_1_pitch); // * pixelsize: turn_right needs GetPlaneWidth full size
         resampler_luma(temp_2, temp_1, temp_2_pitch, temp_1_pitch, resampling_program_luma, src_height, dst_width, bits_per_pixel);
@@ -1660,7 +1660,7 @@ PVideoFrame __stdcall FilteredResizeH::GetFrame(int n, IScriptEnvironment* env)
       // V Plane
       current_resampler_h_chroma(dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V), resampling_program_chroma, dst_chroma_width, dst_chroma_height, bits_per_pixel);
     }
-    if (vi.IsYUVA() || vi.IsPlanarRGBA())
+    if (vi.IsYUVA() || vi.IsPlanarRGBA()) // YA is covered by IsYUVA
     {
       current_resampler_h_luma(dst->GetWritePtr(PLANAR_A), src->GetReadPtr(PLANAR_A), dst->GetPitch(PLANAR_A), src->GetPitch(PLANAR_A), resampling_program_luma, dst_width, dst_height, bits_per_pixel);
     }
@@ -2176,7 +2176,7 @@ FilteredResizeV::FilteredResizeV(PClip _child, double subrange_top, double subra
 
   pixelsize = vi.ComponentSize(); // AVS16
   bits_per_pixel = vi.BitsPerComponent();
-  grey = vi.IsY();
+  grey = vi.IsY() || vi.IsYA();
   bool isRGBPfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
 
   if (vi.IsPlanar() && !grey && !isRGBPfamily) {
@@ -2277,7 +2277,7 @@ PVideoFrame __stdcall FilteredResizeV::GetFrame(int n, IScriptEnvironment* env)
     resampler_chroma(dstp, srcp, dst_pitch, src_pitch, resampling_program_chroma, width, height, bits_per_pixel);
   }
 
-  if (vi.IsYUVA() || vi.IsPlanarRGBA()) {
+  if (vi.IsYUVA() || vi.IsPlanarRGBA()) { // YA is covered by IsYUVA
     src_pitch = src->GetPitch(PLANAR_A);
     dst_pitch = dst->GetPitch(PLANAR_A);
     srcp = src->GetReadPtr(PLANAR_A);
@@ -2719,7 +2719,7 @@ FilteredResize_2p::FilteredResize_2p(PClip _child,
 
   pixelsize = vi.ComponentSize(); // AVS16
   bits_per_pixel = vi.BitsPerComponent();
-  grey = vi.IsY();
+  grey = vi.IsY() || vi.IsYA();
   bool isRGBPfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
 
   if (vi.IsPlanar() && !grey && !isRGBPfamily) {
@@ -2864,7 +2864,7 @@ PVideoFrame __stdcall FilteredResize_2p::GetFrame(int n, IScriptEnvironment* env
 
   }
 
-  if (vi.IsYUVA() || vi.IsPlanarRGBA()) {
+  if (vi.IsYUVA() || vi.IsPlanarRGBA()) { // YA is covered by IsYUVA
     src_pitch = src->GetPitch(PLANAR_A);
     dst_pitch = dst->GetPitch(PLANAR_A);
     srcp = src->GetReadPtr(PLANAR_A);
@@ -2960,7 +2960,7 @@ PVideoFrame __stdcall FilteredResize_2p::GetFrame(int n, IScriptEnvironment* env
 
   }
 
-  if (vi.IsYUVA() || vi.IsPlanarRGBA()) {
+  if (vi.IsYUVA() || vi.IsPlanarRGBA()) { // YA is covered by IsYUVA
     src_pitch = src->GetPitch(PLANAR_A);
     dst_pitch = dst->GetPitch(PLANAR_A);
     srcp = src->GetReadPtr(PLANAR_A);

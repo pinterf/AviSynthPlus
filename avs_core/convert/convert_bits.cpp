@@ -1485,9 +1485,10 @@ PVideoFrame __stdcall ConvertBits::GetFrame(int n, IScriptEnvironment* env) {
 
   if(vi.IsPlanar())
   {
-    int planes_y[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-    int planes_r[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
-    int *planes = (vi.IsYUV() || vi.IsYUVA()) ? planes_y : planes_r;
+    int planes_yuva[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+    int planes_ya[2]   = { PLANAR_Y, PLANAR_A };
+    int planes_r[4]    = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
+    int *planes = vi.IsYA() ? planes_ya : (vi.IsYUV() || vi.IsYUVA()) ? planes_yuva : planes_r;
     for (int p = 0; p < vi.NumComponents(); ++p) {
       const int plane = planes[p];
       if (plane == PLANAR_A) {

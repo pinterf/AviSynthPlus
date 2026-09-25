@@ -602,7 +602,7 @@ PVideoFrame Histogram::DrawModeLuma(int n, IScriptEnvironment* env) {
       }
     }
     
-    if (vi.NumComponents() >= 3) {
+    if (!vi.IsY() && !vi.IsYA()) { // has real chroma
       auto dstp_u = src->GetWritePtr(PLANAR_U);
       auto dstp_v = src->GetWritePtr(PLANAR_V);
       auto height_uv = src->GetHeight(PLANAR_U);
@@ -614,20 +614,20 @@ PVideoFrame Histogram::DrawModeLuma(int n, IScriptEnvironment* env) {
         fill_chroma<uint16_t>(dstp_u, dstp_v, height_uv, rowsize_uv, pitch_uv, 128 << (bits_per_pixel - 8));
       else // 32)
         fill_chroma<float>(dstp_u, dstp_v, height_uv, rowsize_uv, pitch_uv, 0.0f);
+    }
 
-      // alpha
-      if (vi.NumComponents() == 4) {
-        auto dstp_a = src->GetWritePtr(PLANAR_A);
-        auto height_a = src->GetHeight(PLANAR_A);
-        auto rowsize_a = src->GetRowSize(PLANAR_A);
-        auto pitch_a = src->GetPitch(PLANAR_A);
-        if (bits_per_pixel == 8)
-          fill_plane<uint8_t>(dstp_a, height_a, rowsize_a, pitch_a, 255);
-        else if (bits_per_pixel <= 16)
-          fill_plane<uint16_t>(dstp_a, height_a, rowsize_a, pitch_a, (1 << bits_per_pixel) -  1);
-        else // 32)
-          fill_plane<float>(dstp_a, height_a, rowsize_a, pitch_a, 1.0f);
-      }
+    // alpha, IsYUVA includes IsYA
+    if (vi.IsYUVA() || vi.IsPlanarRGBA()) {
+      auto dstp_a = src->GetWritePtr(PLANAR_A);
+      auto height_a = src->GetHeight(PLANAR_A);
+      auto rowsize_a = src->GetRowSize(PLANAR_A);
+      auto pitch_a = src->GetPitch(PLANAR_A);
+      if (bits_per_pixel == 8)
+        fill_plane<uint8_t>(dstp_a, height_a, rowsize_a, pitch_a, 255);
+      else if (bits_per_pixel <= 16)
+        fill_plane<uint16_t>(dstp_a, height_a, rowsize_a, pitch_a, (1 << bits_per_pixel) -  1);
+      else // 32)
+        fill_plane<float>(dstp_a, height_a, rowsize_a, pitch_a, 1.0f);
     }
   }
   return src;
@@ -2605,6 +2605,8 @@ PVideoFrame Histogram::DrawModeClassic(int n, IScriptEnvironment* env)
     if (keepsource) {
       env->BitBlt(dst->GetWritePtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetReadPtr(PLANAR_U), src->GetPitch(PLANAR_U), src->GetRowSize(PLANAR_U), src->GetHeight(PLANAR_U));
       env->BitBlt(dst->GetWritePtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetReadPtr(PLANAR_V), src->GetPitch(PLANAR_V), src->GetRowSize(PLANAR_V), src->GetHeight(PLANAR_V));
+      // preserve alpha. no-op if no alpha (0 pitch/rowsize/height)
+      env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A), src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), src->GetRowSize(PLANAR_A), src->GetHeight(PLANAR_A));
     }
 
     // luma

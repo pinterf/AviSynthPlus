@@ -284,7 +284,7 @@ Crop::Crop(int _left, int _top, int _width, int _height, bool _align, PClip _chi
   hasAlpha = vi.IsPlanarRGBA() || vi.IsYUVA();
 
   if (vi.IsYUV() || vi.IsYUVA()) {
-    if (vi.NumComponents() > 1) {
+    if (vi.NumComponents() > 1 && !vi.IsYA()) { // Y+A has no chroma
       xsub=vi.GetPlaneWidthSubsampling(PLANAR_U);
       ysub=vi.GetPlaneHeightSubsampling(PLANAR_U);
     }
@@ -356,8 +356,17 @@ PVideoFrame Crop::GetFrame(int n, IScriptEnvironment* env_)
   }
 
   // subframe is preserving frame properties
-  if (!frame->GetPitch(plane1))
+  if (!frame->GetPitch(plane1)) {
+    // No U/B (and thus V/R) plane (zero pitch)
+    if (hasAlpha) {
+      // Only Y+A can reach here.
+      // dummy 0 offset/pitch for the unused U/V args
+      // Y and A are both full sized.
+      return env->SubframePlanarA(frame, top * frame->GetPitch() + left_bytes, frame->GetPitch(), vi.RowSize(), vi.height,
+        0, 0, 0, top * frame->GetPitch(PLANAR_A) + left_bytes);
+    }
     return env->Subframe(frame, top * frame->GetPitch() + left_bytes, frame->GetPitch(), vi.RowSize(), vi.height);
+  }
   else {
     if (hasAlpha) {
 
@@ -410,7 +419,7 @@ AddBorders::AddBorders(int _left, int _top, int _right, int _bot, int _clr, bool
 
 {
   if (vi.IsYUV() || vi.IsYUVA()) {
-    if (vi.NumComponents() > 1) {
+    if (vi.NumComponents() > 1 && !vi.IsYA()) { // Y+A has no chroma
       xsub=vi.GetPlaneWidthSubsampling(PLANAR_U);
       ysub=vi.GetPlaneHeightSubsampling(PLANAR_U);
     }
@@ -458,12 +467,14 @@ static void addborders_planar(PVideoFrame &dst, PVideoFrame &src, VideoInfo &vi,
   const unsigned char VBlack=(unsigned char)((colr      ) & 0xff);
   const unsigned char ABlack=(unsigned char)((colr >> 24) & 0xff);
 
-  int planesYUV[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-  int planesRGB[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
-  int *planes = isYUV ? planesYUV : planesRGB;
-  uint8_t colorsYUV[4] = { YBlack, UBlack, VBlack, ABlack };
-  uint8_t colorsRGB[4] = { UBlack, VBlack, YBlack, ABlack }; // mapping for planar RGB
-  uint8_t *colors = isYUV ? colorsYUV : colorsRGB;
+  int planes_yuva[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+  int planes_ya[2]   = { PLANAR_Y, PLANAR_A };
+  int planes_rgb[4]  = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
+  int *planes = vi.IsYA() ? planes_ya : isYUV ? planes_yuva : planes_rgb;
+  uint8_t colors_yuva[4] = { YBlack, UBlack, VBlack, ABlack };
+  uint8_t colors_ya[2]   = { YBlack, ABlack };
+  uint8_t colors_rgb[4]  = { UBlack, VBlack, YBlack, ABlack }; // mapping for planar RGB
+  uint8_t *colors = vi.IsYA() ? colors_ya : isYUV ? colors_yuva : colors_rgb;
   for (int p = 0; p < vi.NumComponents(); p++)
   {
     int plane = planes[p];
@@ -1098,7 +1109,7 @@ AVSValue __cdecl Create_Letterbox(AVSValue args, void*, IScriptEnvironment* env)
     int xsub = 0;
     int ysub = 0;
 
-    if (vi.NumComponents() > 1) {
+    if (vi.NumComponents() > 1 && !vi.IsYA()) { // Y+A has no chroma
       xsub=vi.GetPlaneWidthSubsampling(PLANAR_U);
       ysub=vi.GetPlaneHeightSubsampling(PLANAR_U);
     }

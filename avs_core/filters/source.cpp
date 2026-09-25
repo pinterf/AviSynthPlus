@@ -152,21 +152,24 @@ static PVideoFrame CreateBlankFrame(const VideoInfo& vi, int color, int mode, co
     if (color_is_array) {
           // works from colors or colors_f: as-is
           // color order in the array: RGBA or YUVA
-      int planes_y[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-      int planes_r[4] = { PLANAR_R, PLANAR_G, PLANAR_B, PLANAR_A };
-      int *planes = isyuvlike ? planes_y : planes_r;
+      int planes_y[4]  = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+      int planes_ya[2] = { PLANAR_Y, PLANAR_A };
+      int planes_r[4]  = { PLANAR_R, PLANAR_G, PLANAR_B, PLANAR_A };
+      int *planes = vi.IsYA() ? planes_ya : isyuvlike ? planes_y : planes_r;
 
-      for (int p = 0; p < vi.NumComponents(); p++)
+      // colors[]/colors_f[] are always indexed by logical Y=0,U=1,V=2,A=3 position
+      for (int k = 0; k < vi.NumComponents(); k++)
       {
-        int plane = planes[p];
+        const int plane = planes[k];
+        const int color_index = vi.IsYA() ? (k == 0 ? 0 : 3) : k; // index into colors[]/colors_f[]
         BYTE *dstp = frame->GetWritePtr(plane);
         int rowsize = frame->GetRowSize(plane);
         int pitch = frame->GetPitch(plane);
         int height = frame->GetHeight(plane);
         switch (pixelsize) {
-        case 1: fill_plane<uint8_t>(dstp, height, rowsize, pitch, clamp(colors[p], 0, 0xFF)); break;
-        case 2: fill_plane<uint16_t>(dstp, height, rowsize, pitch, clamp(colors[p], 0, (1 << vi.BitsPerComponent()) - 1)); break;
-        case 4: fill_plane<float>(dstp, height, rowsize, pitch, colors_f[p]); break;
+        case 1: fill_plane<uint8_t>(dstp, height, rowsize, pitch, clamp(colors[color_index], 0, 0xFF)); break;
+        case 2: fill_plane<uint16_t>(dstp, height, rowsize, pitch, clamp(colors[color_index], 0, (1 << vi.BitsPerComponent()) - 1)); break;
+        case 4: fill_plane<float>(dstp, height, rowsize, pitch, colors_f[color_index]); break;
         }
       }
     }
@@ -175,9 +178,10 @@ static PVideoFrame CreateBlankFrame(const VideoInfo& vi, int color, int mode, co
 
       int val_i = 0;
 
-      int planes_y[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-      int planes_r[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
-      int *planes = isyuvlike ? planes_y : planes_r;
+      int planes_y[4]  = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+      int planes_ya[2] = { PLANAR_Y, PLANAR_A };
+      int planes_r[4]  = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
+      int *planes = vi.IsYA() ? planes_ya : isyuvlike ? planes_y : planes_r;
 
       for (int p = 0; p < vi.NumComponents(); p++)
       {
@@ -459,19 +463,26 @@ static AVSValue __cdecl Create_BlankClip(AVSValue args, void*, IScriptEnvironmen
       if (!args[13].IsArray())
         env->ThrowError("BlankClip: colors must be an array");
       int color_count = args[13].ArraySize();
-      if (color_count < vi.NumComponents())
-        env->ThrowError("BlankClip: 'colors' size %d is less than component count %d", color_count, vi.NumComponents());
+      // colors[]/colors_f[] are indexed by logical Y=0,U=1,V=2,A=3 position
+      // matching the color order: Y,U,V,A or R,G,B,A convention
+      // Y+Alpha accepts the 4 element form (with dummy U/V) besides a 2 element [Y,A] form
+      // as a shorthand.
+      const bool ya_tight_form = vi.IsYA() && color_count == 2;
+      const int required_color_count = vi.IsYA() ? (ya_tight_form ? 2 : 4) : vi.NumComponents();
+      if (color_count < required_color_count)
+        env->ThrowError("BlankClip: 'colors' size %d is less than required size %d", color_count, required_color_count);
       int pixelsize = vi.ComponentSize();
       int bits_per_pixel = vi.BitsPerComponent();
       for (int i = 0; i < color_count; i++) {
         const float c = args[13][i].AsFloatf(0.0);
+        const int target_index = ya_tight_form ? (i == 0 ? 0 : 3) : i;
         if (pixelsize == 4)
-          colors_f[i] = c;
+          colors_f[target_index] = c;
         else {
           const int color = (int)(c + 0.5f);
           if (color >= (1 << bits_per_pixel) || color < 0)
             env->ThrowError("BlankClip: invalid color value (%d) for %d-bit video format", color, bits_per_pixel);
-          colors[i] = color;
+          colors[target_index] = color;
         }
       }
       color_is_array = true;

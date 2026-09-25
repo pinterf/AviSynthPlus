@@ -707,13 +707,14 @@ PVideoFrame Dissolve::GetFrame(int n, IScriptEnvironment* env)
 
   env->MakeWritable(&a);
 
-  const int planes_y[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-  const int planes_r[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
+  const int planes_yuva[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+  const int planes_ya[2]   = { PLANAR_Y, PLANAR_A };
+  const int planes_r[4]    = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
   const int *planes;
 
   int planeCount;
   planeCount = vi.IsPlanar() ? vi.NumComponents() : 1;
-  planes = (!vi.IsPlanar() || vi.IsYUV() || vi.IsYUVA()) ? planes_y : planes_r;
+  planes = vi.IsYA() ? planes_ya : (!vi.IsPlanar() || vi.IsYUV() || vi.IsYUVA()) ? planes_yuva : planes_r;
 
   const int bits_per_pixel = vi.BitsPerComponent();
   for (int j = 0; j < planeCount; ++j)

@@ -5492,9 +5492,10 @@ PVideoFrame __stdcall Exprfilter::GetFrame(int n, IScriptEnvironment *env) {
 
   const float framecount = (float)n; // max precision: 2^24 (16M) frames (32 bit float precision)
   const float relative_time = vi.num_frames > 1 ? (float)((double)n / (vi.num_frames - 1)) : 0.0f; // 0 <= time <= 1
-  const int planes_y[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-  const int planes_r[4] = { PLANAR_R, PLANAR_G, PLANAR_B, PLANAR_A }; // expression string order is R G B unlike internal G B R plane order
-  const int *plane_enums_d = (d.vi.IsYUV() || d.vi.IsYUVA()) ? planes_y : planes_r;
+  const int planes_yuva[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+  const int planes_ya[2]   = { PLANAR_Y, PLANAR_A };
+  const int planes_r[4]    = { PLANAR_R, PLANAR_G, PLANAR_B, PLANAR_A }; // expression string order is R G B unlike internal G B R plane order
+  const int *plane_enums_d = d.vi.IsYA() ? planes_ya : (d.vi.IsYUV() || d.vi.IsYUVA()) ? planes_yuva : planes_r;
 
   for (int plane = 0; plane < d.vi.NumComponents(); plane++) {
 
@@ -5524,8 +5525,9 @@ PVideoFrame __stdcall Exprfilter::GetFrame(int n, IScriptEnvironment *env) {
         if (d.clips[i]) {
           if (d.clipsUsed[i]) {
             // when input is a single Y, use PLANAR_Y instead of the plane matching to the output
+            // Check IsYA() before IsYUVA(): IsYUVA() is also true for YA
             const VideoInfo& vi_src = d.clips[i]->GetVideoInfo();
-            const int* plane_enums_s = (vi_src.IsYUV() || vi_src.IsYUVA()) ? planes_y : planes_r;
+            const int* plane_enums_s = vi_src.IsYA() ? planes_ya : (vi_src.IsYUV() || vi_src.IsYUVA()) ? planes_yuva : planes_r;
             const int plane_enum_s = vi_src.IsY() ? PLANAR_Y : plane_enums_s[plane];
 
             srcp[i] = src[i]->GetReadPtr(plane_enum_s);
@@ -6993,7 +6995,7 @@ Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector
     int planes_y[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
     int planes_r[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A }; // for checking GBR order is OK
     int *plane_enums = (d.vi.IsYUV() || d.vi.IsYUVA()) ? planes_y : planes_r;
-    const int plane_enum = plane_enums[1]; // for subsampling check U only
+    const int plane_enum = plane_enums[1]; // for subsampling check U only, unused when IsY()/IsYA(), see below
 
     // check all clips against first one
     for (int i = 0; i < d.numInputs; i++) {
@@ -7003,7 +7005,7 @@ Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector
 
       if (vi_array[0]->NumComponents() != vi_array[i]->NumComponents() // number of planes should match
         ||
-        ( !vi_array[0]->IsY() && ( // no subsampling for Y
+        ( !vi_array[0]->IsY() && !vi_array[0]->IsYA() && ( // no subsampling for Y or Y+Alpha (no chroma)
            vi_array[0]->GetPlaneWidthSubsampling(plane_enum) != vi_array[i]->GetPlaneWidthSubsampling(plane_enum_i)
            || vi_array[0]->GetPlaneHeightSubsampling(plane_enum) != vi_array[i]->GetPlaneHeightSubsampling(plane_enum_i)
           )
@@ -7036,8 +7038,9 @@ Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector
         env->ThrowError("Expr: number of planes in input should be greater than or equal than of output");
 
       // subsampling should match
-      int *plane_enums_s = (vi_array[0]->IsYUV() || vi_array[0]->IsYUVA()) ? planes_y : planes_r;
-      int *plane_enums_d = (d.vi.IsYUV() || d.vi.IsYUVA()) ? planes_y : planes_r;
+      int planes_ya[2] = { PLANAR_Y, PLANAR_A };
+      int *plane_enums_s = vi_array[0]->IsYA() ? planes_ya : (vi_array[0]->IsYUV() || vi_array[0]->IsYUVA()) ? planes_y : planes_r;
+      int *plane_enums_d = d.vi.IsYA() ? planes_ya : (d.vi.IsYUV() || d.vi.IsYUVA()) ? planes_y : planes_r;
       for (int p = 0; p < d.vi.NumComponents(); p++) {
         const int plane_enum_s = isSinglePlaneInput ? plane_enums_s[0] : plane_enums_s[p]; // for Y inputs, reference is Y for each output plane
         const int plane_enum_d = plane_enums_d[p];
@@ -7091,15 +7094,16 @@ Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector
       }
     }
 
-    int* plane_enums_d = (d.vi.IsYUV() || d.vi.IsYUVA()) ? planes_y : planes_r;
+    int planes_ya[2] = { PLANAR_Y, PLANAR_A }; // no chroma: index 1 is alpha, not U
+    int* plane_enums_d = d.vi.IsYA() ? planes_ya : (d.vi.IsYUV() || d.vi.IsYUVA()) ? planes_y : planes_r;
 
     d.maxStackSize = 0;
     for (int i = 0; i < d.vi.NumComponents(); i++) {
-      const int plane_enum_s = plane_enums[i];
+      // plane_enums_d is YA-aware array
       const int plane_enum = plane_enums_d[i];
       const int planewidth = d.vi.width >> d.vi.GetPlaneWidthSubsampling(plane_enum);
       const int planeheight = d.vi.height >> d.vi.GetPlaneHeightSubsampling(plane_enum);
-      const bool chroma = (plane_enum_s == PLANAR_U || plane_enum_s == PLANAR_V);
+      const bool chroma = (plane_enum == PLANAR_U || plane_enum == PLANAR_V);
       d.maxStackSize = std::max(parseExpression(expr[i], d.ops[i], d.frameprops[i], vi_array, &d.vi, getStoreOp(&d.vi), d.numInputs, planewidth, planeheight, chroma,
         autoconv_full_scale, autoconv_conv_int, autoconv_conv_float, clamp_float_i, shift_float, d.lutmode,
         env), d.maxStackSize);

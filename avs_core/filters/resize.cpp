@@ -119,7 +119,7 @@ void vertical_reduce_core(BYTE* dstp, const BYTE* srcp, int dst_pitch, int src_p
 VerticalReduceBy2::VerticalReduceBy2(PClip _child, IScriptEnvironment* env)
   : GenericVideoFilter(_child)
 {
-  const bool hasSubsampledChroma = vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA()) && (vi.NumComponents() > 1);
+  const bool hasSubsampledChroma = vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA()) && (vi.NumComponents() > 1) && !vi.IsYA();
 
   if (hasSubsampledChroma) {
     const int mod = 2 << vi.GetPlaneHeightSubsampling(PLANAR_U);
@@ -147,9 +147,10 @@ PVideoFrame VerticalReduceBy2::GetFrame(int n, IScriptEnvironment* env) {
   int pixelsize = vi.ComponentSize();
 
   if (vi.IsPlanar()) {
-    int planesYUV[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-    int planesRGB[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
-    int* planes = vi.IsYUV() || vi.IsYUVA() ? planesYUV : planesRGB;
+    int planesYUVA[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+    int planesYA[2]   = { PLANAR_Y, PLANAR_A }; // no chroma: index 1 is alpha, not U
+    int planesRGB[4]  = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
+    int* planes = vi.IsYA() ? planesYA : (vi.IsYUV() || vi.IsYUVA()) ? planesYUVA : planesRGB;
     for (int p = 0; p < vi.NumComponents(); p++)
     {
       int plane = planes[p];
@@ -175,7 +176,7 @@ PVideoFrame VerticalReduceBy2::GetFrame(int n, IScriptEnvironment* env) {
 HorizontalReduceBy2::HorizontalReduceBy2(PClip _child, IScriptEnvironment* env)
   : GenericVideoFilter(_child)
 {
-  const bool hasSubsampledChroma = vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA()) && (vi.NumComponents() > 1);
+  const bool hasSubsampledChroma = vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA()) && (vi.NumComponents() > 1) && !vi.IsYA();
 
   if (hasSubsampledChroma) {
     const int mod = 2 << vi.GetPlaneWidthSubsampling(PLANAR_U);
@@ -234,9 +235,10 @@ PVideoFrame HorizontalReduceBy2::GetFrame(int n, IScriptEnvironment* env)
   PVideoFrame dst = env->NewVideoFrameP(vi, &src);
   if (vi.IsPlanar()) {
 
-    int planesYUV[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-    int planesRGB[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
-    int* planes = vi.IsYUV() || vi.IsYUVA() ? planesYUV : planesRGB;
+    int planesYUVA[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+    int planesYA[2]   = { PLANAR_Y, PLANAR_A }; // no chroma: index 1 is alpha, not U
+    int planesRGB[4]  = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
+    int* planes = vi.IsYA() ? planesYA : (vi.IsYUV() || vi.IsYUVA()) ? planesYUVA : planesRGB;
     for (int p = 0; p < vi.NumComponents(); p++)
     {
       int plane = planes[p];

@@ -265,7 +265,10 @@ static void turn_180_yuy2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int src
 
 Turn::Turn(PClip c, int direction, IScriptEnvironment* env) : GenericVideoFilter(c), u_or_b_source(nullptr), v_or_r_source(nullptr)
 {
-    if (vi.pixel_type & VideoInfo::CS_INTERLEAVED) {
+    if (vi.IsYA()) {
+        // Checked separately or it would fall in CS_INTERLEAVED case
+        num_planes = 2;
+    } else if (vi.pixel_type & VideoInfo::CS_INTERLEAVED) {
         num_planes = 1;
     } else if (vi.IsPlanarRGBA() || vi.IsYUVA()) {
         num_planes = 4;
@@ -274,7 +277,7 @@ Turn::Turn(PClip c, int direction, IScriptEnvironment* env) : GenericVideoFilter
     }
 
     splanes[0] = vi.IsRGB() ? PLANAR_G : PLANAR_Y;
-    splanes[1] = vi.IsRGB() ? PLANAR_B : PLANAR_U;
+    splanes[1] = vi.IsYA() ? PLANAR_A : (vi.IsRGB() ? PLANAR_B : PLANAR_U); // YA: slot 1 is alpha, not U
     splanes[2] = vi.IsRGB() ? PLANAR_R : PLANAR_V;
     splanes[3] = PLANAR_A;
 
@@ -284,7 +287,7 @@ Turn::Turn(PClip c, int direction, IScriptEnvironment* env) : GenericVideoFilter
         {
             env->ThrowError("Turn: YUY2 data must have mod2 height.");
         }
-        if (num_planes > 1) {
+        if (num_planes > 1 && !vi.IsYA()) {
             int mod_h = vi.IsRGB() ? 1 : (1 << vi.GetPlaneWidthSubsampling(PLANAR_U));
             int mod_v = vi.IsRGB() ? 1 : (1 << vi.GetPlaneHeightSubsampling(PLANAR_U));
             if (mod_h != mod_v)
@@ -491,7 +494,7 @@ PVideoFrame __stdcall Turn::GetFrame(int n, IScriptEnvironment* env)
 {
     const int dplanes[] = {
         0,
-        vi.IsRGB() ? PLANAR_B : PLANAR_U,
+        vi.IsYA() ? PLANAR_A : (vi.IsRGB() ? PLANAR_B : PLANAR_U), // YA: slot 1 is alpha, not U
         vi.IsRGB() ? PLANAR_R : PLANAR_V,
         PLANAR_A,
     };

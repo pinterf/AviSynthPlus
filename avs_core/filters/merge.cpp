@@ -556,9 +556,10 @@ PVideoFrame __stdcall MergeAll::GetFrame(int n, IScriptEnvironment* env)
   merge_plane(srcp, srcp2, src_pitch, src2->GetPitch(), src_rowsize, src->GetHeight(), weight, bits_per_pixel, true, env);
 
   if (vi.IsPlanar()) {
-    const int planesYUV[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A};
-    const int planesRGB[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A};
-    const int *planes = (vi.IsYUV() || vi.IsYUVA()) ? planesYUV : planesRGB;
+    const int planesYUVA[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A};
+    const int planesYA[2]   = { PLANAR_Y, PLANAR_A}; // no chroma: index 1 is alpha, not U
+    const int planesRGB[4]  = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A};
+    const int *planes = vi.IsYA() ? planesYA : (vi.IsYUV() || vi.IsYUVA()) ? planesYUVA : planesRGB;
     // first plane is already processed
     for (int p = 1; p < vi.NumComponents(); p++) {
       const int plane = planes[p];

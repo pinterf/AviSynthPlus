@@ -327,7 +327,7 @@ void Antialiaser::Apply(const VideoInfo& vi, PVideoFrame* frame, int pitch)
     BYTE* bufU  = nullptr;
     BYTE* bufV  = nullptr;
     int pitchUV = 0;
-    if (vi.NumComponents() > 1) {
+    if (vi.NumComponents() > 1 && !vi.IsYA()) {
       pitchUV = isRGB ? (*frame)->GetPitch(PLANAR_G) : (*frame)->GetPitch(PLANAR_U);
       bufU    = isRGB ? (*frame)->GetWritePtr(PLANAR_G) : (*frame)->GetWritePtr(PLANAR_U);
       bufV    = isRGB ? (*frame)->GetWritePtr(PLANAR_B) : (*frame)->GetWritePtr(PLANAR_V);
@@ -345,7 +345,7 @@ void Antialiaser::Apply(const VideoInfo& vi, PVideoFrame* frame, int pitch)
     // Compute MaskMode from clip format (Is411()/Is420()/... + stored chromaplacement)
     // via the shared resolver (blend_common.h), which also drives Overlay/Layer.
     MaskMode mode = MASK444;
-    if ((vi.IsYUV() || vi.IsYUVA()) && !vi.IsY()) {
+    if ((vi.IsYUV() || vi.IsYUVA()) && !vi.IsY() && !vi.IsYA()) {
       if (!vi.Is444() && !vi.Is411() && !vi.Is440() && !vi.Is410() && !vi.Is420() && !vi.Is422())
         throw AvisynthError("Antialiaser::Apply: unsupported chroma subsampling for text overlay");
       // chromaplacement (raw ChromaLocation_e) -> Overlay/Layer's 3-bucket `placement`.
@@ -844,9 +844,10 @@ std::string ShowCRC32::compute_crc_text(PVideoFrame& crc_frame, std::vector<uint
   PlaneEntry entries[4];
   int nentries = 0;
 
+  // IsYUVA includes IsYA
   if (crc_vi.IsYUV() || crc_vi.IsYUVA()) {
     entries[nentries++] = { PLANAR_Y, "Y", doY };
-    if (crc_vi.NumComponents() > 1) {
+    if (crc_vi.NumComponents() > 1 && !crc_vi.IsYA()) { // YA.NumComponents() == 2, so no U/V planes
       entries[nentries++] = { PLANAR_U, "U", doU };
       entries[nentries++] = { PLANAR_V, "V", doV };
     }

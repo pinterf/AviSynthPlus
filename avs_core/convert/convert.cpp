@@ -395,7 +395,8 @@ AVSValue AddAlphaPlane::Create(AVSValue args, void*, IScriptEnvironment* env)
       env->ThrowError("AddAlphaPlane: alpha clip is of different size");
     if (viAlphaClip.IsY())
       alphaClip = args[1].AsClip();
-    else if (viAlphaClip.NumComponents() == 4) {
+    else if (viAlphaClip.IsYUVA() || viAlphaClip.IsPlanarRGBA() || viAlphaClip.IsRGB32() || viAlphaClip.IsRGB64()) {
+      // IsYUVA covers IsYA as well
       AVSValue new_args[1] = { args[1].AsClip() };
       alphaClip = env->Invoke("ExtractA", AVSValue(new_args, 1)).AsClip();
     }

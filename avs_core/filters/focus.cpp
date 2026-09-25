@@ -206,10 +206,13 @@ PVideoFrame __stdcall AdjustFocusV::GetFrame(int n, IScriptEnvironment* env)
 
     if (vi.IsPlanar()) {
       const int planesYUV[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A};
+      const int planesYA[2]  = { PLANAR_Y, PLANAR_A};
       const int planesRGB[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A};
-      const int *planes = vi.IsYUV() || vi.IsYUVA() ? planesYUV : planesRGB;
+      // IsYA() must be checked before IsYUVA(): IsYUVA() is also true for YA
+      const int *planes = vi.IsYA() ? planesYA : vi.IsYUV() || vi.IsYUVA() ? planesYUV : planesRGB;
+      const int cplanes_to_filter = vi.IsYA() ? 1 : 3;
 
-      for (int cplane = 0; cplane < 3; cplane++) {
+      for (int cplane = 0; cplane < cplanes_to_filter; cplane++) {
             int plane = planes[cplane];
             BYTE* dstp = src->GetWritePtr(plane);
             int pitch = src->GetPitch(plane);
@@ -466,16 +469,20 @@ PVideoFrame __stdcall AdjustFocusH::GetFrame(int n, IScriptEnvironment* env)
   PVideoFrame src = child->GetFrame(n, env);
   PVideoFrame dst = env->NewVideoFrameP(vi, &src);
 
-  const int planesYUV[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A};
-  const int planesRGB[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A};
-  const int *planes = vi.IsYUV() || vi.IsYUVA() ? planesYUV : planesRGB;
+  const int planesYUVA[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A};
+  const int planesYA[2]   = { PLANAR_Y, PLANAR_A};
+  const int planesRGB[4]  = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A};
+  const int *planes = vi.IsYA() ? planesYA : vi.IsYUV() || vi.IsYUVA() ? planesYUVA : planesRGB;
 
   int pixelsize = vi.ComponentSize();
 
   if (vi.IsPlanar()) {
     copy_frame(src, dst, env, planes, vi.NumComponents() ); //planar processing is always in-place
     int bits_per_pixel = vi.BitsPerComponent();
-    for(int cplane=0;cplane<3;cplane++) {
+    // Only the non-alpha planes get the blur/sharpen
+    // alpha was already copied by copy_frame above
+    const int cplanes_to_filter = vi.IsYA() ? 1 : 3;
+    for(int cplane=0;cplane<cplanes_to_filter;cplane++) {
       int plane = planes[cplane];
       int row_size = dst->GetRowSize(plane);
       BYTE* q = dst->GetWritePtr(plane);
@@ -532,7 +539,7 @@ PVideoFrame __stdcall AdjustFocusH::GetFrame(int n, IScriptEnvironment* env)
 #endif
 #endif
       {
-        copy_frame(src, dst, env, planesYUV, 1); //in-place
+        copy_frame(src, dst, env, planesYUVA, 1); //in-place
         af_horizontal_yuy2_c(q,vi.height,pitch,vi.width,half_amount);
       }
     }
@@ -559,14 +566,14 @@ PVideoFrame __stdcall AdjustFocusH::GetFrame(int n, IScriptEnvironment* env)
 #endif
 #endif
       {
-        copy_frame(src, dst, env, planesYUV, 1);
+        copy_frame(src, dst, env, planesYUVA, 1);
         if(pixelsize==1)
           af_horizontal_rgb32_64_c<uint8_t>(dst->GetWritePtr(), vi.height, dst->GetPitch(), vi.width, half_amount);
         else
           af_horizontal_rgb32_64_c<uint16_t>(dst->GetWritePtr(), vi.height, dst->GetPitch(), vi.width, half_amount);
       }
     } else if (vi.IsRGB24() || vi.IsRGB48()) {
-      copy_frame(src, dst, env, planesYUV, 1);
+      copy_frame(src, dst, env, planesYUVA, 1);
       if(pixelsize==1)
         af_horizontal_rgb24_48_c<uint8_t>(dst->GetWritePtr(), vi.height, dst->GetPitch(), vi.width, half_amount);
       else

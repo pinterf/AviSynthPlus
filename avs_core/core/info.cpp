@@ -2099,11 +2099,12 @@ static void DrawString_internal(BitmapFont* current_font, const VideoInfo& vi, P
 
   int logXRatioUV = 0;
   int logYRatioUV = 0;
-  if (!vi.IsY() && !vi.IsRGB()) {
+  if (!vi.IsY() && !vi.IsYA() && !vi.IsRGB()) {
     logXRatioUV = vi.IsYUY2() ? 1 : vi.GetPlaneWidthSubsampling(PLANAR_U);
     logYRatioUV = vi.IsYUY2() ? 0 : vi.GetPlaneHeightSubsampling(PLANAR_U);
   }
-  const int planecount = vi.IsYUY2() ? 1 : std::min(vi.NumComponents(), 3);
+  // Y+A: treat it like Y (planecount = 1), alpha is ignored
+  const int planecount = vi.IsYUY2() ? 1 : (vi.IsYA() ? 1 : std::min(vi.NumComponents(), 3));
   BYTE* dstps[3] = { nullptr };
   int pitches[3] = { 0 };
 
