@@ -110,6 +110,7 @@ template void fill_chroma<float>(uint8_t * dstp_u, uint8_t * dstp_v, int height,
 // Legacy formats (packed RGB/YUY2) are handled uniformly inside.
 AVSValue __cdecl ConvertToPlanarGeneric::CreateY(AVSValue args, void* user_data, IScriptEnvironment* env) {
   bool only_8bit = reinterpret_cast<intptr_t>(user_data) == 0;
+  bool to_yuva = reinterpret_cast<intptr_t>(user_data) == 2; // "ConvertToYA": force/keep alpha (Y+Alpha target)
   PClip clip = args[0].AsClip();
 
   // 0    1       2      3
@@ -133,10 +134,10 @@ AVSValue __cdecl ConvertToPlanarGeneric::CreateY(AVSValue args, void* user_data,
       args[0], args[1], AVSValue(8), args[3]
     };
     AVSValue new_args_val(new_args, 4);
-    return Create(new_args_val, "ConvertToY", only_8bit, false /*to_yuva*/, env);
+    return Create(new_args_val, "ConvertToY", only_8bit, to_yuva, env);
   }
   else {
-    return Create(args, "ConvertToY", only_8bit, false /*to_yuva*/, env);
+    return Create(args, "ConvertToY", only_8bit, to_yuva, env);
   }
 }
 
@@ -172,6 +173,10 @@ ConvertRGBToYUV444::ConvertRGBToYUV444(PClip src, const char *matrix_name, bool 
   // target_bit_depth == -1: no conversion required
   const bool need_bitdepth_conversion = (target_bit_depth != -1);
 
+  isPlanarRGBfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
+  targetHasAlpha = vi.IsPlanarRGBA() || (keep_packedrgb_alpha && (vi.IsRGB32() || vi.IsRGB64()));
+  // for packed RGB it depends: ConvertToYUVAxxx()/ConvertToYA() can force an alpha target option
+
   // get alpha converter, GetFrame is using that if alpha must be depth-converterd and not only copied
   if (need_bitdepth_conversion)
   {
@@ -179,7 +184,7 @@ ConvertRGBToYUV444::ConvertRGBToYUV444(PClip src, const char *matrix_name, bool 
     // 8-16-bits any range to 8-16, 32 bits any range
     bitdepthConverted = true;
 
-    if (!to_y) { // single plane Y only has no alpha
+    if (!to_y || targetHasAlpha) { // single plane Y only has no alpha, unless Y+A requested
 #ifdef INTEL_INTRINSICS
       const bool sse2 = !!(env->GetCPUFlags() & CPUF_SSE2);
       const bool sse4 = !!(env->GetCPUFlags() & CPUF_SSE4_1);
@@ -201,22 +206,19 @@ ConvertRGBToYUV444::ConvertRGBToYUV444(PClip src, const char *matrix_name, bool 
     target_bit_depth = source_bit_depth;
   }
 
-  isPlanarRGBfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
-  targetHasAlpha = vi.IsPlanarRGBA() || (keep_packedrgb_alpha && (vi.IsRGB32() || vi.IsRGB64()));
-  // for packed RGB it depends: ConvertToYUVAxxx() can force YUVA target option
   if (isPlanarRGBfamily)
   {
     if (to_y) {
-      // --> Y
-      pixel_step =  -1;
+      // --> Y or Y+Alpha
+      pixel_step = targetHasAlpha ? -2 : -1;
       switch (target_bit_depth)
       {
-      case 8: vi.pixel_type = VideoInfo::CS_Y8; break;
-      case 10: vi.pixel_type = VideoInfo::CS_Y10; break;
-      case 12: vi.pixel_type = VideoInfo::CS_Y12; break;
-      case 14: vi.pixel_type = VideoInfo::CS_Y14; break;
-      case 16: vi.pixel_type = VideoInfo::CS_Y16; break;
-      case 32: vi.pixel_type = VideoInfo::CS_Y32; break;
+      case 8: vi.pixel_type = targetHasAlpha ? VideoInfo::CS_YA8 : VideoInfo::CS_Y8; break;
+      case 10: vi.pixel_type = targetHasAlpha ? VideoInfo::CS_YA10 : VideoInfo::CS_Y10; break;
+      case 12: vi.pixel_type = targetHasAlpha ? VideoInfo::CS_YA12 : VideoInfo::CS_Y12; break;
+      case 14: vi.pixel_type = targetHasAlpha ? VideoInfo::CS_YA14 : VideoInfo::CS_Y14; break;
+      case 16: vi.pixel_type = targetHasAlpha ? VideoInfo::CS_YA16 : VideoInfo::CS_Y16; break;
+      case 32: vi.pixel_type = targetHasAlpha ? VideoInfo::CS_YAS : VideoInfo::CS_Y32; break;
       }
     }
     else {
@@ -1365,7 +1367,7 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
   IScriptEnvironment* env) : 
   GenericVideoFilter(src), ChromaLocation_In(_ChromaLocation_In), ChromaLocation_Out(_ChromaLocation_Out)
 {
-  Yinput = vi.NumComponents() == 1;
+  Yinput = vi.IsY() || vi.IsYA();
   pixelsize = vi.ComponentSize();
 
   if (Yinput) {
@@ -1376,12 +1378,16 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
     return;
   }
 
-  // Y only output from any YUV: no chroma involved, GetFrame will snatch Y plane
+  // Y (or Y+Alpha) only output from any YUV: no chroma involved, GetFrame will snatch/copy the Y plane.
   if (dst_space == VideoInfo::CS_Y8 || dst_space == VideoInfo::CS_Y10 ||
     dst_space == VideoInfo::CS_Y12 || dst_space == VideoInfo::CS_Y14 || dst_space == VideoInfo::CS_Y16 ||
-    dst_space == VideoInfo::CS_Y32)
+    dst_space == VideoInfo::CS_Y32 ||
+    dst_space == VideoInfo::CS_YA8 || dst_space == VideoInfo::CS_YA10 ||
+    dst_space == VideoInfo::CS_YA12 || dst_space == VideoInfo::CS_YA14 || dst_space == VideoInfo::CS_YA16 ||
+    dst_space == VideoInfo::CS_YAS)
   {
     vi.pixel_type = dst_space;
+    Yinput = true;
     return;
   }
 
@@ -1857,6 +1863,17 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
   }
 
   if (vi.IsRGB()) { // packed or planar source
+    // Compatibility note:
+    // packed RGB32/64 behave differently from other alpha-aware formats (PlanarRGBA, YUVA*,
+    // YA) for the non-A-suffixed target names.
+    // PlanarRGBA/YUVA*/YA sources have their alpha preserved by ConvertToY/ConvertToYUVxxx
+    // even without the "A" suffix.
+    // But following a classic Avisynth behavior, packed RGB32/64's alpha is only kept when we
+    // explicitly ask for it via an A-suffixed target, to YUVA.
+    // Plain ConvertToY/ConvertToYUVxxx on a packed RGB32/64 source always drops alpha.
+    // This asymmetry is intentional, so use ConvertToPlanarRGBA first if you want a packed RGB
+    // source's alpha to survive a non A-suffixed conversion.
+    // (to_yuva also true for to_ya)
     const bool keep_packedrgb_alpha = to_yuva && (vi.IsRGB32() || vi.IsRGB64());
     // 3.7.6: We convert ALL packed RGB formats to planar RGB!
     // The only case where a RGB32->YV24 is a bit slower is: SSE2-only but no SSSE3 capable CPU.
@@ -1905,9 +1922,10 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
   int pixel_type = VideoInfo::CS_UNKNOWN;
   AVSValue outplacement = AVSValue(); // only for ConvertToYUV420 and ConvertToYUV422
 
-  bool hasAlpha = vi.NumComponents() == 4 && !strip_alpha_legacy_8bit;
-  bool shouldStripAlpha = vi.NumComponents() == 4 && strip_alpha_legacy_8bit;
-  bool shouldAddAlpha = vi.NumComponents() != 4 && to_yuva;
+  const bool vi_has_alpha = vi.IsYUVA() || vi.IsPlanarRGBA(); // IsYUVA includes Y+A
+  bool hasAlpha = vi_has_alpha && !strip_alpha_legacy_8bit;
+  bool shouldStripAlpha = vi_has_alpha && strip_alpha_legacy_8bit;
+  bool shouldAddAlpha = !vi_has_alpha && to_yuva;
   bool targethasAlpha = hasAlpha || shouldAddAlpha;
 
   int ChromaLocation_In = -1; // invalid. Chromalocation_e::AVS_CHROMALOCATION_UNUSED
@@ -1972,12 +1990,12 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
   // Build pixel_type from bit-arithmetic: CS_GENERIC_xxx | CS_Sample_Bits_N
   int pixel_type_base = VideoInfo::CS_UNKNOWN;
   if (to_y) {
-    if (vi.IsY()) {
-      // After RGB->Y conversion or input as Y
+    if (vi.IsY() && !targethasAlpha) {
+      // After RGB->Y conversion or input as Y, and no alpha requested/to keep: nothing to do
       return clip;
     }
-    // planar YUV original, GetFrame will return Y
-    pixel_type_base = VideoInfo::CS_GENERIC_Y;
+    // planar YUV/Y/YA original, GetFrame will return Y or Y+A
+    pixel_type_base = targethasAlpha ? VideoInfo::CS_GENERIC_YA : VideoInfo::CS_GENERIC_Y;
   }
   else if (to_420) {
     outplacement = args[5];
