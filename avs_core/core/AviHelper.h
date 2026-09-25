@@ -67,6 +67,8 @@ void v210_to_yuv422p10(BYTE *dstp_y, int dstpitch, BYTE *dstp_u, BYTE *dstp_v, i
 void v308_to_yuv444p8(BYTE* dstp_y, int dstpitch, BYTE* dstp_u, BYTE* dstp_v, int dstpitch_uv, const BYTE* srcp, int width, int height);
 void v408_to_yuva444p8(BYTE* dstp_y, int dstpitch, BYTE* dstp_u, BYTE* dstp_v, BYTE* dstp_a, int dstpitch_uv, int dstpitch_a, const BYTE* srcp, int width, int height);
 void yuv422p10_to_v210(BYTE *dstp, const BYTE *srcp_y, int srcpitch, const BYTE *srcp_u, const BYTE *srcp_v, int srcpitch_uv, int width, int height);
+void planar_ya8_to_packed_ya8(BYTE *dstp, const BYTE *srcp_y, int srcpitch_y, const BYTE *srcp_a, int srcpitch_a, int width, int height);
+void packed_ya8_to_planar_ya8(BYTE *dstp_y, int dstpitch_y, BYTE *dstp_a, int dstpitch_a, const BYTE *srcp, int width, int height);
 void yuv42xp10_16_to_Px10_16(BYTE *dstp, int dstpitch, const BYTE *srcp_y, int srcpitch,
   const BYTE *srcp_u, const BYTE *srcp_v, int srcpitch_uv,
   int width, int height, int cheight, bool semi_packed_p16, IScriptEnvironment *env);

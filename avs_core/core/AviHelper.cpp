@@ -80,6 +80,10 @@ int AviHelper_ImageSize(const VideoInfo *vi, bool AVIPadScanlines, bool v210, bo
     image_size = ((16 * ((vi->width + 5) / 6) + 127) & ~127);
     image_size *= vi->height;
   }
+  else if (vi->pixel_type == VideoInfo::CS_YA8)
+  { // Y2[0][8] packed Y,A interleaved, 2 bytes/pixel
+    image_size = ((vi->width * 2 + 3) & ~3) * vi->height;
+  }
   else if ((vi->IsRGB() && !vi->IsPlanar()) || vi->IsYUY2() || vi->IsY() || AVIPadScanlines) {
     // incl. all packed RGBs
     image_size = vi->BMPSize();
@@ -775,6 +779,41 @@ void v210_to_yuv422p10(BYTE *dstp_y, int dstpitch, BYTE *dstp_u, BYTE *dstp_v, i
     yptr += ppitch_y;
     uptr += ppitch_uv;
     vptr += ppitch_uv;
+  }
+}
+
+void planar_ya8_to_packed_ya8(BYTE *dstp, const BYTE *srcp_y, int srcpitch_y, const BYTE *srcp_a, int srcpitch_a, int width, int height)
+{
+  // ffmpeg AV_PIX_FMT_YA8 aka 'Y2[0][8]': packed Y,A interleaved, 2 bytes/pixel
+  const int dstpitch = (width * 2 + 3) & ~3;
+  for (int y = 0; y < height; y++) {
+    const uint8_t *yline = srcp_y;
+    const uint8_t *aline = srcp_a;
+    uint8_t *dline = dstp;
+    for (int x = 0; x < width; x++) {
+      dline[x * 2 + 0] = yline[x];
+      dline[x * 2 + 1] = aline[x];
+    }
+    dstp += dstpitch;
+    srcp_y += srcpitch_y;
+    srcp_a += srcpitch_a;
+  }
+}
+
+void packed_ya8_to_planar_ya8(BYTE *dstp_y, int dstpitch_y, BYTE *dstp_a, int dstpitch_a, const BYTE *srcp, int width, int height)
+{
+  const int srcpitch = (width * 2 + 3) & ~3;
+  for (int y = 0; y < height; y++) {
+    uint8_t *yline = dstp_y;
+    uint8_t *aline = dstp_a;
+    const uint8_t *sline = srcp;
+    for (int x = 0; x < width; x++) {
+      yline[x] = sline[x * 2 + 0];
+      aline[x] = sline[x * 2 + 1];
+    }
+    dstp_y += dstpitch_y;
+    dstp_a += dstpitch_a;
+    srcp += srcpitch;
   }
 }
 

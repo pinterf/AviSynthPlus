@@ -1172,6 +1172,8 @@ STDMETHODIMP_(LONG) CAVIStreamSynth::Info(AVISTREAMINFOW *psi, LONG lSize) {
       asi.fccHandler = MAKEFOURCC('Y', 'V', 'U', '9');
     else if (vi_final.pixel_type == VideoInfo::CS_YUV440)
       asi.fccHandler = MAKEFOURCC('I', '4', '4', '0'); // no V-first FourCC exists for 4:4:0; ReadFrame() writes U-then-V for this tag
+    else if (vi_final.pixel_type == VideoInfo::CS_YA8)
+      asi.fccHandler = MAKEFOURCC('Y', '2', 0, 8); // ffmpeg AV_PIX_FMT_YA8, packed Y,A interleaved
     else {
       // fixme: YUVA420P8, grey 10+ bits such as Y16 are not covered
       _ASSERT(FALSE);
@@ -1298,6 +1300,15 @@ void CAVIStreamSynth::ReadFrame(void* lpBuffer, int n) {
       else
         ToY416_c<false>(outbuf, out_pitch, yptr, ppitch_y, uptr, vptr, ppitch_uv, aptr, ppitch_a, width, height);
     }
+    return;
+  }
+
+  // Y2[0][8] packed Y,A interleaved (8 bit Y+Alpha)
+  if (vi.pixel_type == VideoInfo::CS_YA8) {
+    planar_ya8_to_packed_ya8((BYTE *)lpBuffer,
+      frame->GetReadPtr(PLANAR_Y), frame->GetPitch(PLANAR_Y),
+      frame->GetReadPtr(PLANAR_A), frame->GetPitch(PLANAR_A),
+      vi.width, vi.height);
     return;
   }
 
@@ -1772,6 +1783,8 @@ STDMETHODIMP CAVIStreamSynth::ReadFormat(LONG lPos, LPVOID lpFormat, LONG *lpcbF
       bi.biCompression = MAKEFOURCC('Y', 'V', 'U', '9');
     else if (vi_final.pixel_type == VideoInfo::CS_YUV440)
       bi.biCompression = MAKEFOURCC('I', '4', '4', '0'); // no V-first FourCC exists for 4:4:0
+    else if (vi_final.pixel_type == VideoInfo::CS_YA8)
+      bi.biCompression = MAKEFOURCC('Y', '2', 0, 8); // ffmpeg AV_PIX_FMT_YA8, packed Y,A interleaved
     else {
       _ASSERT(FALSE);
     }
