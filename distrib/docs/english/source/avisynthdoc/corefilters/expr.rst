@@ -42,7 +42,7 @@ Syntax and Parameters
 
     Set color format of the returned clip.
 
-    * Use `pixel format strings`_ like "YV12", "YUV420P8", "YUV444P16", "RGBP10".
+    * Use :ref:`pixel format strings <color-formats>` like "YV12", "YUV420P8", "YUV444P16", "RGBP10".
     * By default, the output format is the same as the first clip.
 
     Default: ""
@@ -605,8 +605,6 @@ $Date: 2025/03/06 16:15:00 $
     https://en.wikipedia.org/wiki/Chroma_subsampling
 .. _RPN:
     https://en.wikipedia.org/wiki/Reverse_Polish_notation
-.. _pixel format strings:
-    http://avisynth.nl/index.php/Avisynthplus_color_formats
 .. _AVX2:
     https://en.wikipedia.org/wiki/Advanced_Vector_Extensions
 .. _SSE2:

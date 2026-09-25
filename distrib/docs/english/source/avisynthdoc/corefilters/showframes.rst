@@ -715,7 +715,7 @@ Changelog
 +-----------------+-----------------------------------------------------------------------------+
 | Version         | Changes                                                                     |
 +=================+=============================================================================+
-| AviSynth+ 3.7.6 || All four filters: add ``gdi`` parameter to select between Windows GDI     |
+| AviSynth+ 3.7.6 || All four filters: add ``gdi`` parameter to select between Windows GDI      |
 |                 |  antialiased rendering (slow, high quality) and the built-in bitmap font    |
 |                 |  (fast, cross-platform). Defaults to ``true`` on Windows with GDI.          |
 |                 || ``font``, ``bold`` defaults are now ``gdi``-dependent.                     |

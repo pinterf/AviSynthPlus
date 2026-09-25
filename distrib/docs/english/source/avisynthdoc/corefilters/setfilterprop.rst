@@ -176,14 +176,14 @@ Syntax and Parameters
 
     Type values in the JSON output:
 
-    ============  ===========================================
-    ``"int"``     Static integer value (includes bool, stored as 0/1).
-    ``"float"``   Static float value.
-    ``"string"``  Static string value.
-    ``"function"``  Per-frame function object (value is null).
-    ``"capture"`` Capture-from-param rule (value is null).
-    ``"unknown"`` Unexpected type (should not occur).
-    ============  ===========================================
+    ===============  ====================================================
+    ``"int"``        Static integer value (includes bool, stored as 0/1).
+    ``"float"``      Static float value.
+    ``"string"``     Static string value.
+    ``"function"``   Per-frame function object (value is null).
+    ``"capture"``    Capture-from-param rule (value is null).
+    ``"unknown"``    Unexpected type (should not occur).
+    ===============  ====================================================
 
     Function-valued rules are serialised with ``"type":"function","value":null``.
 

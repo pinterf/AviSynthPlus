@@ -4,7 +4,7 @@ ConvertStacked
 
 These compatibility conversion filters are to allow filters that `use 16-bit
 video in a pseudo-8-bit colorspace`_ aka stacked (or lsb) and interleaved format
-to interact with `AviSyth+ high bit depth formats`_ aka HBD.
+to interact with :ref:`AviSynth+ high bit depth formats <color-formats>` aka HBD.
 
 * :ref:`ConvertToStacked` converts a native 16-bit clip to the stacked or double
   width format.
@@ -161,8 +161,6 @@ $Date: 2022/03/07 03:39:14 $
 
 .. _use 16-bit video in a pseudo-8-bit colorspace:
     http://avisynth.nl/index.php/High_bit-depth_Support_with_Avisynth#Processing_High_Bit-depth_Video_with_AviSynth
-.. _AviSyth+ high bit depth formats:
-    http://avisynth.nl/index.php/Avisynthplus_color_formats
 .. _Stack16:
     http://avisynth.nl/index.php/Stack16
 .. _Dither tools:

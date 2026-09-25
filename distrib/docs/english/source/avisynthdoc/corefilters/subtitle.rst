@@ -485,7 +485,7 @@ Changelog
 |                 |  ``Text``). When ``gdi=true``, ``"top_left"`` is also supported.         |
 |                 || Add ``gdi`` parameter to ``Subtitle`` and ``Text``. When ``false``,     |
 |                 |  ``Subtitle`` uses the built-in bitmap font instead of GDI rendering.    |
-|                 || Add ``gdi`` parameter to ``Text`` (accepted but ignored; for API         |
+|                 || Add ``gdi`` parameter to ``Text`` (accepted but ignored; for API        |
 |                 |  compatibility with ``Subtitle``).                                       |
 +-----------------+--------------------------------------------------------------------------+
 | 3.7.4           | Feature: SubTitle to accept real LF (``\r``) or CR LF (``\r\n``) control |

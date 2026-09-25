@@ -245,7 +245,7 @@ as they appear in the standard, not computed by ColorBarsUHD. This
 means ±1–6 code differences from conversion tools are expected and
 normal — see the HLG-to-SDR conversion notes below.
 
-.. ColorBarsUHD_vectorscope_example_
+.. _ColorBarsUHD_vectorscope_example:
 
 HLG-to-SDR Conversion: Tool Comparison and Accuracy Notes
 ---------------------------------------------------------
