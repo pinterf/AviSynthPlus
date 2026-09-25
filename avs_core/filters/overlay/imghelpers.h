@@ -63,8 +63,9 @@ private:
 
   bool return_original;
 
-  const int planes_y[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
-  const int planes_r[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
+  const int planes_yuva[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
+  const int planes_ya[2]   = { PLANAR_Y, PLANAR_A };
+  const int planes_r[4]    = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
   const int *planes;
 
   int planeCount;
@@ -87,7 +88,7 @@ public:
 
     planeCount = _workingVI.NumComponents();
 
-    planes = (_workingVI.IsYUV() || _workingVI.IsYUVA()) ? planes_y : planes_r;
+    planes = _workingVI.IsYA() ? planes_ya : (_workingVI.IsYUV() || _workingVI.IsYUVA()) ? planes_yuva : planes_r;
     for (int p = 0; p < 4; p++) {
       xSubSamplingShifts[p] = ySubSamplingShifts[p] = 0;
       pitches[p] = 0;

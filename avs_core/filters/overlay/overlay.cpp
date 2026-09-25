@@ -915,12 +915,14 @@ AVSValue __cdecl Overlay::Create(AVSValue args, void*, IScriptEnvironment* env) 
    // c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s
    // chromaresample = 'bicubic' default
    // chromaresample = 'point' is faster
+   // If output requires, we keep existing/add new alpha, though it is not altered in any overlay subfilter.
+   const bool outputIsAlphaYUV = Result->outputVi.IsYUVA(); // false for plain YUVxxx targets
    if(Result->outputVi.Is444()) {
      // if workingFormat is not 444 but output was specified
      // c[interlaced]b[matrix]s[ChromaInPlacement]s
      // Source is subsampled, use ChromaInPlacement to this filter's own `placement`.
      AVSValue new_args[4] = { Result, false, Result->full_range ? "PC.601" : "rec601", placementNameForFormat(Result->placement, Result->GetVideoInfo()) };
-     return env->Invoke("ConvertToYUV444", AVSValue(new_args, 4)).AsClip();
+     return env->Invoke(outputIsAlphaYUV ? "ConvertToYUVA444" : "ConvertToYUV444", AVSValue(new_args, 4)).AsClip();
    }
    // c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[ChromaOutPlacement]s
    // source (Result) is always 4:4:4 here (isInternal444)
@@ -928,23 +930,23 @@ AVSValue __cdecl Overlay::Create(AVSValue args, void*, IScriptEnvironment* env) 
    // whatever the input side (base/overlay clip conversion in the ctor) assumed.
    if(Result->outputVi.Is422()) {
      AVSValue new_args[6] = { Result, false, Result->full_range ? "PC.601" : "rec601", AVSValue(), AVSValue(), Result->placementName };
-     return env->Invoke("ConvertToYUV422", AVSValue(new_args, 6)).AsClip();
+     return env->Invoke(outputIsAlphaYUV ? "ConvertToYUVA422" : "ConvertToYUV422", AVSValue(new_args, 6)).AsClip();
    }
    if(Result->outputVi.Is420()) {
      AVSValue new_args[6] = { Result, false, Result->full_range ? "PC.601" : "rec601", AVSValue(), AVSValue(), Result->placementName };
-     return env->Invoke("ConvertToYUV420", AVSValue(new_args, 6)).AsClip();
+     return env->Invoke(outputIsAlphaYUV ? "ConvertToYUVA420" : "ConvertToYUV420", AVSValue(new_args, 6)).AsClip();
    }
    if (Result->outputVi.Is411()) {
      AVSValue new_args[6] = { Result, false, Result->full_range ? "PC.601" : "rec601", AVSValue(), AVSValue(), Result->placementName };
-     return env->Invoke("ConvertToYUV411", AVSValue(new_args, 6)).AsClip();
+     return env->Invoke(outputIsAlphaYUV ? "ConvertToYUVA411" : "ConvertToYUV411", AVSValue(new_args, 6)).AsClip();
    }
    if (Result->outputVi.Is440()) {
      AVSValue new_args[6] = { Result, false, Result->full_range ? "PC.601" : "rec601", AVSValue(), AVSValue(), placementNameForFormat(Result->placement, Result->outputVi) };
-     return env->Invoke("ConvertToYUV440", AVSValue(new_args, 6)).AsClip();
+     return env->Invoke(outputIsAlphaYUV ? "ConvertToYUVA440" : "ConvertToYUV440", AVSValue(new_args, 6)).AsClip();
    }
    if (Result->outputVi.Is410()) {
      AVSValue new_args[6] = { Result, false, Result->full_range ? "PC.601" : "rec601", AVSValue(), AVSValue(), Result->placementName };
-     return env->Invoke("ConvertToYUV410", AVSValue(new_args, 6)).AsClip();
+     return env->Invoke(outputIsAlphaYUV ? "ConvertToYUVA410" : "ConvertToYUV410", AVSValue(new_args, 6)).AsClip();
    }
    if(Result->outputVi.IsYUY2()) {
      AVSValue new_args[3] = { Result, false, Result->full_range ? "PC.601" : "rec601" };
@@ -953,6 +955,11 @@ AVSValue __cdecl Overlay::Create(AVSValue args, void*, IScriptEnvironment* env) 
    if(Result->outputVi.IsY()) {
      AVSValue new_args[2] = { Result, Result->full_range ? "PC.601" : "rec601" };
      return env->Invoke("ConvertToY", AVSValue(new_args, 2)).AsClip();
+   }
+   if(Result->outputVi.IsYA()) {
+     // ConvertToYA: like ConvertToYUVA: keep existing/add new alpha.
+     AVSValue new_args[2] = { Result, Result->full_range ? "PC.601" : "rec601" };
+     return env->Invoke("ConvertToYA", AVSValue(new_args, 2)).AsClip();
    }
    if(Result->outputVi.IsRGB()) {
      // c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s
