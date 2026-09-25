@@ -177,10 +177,10 @@ int VideoInfo::RowSize(int plane) const {
   const int rowsize = BytesFromPixels(width);
   switch (plane) {
     case PLANAR_U: case PLANAR_V:
-      return ((NumComponents() > 1) && IsPlanar() && !IsPlanarRGB() && !IsPlanarRGBA()) ? rowsize>>GetPlaneWidthSubsampling(plane) : 0;
+      return ((NumComponents() > 1) && IsPlanar() && !IsPlanarRGB() && !IsPlanarRGBA() && !IsYA()) ? rowsize>>GetPlaneWidthSubsampling(plane) : 0;
 
     case PLANAR_U_ALIGNED: case PLANAR_V_ALIGNED:
-      return ((NumComponents() > 1) && IsPlanar() && !IsPlanarRGB() && !IsPlanarRGBA()) ? ((rowsize>>GetPlaneWidthSubsampling(plane))+FRAME_ALIGN-1)&(~(FRAME_ALIGN-1)) : 0; // Aligned rowsize
+      return ((NumComponents() > 1) && IsPlanar() && !IsPlanarRGB() && !IsPlanarRGBA() && !IsYA()) ? ((rowsize>>GetPlaneWidthSubsampling(plane))+FRAME_ALIGN-1)&(~(FRAME_ALIGN-1)) : 0; // Aligned rowsize
 
     case PLANAR_Y_ALIGNED:
       return (rowsize+FRAME_ALIGN-1)&(~(FRAME_ALIGN-1)); // Aligned rowsize
@@ -191,11 +191,12 @@ int VideoInfo::RowSize(int plane) const {
     case PLANAR_R_ALIGNED: case PLANAR_G_ALIGNED: case PLANAR_B_ALIGNED:
         return IsPlanarRGB() || IsPlanarRGBA() ? (rowsize+FRAME_ALIGN-1)&(~(FRAME_ALIGN-1)) : 0; // Aligned rowsize
 
+    // IsYUVA() includes IsYA()
     case PLANAR_A:
-        return ((NumComponents() == 4) && IsPlanar()) ? rowsize : 0;
+        return ((IsYUVA() || IsPlanarRGBA()) && IsPlanar()) ? rowsize : 0;
 
     case PLANAR_A_ALIGNED:
-        return ((NumComponents() == 4) && IsPlanar()) ? (rowsize+FRAME_ALIGN-1)&(~(FRAME_ALIGN-1)) : 0; // Aligned rowsize
+        return ((IsYUVA() || IsPlanarRGBA()) && IsPlanar()) ? (rowsize+FRAME_ALIGN-1)&(~(FRAME_ALIGN-1)) : 0; // Aligned rowsize
 
   }
   return rowsize;
@@ -208,6 +209,10 @@ int VideoInfo::BMPSize() const {
     }
     // Y plane
     const int Ybytes  = ((RowSize(PLANAR_Y)+3) & ~3) * height;
+    if (IsYA()) {
+      const int Abytes = ((RowSize(PLANAR_A)+3) & ~3) * height;
+      return Ybytes + Abytes; // no U and V planes
+    }
     const int UVbytes = Ybytes >> (GetPlaneWidthSubsampling(PLANAR_U)+GetPlaneHeightSubsampling(PLANAR_U));
     return Ybytes + UVbytes*2;
   }
@@ -217,8 +222,8 @@ int VideoInfo::BMPSize() const {
 int VideoInfo::GetPlaneWidthSubsampling(int plane) const {  // Subsampling in bitshifts!
   if (plane == PLANAR_Y || plane == PLANAR_R || plane == PLANAR_G || plane == PLANAR_B || plane == PLANAR_A)  // No subsampling
     return 0;
-  if (NumComponents() == 1)
-    throw AvisynthError("Filter error: GetPlaneWidthSubsampling not available on greyscale pixel type.");
+  if (NumComponents() == 1 || IsYA())
+    throw AvisynthError("Filter error: GetPlaneWidthSubsampling not available on Y or YA pixel type.");
   if (plane == PLANAR_U || plane == PLANAR_V) {
     if (IsYUY2())
       return 1;
@@ -233,8 +238,8 @@ int VideoInfo::GetPlaneWidthSubsampling(int plane) const {  // Subsampling in bi
 int VideoInfo::GetPlaneHeightSubsampling(int plane) const {  // Subsampling in bitshifts!
   if (plane == PLANAR_Y || plane == PLANAR_R || plane == PLANAR_G || plane == PLANAR_B || plane == PLANAR_A)  // No subsampling
     return 0;
-  if (NumComponents() == 1)
-    throw AvisynthError("Filter error: GetPlaneHeightSubsampling not available on greyscale pixel type.");
+  if (NumComponents() == 1 || IsYA())
+    throw AvisynthError("Filter error: GetPlaneHeightSubsampling not available on Y or YA pixel type.");
   if (plane == PLANAR_U || plane == PLANAR_V) {
     if (IsYUY2())
       return 0;
@@ -265,10 +270,19 @@ int VideoInfo::BitsPerPixel() const {
       case CS_Y10:
       case CS_Y12:
       case CS_Y14:
-      case CS_Y16: // AVS16
+      case CS_Y16:
         return 16;
       case CS_Y32:
         return 32;
+      case CS_YA8:
+        return 16; // Y8 + A8
+      case CS_YA10:
+      case CS_YA12:
+      case CS_YA14:
+      case CS_YA16:
+        return 32; // Y16 + A16 container
+      case CS_YAS:
+        return 64; // Y32f + A32f
       case CS_BGR48:
         return 48;
       case CS_BGR64:
@@ -348,6 +362,13 @@ int VideoInfo::NumComponents() const {
   case CS_Y16:
   case CS_Y32:
     return 1;
+  case CS_YA8:
+  case CS_YA10:
+  case CS_YA12:
+  case CS_YA14:
+  case CS_YA16:
+  case CS_YAS:
+    return 2; // Y+Alpha
   case CS_BGR32:
   case CS_BGR64:
     return 4; // these are not planar but return the count

@@ -4498,7 +4498,13 @@ PVideoFrame ScriptEnvironment::NewVideoFrameOnDevice(const VideoInfo& vi, int al
   PVideoFrame retval;
 
   if (vi.IsPlanar() && (vi.NumComponents() > 1)) {
-    if (vi.IsYUV() || vi.IsYUVA()) {
+    if (vi.IsYA()) {
+      // NumComponents == 2, special Y+A, 
+      // no chroma plane: row_sizeUV/heightUV are passed as 0
+      // => offsetU==offsetV==offsetA, U/V pointers are still valid, but since rowsize is 0
+      // they will never be used (let's hope so).
+      retval = NewPlanarVideoFrame(vi.RowSize(PLANAR_Y), vi.height, 0, 0, align, !vi.IsVPlaneFirst(), true /*alpha*/, vi.pixel_type, device);
+    } else if (vi.IsYUV() || vi.IsYUVA()) {
       // Planar requires different math ;)
       const int xmod  = 1 << vi.GetPlaneWidthSubsampling(PLANAR_U);
       const int xmask = xmod - 1;
@@ -4567,8 +4573,8 @@ bool ScriptEnvironment::MakeWritable(PVideoFrame* pvf) {
     const int height = vf->GetHeight();
 
     bool alpha = 0 != vf->GetPitch(PLANAR_A);
-    if (vf->GetPitch(PLANAR_U)) {  // we have no videoinfo, so we assume that it is Planar if it has a U plane.
-      const int row_sizeUV = vf->GetRowSize(PLANAR_U); // for Planar RGB this returns row_sizeUV which is the same for all planes
+    if (vf->GetPitch(PLANAR_U) || alpha) {  // we have no videoinfo, so we assume that it is Planar if it has a U or (Y+)Alpha plane.
+      const int row_sizeUV = vf->GetRowSize(PLANAR_U); // for Planar RGB this returns row_sizeUV which is the same for all planes; 0 for Y+Alpha (no chroma)
       const int heightUV = vf->GetHeight(PLANAR_U);
       dst = NewPlanarVideoFrame(row_size, height, row_sizeUV, heightUV, frame_align, false /* always V first on internal images */, alpha, vf->pixel_type, device);
     }
