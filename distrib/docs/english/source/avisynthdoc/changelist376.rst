@@ -458,6 +458,11 @@ Bugfixes
 - Fix: "Expr" crash on AVX2 CPUs when ``round``, ``floor``, ``ceil`` or ``trunc`` came before 
   a relative pixel load (e.g. ``x[1,0]``) in the expression; wrong results when before ``asin``, ``acos``, ``atan``.
   Existed since 3.7.1 (round/floor/ceil/trunc added).
+- Fix: "Expr" ``tan`` in the SSE2/AVX2 JIT was inaccurate (up to ~8% relative error).
+  New implementation, max error ~3.5 ulp compared with the C path. Existed since 3.7.4.
+- Fix: "Expr" ``%`` (modulo) in the SSE2/AVX2 JIT now gives the same result as the C path
+  (``fmodf``). Near multiples of the divisor the result was 0 or slightly negative instead of
+  almost the divisor (e.g. ``73 % 7.3``). Existed since ``%`` was added (r2574).
 
 
 Optimizations

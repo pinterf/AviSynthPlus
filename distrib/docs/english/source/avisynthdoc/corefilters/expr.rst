@@ -246,8 +246,9 @@ Expr language/RPN elements
 * Clips: letters *x, y, z, a..w. x* is the first clip parameter, *y* is the
   second one, etc.
 * Math: ``* / + -``
-* ``%`` (modulo), like fmod. Example: ``result = x - trunc(x/d)*d``. Note: the
-  internal 32-bit float can hold only a 24 bit integer number (approximately).
+* ``%`` (modulo), same as C ``fmod``: ``x - trunc(x/d)*d``, the result has the sign
+  of ``x``. ``d`` = 0 results in NaN. Since 3.7.6 the JIT (SSE2/AVX2) result is exact while
+  \|x/d\| < 2^24; above that the result is inaccurate.
 * Math constant: ``pi``
 * Functions: ``min, max, sqrt, abs, exp, log, pow ^`` (synonyms: ``pow`` and ``^``)
 * Function: ``neg`` simple negates stack top
@@ -566,6 +567,9 @@ Changelog
 |                 || Fix: JIT tan (SSE2/AVX2) was inaccurate, up to 8%       |
 |                 |  relative error. New implementation, max ~3.5 ulp.       |
 |                 |  Bug since 3.7.4.                                        |
+|                 || Fix: JIT % (modulo) now gives the same result as        |
+|                 |  fmodf; was 0 or slightly negative near multiples        |
+|                 |  of the divisor (e.g. 73 % 7.3).                         |
 +-----------------+----------------------------------------------------------+
 | 3.7.4           || Enhancement: vectorizable C implementation helps nonJIT |
 |                 || New parameter: optVectorC                               |

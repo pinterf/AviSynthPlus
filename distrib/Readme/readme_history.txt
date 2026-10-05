@@ -11,6 +11,21 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261005 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: Expr: % (modulo) in the SSE2/AVX2 JIT now gives the same result as the C path (fmodf).
+  The JIT computed x - trunc(x/d)*d in float: near multiples of d the rounded division gave a quotient
+  one too big, so the result was 0 or slightly negative instead of almost d (e.g. 73 % 7.3 gave 0,
+  fmodf gives 7.2999983), and the result had a small rounding error elsewhere. Integer operands below
+  2^24 and power-of-two divisors were not affected.
+  Now the remainder is computed exactly (SSE2: in double, AVX2: by FMA) and corrected when the
+  quotient was one too big; the result has the sign of x (also -0), d == 0 gives NaN, like fmodf.
+  Exact while |x/d| < 2^24.
+  Bug existed since % was added (r2574).
+- Fix: Expr: tan in the SSE2/AVX2 JIT was inaccurate: up to ~8% relative error (e.g. tan(0.5) gave
+  0.528 instead of 0.546), and ~3-4% near +/-pi/2. New implementation: range reduction to [-pi/4, pi/4],
+  minimax polynomial, -1/tan(r) in odd quadrants. Max difference from the C path (std::tan) is ~3.5 ulp
+  (relative error ~2.5e-7). On the SSE2 path (CPUs without AVX2) the precision of sin, cos and tan
+  decreases for |x| above about 50000.
+  Bug existed since tan got JIT support in 3.7.4.
 - Fix: Expr: crash or wrong output when round, floor, ceil or trunc came before a relative pixel
   load (e.g. x[1,0]) or asin/acos/atan. The SIMD path selection (narrowing down) loop stopped at the
   first rounding op, so later ops were not checked. A relative pixel load then ran on the AVX2 JIT,
