@@ -302,9 +302,7 @@ enum {
     float_sinC3, float_sinC5, float_sinC7, float_sinC9,
     float_cosC2, float_cosC4, float_cosC6, float_cosC8,
     float_atan2f_rmul, float_atan2f_radd, float_atan2f_tmul, float_atan2f_tadd, float_atan2f_halfpi, float_atan2f_pi,
-    float_tan_p0, float_tan_p2, float_tan_p4, float_tan_p6, float_tan_p8,
-    float_tan_q0, float_tan_q2, float_tan_q4, float_tan_q6, float_tan_q8,
-    float_tan_small_limit, float_tan_asympt_a1, float_tan_asympt_a2, float_tan_asympt_limit
+    float_tan_2_over_pi, float_tan_c0, float_tan_c1, float_tan_c2, float_tan_c3, float_tan_c4, float_tan_c5
 };
 
 // constants for xmm
@@ -317,7 +315,7 @@ enum {
   { (int)MAKEDWORD(a0,a1,a2,a3), (int)MAKEDWORD(a4,a5,a6,a7), (int)MAKEDWORD(a8,a9,a10,a11), (int)MAKEDWORD(a12,a13,a14,a15) }
 
 
-static constexpr ExprUnion logexpconst alignas(16)[87][4] = {
+static constexpr ExprUnion logexpconst alignas(16)[80][4] = {
     XCONST(0x7FFFFFFF), // absmask
     XCONST(0x7F), // c7F
     XCONST(0x00800000), // min_norm_pos
@@ -391,21 +389,14 @@ static constexpr ExprUnion logexpconst alignas(16)[87][4] = {
     XCONST(0xbeaa0d0a), // float_atan2f_tadd -0.33213072f
     XCONST(0x3fc90fdb), // float_atan2f_halfpi 1.57079637f
     XCONST(0x40490fdb), // float_atan2f_pi 3.14159274f
-    // Tangent approximation coefficients up to p8 and helpers
-    XCONST(1.0f),          // float_tan_p0 - Numerator constant term
-    XCONST(0.3333314036f), // float_tan_p2 - Numerator x^2 coefficient
-    XCONST(0.1333923995f), // float_tan_p4 - Numerator x^4 coefficient 
-    XCONST(0.0533740603f), // float_tan_p6 - Numerator x^6 coefficient
-    XCONST(0.0245650893f), // float_tan_p8 - Numerator x^8 coefficient
-    XCONST(1.0f),          // float_tan_q0 - Denominator constant term
-    XCONST(0.1333835001f), // float_tan_q2 - Denominator x^2 coefficient
-    XCONST(0.0089270802f), // float_tan_q4 - Denominator x^4 coefficient
-    XCONST(0.0005908960f), // float_tan_q6 - Denominator x^6 coefficient
-    XCONST(0.0000342237f), // float_tan_q8 - Denominator x^8 coefficient
-    XCONST(1e-4f), // float_tan_small_limit
-    XCONST(0.97f), // float_tan_asympt_a1
-    XCONST(0.35f), // float_tan_asympt_a2
-    XCONST(0.8f), // float_tan_asympt_limit
+    // tan: 2/pi for quadrant, minimax polynomial coefficients for tan(r) = r + r^3*P(r^2), abs(r) <= pi/4
+    XCONST(0x3f22f983), // float_tan_2_over_pi 0.636619747f
+    XCONST(0x3eaaaa6f), // float_tan_c0 3.333315551e-01f
+    XCONST(0x3e0896dd), // float_tan_c1 1.333879977e-01f
+    XCONST(0x3d5ac5b2), // float_tan_c2 5.341119319e-02f
+    XCONST(0x3cc8225c), // float_tan_c3 2.443044633e-02f
+    XCONST(0x3b4c6f37), // float_tan_c4 3.119421890e-03f
+    XCONST(0x3c19c679), // float_tan_c5 9.385698475e-03f
 };
 
 
@@ -417,7 +408,7 @@ static constexpr ExprUnion logexpconst alignas(16)[87][4] = {
 #undef XCONST
 #define XCONST(x) { x, x, x, x, x, x, x, x }
 
-static constexpr ExprUnion logexpconst_avx alignas(32)[87][8] = {
+static constexpr ExprUnion logexpconst_avx alignas(32)[80][8] = {
   XCONST(0x7FFFFFFF), // absmask
   XCONST(0x7F), // c7F
   XCONST(0x00800000), // min_norm_pos
@@ -491,21 +482,14 @@ static constexpr ExprUnion logexpconst_avx alignas(32)[87][8] = {
   XCONST(0xbeaa0d0a), // float_atan2f_tadd -0.33213072f
   XCONST(0x3fc90fdb), // float_atan2f_halfpi 1.57079637f
   XCONST(0x40490fdb), // float_atan2f_pi 3.14159274f
-  // Tangent approximation coefficients up to p8 and helpers
-  XCONST(1.0f),          // float_tan_p0 - Numerator constant term
-  XCONST(0.3333314036f), // float_tan_p2 - Numerator x^2 coefficient
-  XCONST(0.1333923995f), // float_tan_p4 - Numerator x^4 coefficient 
-  XCONST(0.0533740603f), // float_tan_p6 - Numerator x^6 coefficient
-  XCONST(0.0245650893f), // float_tan_p8 - Numerator x^8 coefficient
-  XCONST(1.0f),          // float_tan_q0 - Denominator constant term
-  XCONST(0.1333835001f), // float_tan_q2 - Denominator x^2 coefficient
-  XCONST(0.0089270802f), // float_tan_q4 - Denominator x^4 coefficient
-  XCONST(0.0005908960f), // float_tan_q6 - Denominator x^6 coefficient
-  XCONST(0.0000342237f),  // float_tan_q8 - Denominator x^8 coefficient
-  XCONST(1e-4f), // float_tan_small_limit
-  XCONST(0.97f), // float_tan_asympt_a1
-  XCONST(0.35f), // float_tan_asympt_a2
-  XCONST(0.8f), // float_tan_asympt_limit
+  // tan: 2/pi for quadrant, minimax polynomial coefficients for tan(r) = r + r^3*P(r^2), |r| <= pi/4
+  XCONST(0x3f22f983), // float_tan_2_over_pi 0.636619747f
+  XCONST(0x3eaaaa6f), // float_tan_c0 3.333315551e-01f
+  XCONST(0x3e0896dd), // float_tan_c1 1.333879977e-01f
+  XCONST(0x3d5ac5b2), // float_tan_c2 5.341119319e-02f
+  XCONST(0x3cc8225c), // float_tan_c3 2.443044633e-02f
+  XCONST(0x3b4c6f37), // float_tan_c4 3.119421890e-03f
+  XCONST(0x3c19c679), // float_tan_c5 9.385698475e-03f
 };
 #undef XCONST
 
@@ -722,252 +706,115 @@ do { \
 } while (0)
 
 #if 0
-// Fast tangent approximation using rational function with 8th order terms
+// Scalar reference of the TAN_PS / TAN_PS_AVX JIT code
+// Each step maps to one SIMD instruction.
+// Same scheme as e.g. SLEEF's vectorized tan, see https://arxiv.org/pdf/2001.09258 :
+// - k = round(x * 2/pi), r = x - k * pi/2 (Cody-Waite, four-part pi), |r| <= pi/4
+// - tan(r) = r + r^3 * P(r^2), P: degree 5 (c0..c5), own fit
+// - odd k: tan(x) = -1/tan(r)
+// Coefficients: minimax fit for the relative error of tan(r) on [0, pi/4] (tan is odd), by Lawson's
+// algorithm (iteratively reweighted least squares, 20000 points, 200 iterations) in double
+// precision, then rounded to float. Fit error 1.8e-8; float32 polynomial evaluation <= 1.4 ulp.
+// Max error vs. double tan (all floats): SSE (no FMA) <= 3.5 ulp for |x| < 1e4, degrades above ~5e4
+// (k * pi1 no longer exact, same limit as sin/cos); AVX2 (FMA) <= 3.9 ulp up to 1e5.
 float fast_tanf(float x) {
-  // Constants for Pi approximation and range reduction
-  const float polyPI = 3.14159265358979f;
-  const float halfPI = polyPI * 0.5f;
-  // Reduce to [-polyPI, polyPI] range
-  float y = fmodf(x, polyPI);
-  if (y > halfPI) y -= polyPI;
-  else if (y < -halfPI) y += polyPI;
-  // At this point y is in [-polyPI/2, polyPI/2]
-  // For very small angles, return the angle itself
-  // LLVM would add a small epsilon: sign(y)*2^-25 (0x1p-25f)
-  float abs_y = fabsf(y);
-  const float small_limit = 1e-4f;
-  if (abs_y < small_limit) {
-    return y;
-  }
-  // Check proximity to asymptotes
-  const float asympt_limit = 0.8f;
-  float distToAsymptote = halfPI - abs_y;
-  // If very close to ±polyPI/2, use asymptotic approximation
-  if (distToAsymptote < asympt_limit) {
-    // The tangent function approaches 1/distToAsymptote as y approaches +/-polyPI/2
-    // Improved coefficients based on curve fitting to better match std::tan
-    // not needed a 3rd term float asymptotic = 1.0f / (distToAsymptote * (0.9963f + distToAsymptote * (0.3642f + distToAsymptote * 0.0173f)));
-    float asymptotic = 1.0f / (distToAsymptote * (0.97f + distToAsymptote * 0.35f));
-    // Preserve sign
-    return (y < 0) ? -asymptotic : asymptotic;
-  }
-  float y2 = y * y;
-  // Optimized coefficients with terms up to 8th order
-  // Numerator coefficients
-  const float p0 = 1.0f;
-  const float p2 = 0.3333314036f;
-  const float p4 = 0.1333923995f;
-  const float p6 = 0.0533740603f;
-  const float p8 = 0.0245650893f;
-  // Denominator coefficients
-  const float q0 = 1.0f;
-  const float q2 = 0.1333835001f;
-  const float q4 = 0.0089270802f;
-  const float q6 = 0.0005908960f;
-  const float q8 = 0.0000342237f;
-  // Calculate approximation using Horner's method for efficiency
-  float num = y * (p0 + y2 * (p2 + y2 * (p4 + y2 * (p6 + y2 * p8))));
-  float den = q0 + y2 * (q2 + y2 * (q4 + y2 * (q6 + y2 * q8)));
-  return num / den;
+  float kb = x * 0.636619747f + 12582912.0f; // 1.5*2^23 (float_rintf): rounds to integer
+  uint32_t kb_bits;
+  memcpy(&kb_bits, &kb, sizeof(kb_bits)); // C++17 equivalent of C++20 std::bit_cast<uint32_t>(kb)
+  const bool odd = (kb_bits & 1) != 0; // lowest mantissa bit is the parity of k
+  const float khalf = (kb - 12582912.0f) * 0.5f; // k/2: k * pi/2 = k/2 * pi, exact
+  float r = x - khalf * pi1; // float_pi1..float_pi4
+  r = r - khalf * pi2;
+  r = r - khalf * pi3;
+  r = r - khalf * pi4;
+  const float z = r * r;
+  float p = c5 * z + c4;
+  p = p * z + c3;
+  p = p * z + c2;
+  p = p * z + c1;
+  p = p * z + c0;
+  const float t = r + (r * z) * p;
+  return odd ? -1.0f / t : t / 1.0f; // one division in SIMD: blended numerator / denominator
 }
-// We are good with this, but LLVM does differently:
-// https://github.com/llvm/llvm-project/blob/main/libc/src/math/generic/tanf.cpp
 #endif
 
-// Fast tangent approximation for non-AVX version
+// Fast tangent approximation for non-AVX version, see fast_tanf
 #define TAN_PS(x0) { \
-XmmReg x1, x2, x3, x4, x5, x6, x7, x8, x9, x10; \
-/* Normalize to [-pi, pi] using multiplication and subtraction */ \
-VEX1(movaps, x1, CPTR(float_invpi)); /* 1/pi */ \
-VEX2(mulps, x2, x0, x1); /* x / pi */ \
-/* round to nearest integer */ \
-VEX1(movaps, x3, CPTR(float_rintf)); /* round to int helper */ \
-VEX2(addps, x4, x3, x2); /* x/pi + 2^23 */ \
-VEX2(subps, x4, x4, x3); /* round(x/pi) */ \
-VEX1(movaps, x5, CPTR(float_pi1)); /* Load pi1 (highest precision part) */ \
-VEX2(mulps, x6, x4, x5); /* round(x/pi) * pi1 */ \
-VEX2(subps, x7, x0, x6); /* Remainder after subtracting largest part */ \
-/* Subtract remaining parts for higher precision */ \
-VEX1(movaps, x3, CPTR(float_pi2)); \
-VEX2(mulps, x3, x4, x3); /* round(x/pi) * pi2 */ \
-VEX2(subps, x7, x7, x3); /* Further refine remainder */ \
-VEX1(movaps, x3, CPTR(float_pi3)); \
-VEX2(mulps, x3, x4, x3); /* round(x/pi) * pi3 */ \
-VEX2(subps, x7, x7, x3); /* Further refine remainder */ \
-VEX1(movaps, x3, CPTR(float_pi4)); \
-VEX2(mulps, x3, x4, x3); /* round(x/pi) * pi4 */ \
-VEX2(subps, x7, x7, x3); /* Final remainder, now x is in range [-pi, pi] */ \
-/* Check range for symmetry, normalize to [-pi/2, pi/2] */ \
-VEX2(mulps, x6, x5, CPTR(elfloat_half)); /* halfPI = pi/2 */ \
-VEX2(cmpltps, x3, x6, x7); /* halfPI < y (cmpgt -> cmplt)*/ \
-VEX2(subps, x4, x5, x7); /* pi - y */ \
-/* blend: if y > halfPI, use pi - y */ \
-VEX1(movaps, x2, x3); \
-VEX2(andps, x2, x2, x4); \
-VEX2(andnps, x3, x3, x7); \
-VEX2(orps, x7, x3, x2); /* now y is <= pi/2 */ \
-/* Check for y < -halfPI */ \
-VEX1(movaps, x3, x6); \
-VEX2(xorps, x3, x3, CPTR(elsignmask)); /* -halfPI */ \
-VEX2(cmpltps, x2, x7, x3); /* y < -halfPI */ \
-VEX2(xorps, x4, x5, CPTR(elsignmask)); /* -pi */ \
-VEX2(subps, x4, x4, x7); /* -pi - y */ \
-/* blend: if y < -halfPI, use -pi - y */ \
-VEX1(movaps, x3, x2); \
-VEX2(andps, x3, x3, x4); \
-VEX2(andnps, x2, x2, x7); \
-VEX2(orps, x7, x2, x3); /* now y is in [-pi/2, pi/2] */ \
-/* Range reduction end */ \
-\
-/* Check for small values */ \
-VEX1(movaps, x2, x7); \
-VEX2(andps, x2, x2, CPTR(elabsmask)); /* abs_y */ \
-VEX2(cmpltps, x3, x2, CPTR(float_tan_small_limit)); /* abs_y < small_limit */ \
-VEX2(andps, x3, x3, x7); /* y * (abs_y < small_limit) */ \
-\
-/* Check for asymptotic proximity */ \
-VEX1(movaps, x4, x6); /* Load halfPI */ \
-VEX2(subps, x4, x4, x2); /* distToAsymptote = halfPI - abs_y */ \
-VEX2(cmpltps, x5, x4, CPTR(float_tan_asympt_limit)); /* distToAsymptote < asympt_limit */ \
-\
-/* Calculate asymptotic approximation: 1.0f / (distToAsymptote * (0.97f + distToAsymptote * 0.35f)) */ \
-VEX2(mulps, x8, x4, CPTR(float_tan_asympt_a2)); /* distToAsymptote * 0.35f */ \
-VEX2(addps, x8, x8, CPTR(float_tan_asympt_a1)); /* 0.97f + distToAsymptote * 0.35f */ \
-VEX2(mulps, x8, x8, x4); /* distToAsymptote * (0.97f + distToAsymptote * 0.35f) */ \
-VEX1(movaps, x4, CPTR(elfloat_one)); /* 1.0f */ \
-VEX2(divps, x9, x4, x8); /* 1.0f / (distToAsymptote * (0.97f + distToAsymptote * 0.35f)) */ \
-\
-/* Adjust sign for asymptotic approximation */ \
-VEX1(movaps, x8, x7); /* original y */ \
-VEX2(andps, x8, x8, CPTR(elsignmask)); /* sign of y */ \
-VEX2(xorps, x9, x9, x8); /* apply sign to asymptotic result */ \
-\
-/* Calculate rational approximation for regular values */ \
-VEX1(movaps, x2, x7); \
-VEX2(mulps, x2, x2, x7); /* y^2 */ \
-\
-/* Compute numerator with higher order terms */ \
-VEX1(movaps, x10, CPTR(float_tan_p8)); /* p8 */ \
-VEX2(mulps, x10, x10, x2); /* p8*y^2 */ \
-VEX2(addps, x10, x10, CPTR(float_tan_p6)); /* p6 + p8*y^2 */ \
-VEX2(mulps, x10, x10, x2); /* y^2 * (p6 + p8*y^2) */ \
-VEX2(addps, x10, x10, CPTR(float_tan_p4)); /* p4 + y^2 * (p6 + p8*y^2) */ \
-VEX2(mulps, x10, x10, x2); /* y^2 * (p4 + y^2 * (p6 + p8*y^2)) */ \
-VEX2(addps, x10, x10, CPTR(float_tan_p2)); /* p2 + y^2 * (p4 + y^2 * (p6 + p8*y^2)) */ \
-VEX2(mulps, x10, x10, x2); /* y^2 * (p2 + y^2 * (p4 + y^2 * (p6 + p8*y^2))) */ \
-VEX2(addps, x10, x10, CPTR(float_tan_p0)); /* p0 + y^2 * (p2 + y^2 * (p4 + y^2 * (p6 + p8*y^2))) */ \
-VEX2(mulps, x10, x10, x7); /* y * (p0 + y^2 * (p2 + y^2 * (p4 + y^2 * (p6 + p8*y^2)))) */ \
-\
-/* Compute denominator with higher order terms */ \
-VEX1(movaps, x8, CPTR(float_tan_q8)); /* q8 */ \
-VEX2(mulps, x8, x8, x2); /* q8*y^2 */ \
-VEX2(addps, x8, x8, CPTR(float_tan_q6)); /* q6 + q8*y^2 */ \
-VEX2(mulps, x8, x8, x2); /* y^2 * (q6 + q8*y^2) */ \
-VEX2(addps, x8, x8, CPTR(float_tan_q4)); /* q4 + y^2 * (q6 + q8*y^2) */ \
-VEX2(mulps, x8, x8, x2); /* y^2 * (q4 + y^2 * (q6 + q8*y^2)) */ \
-VEX2(addps, x8, x8, CPTR(float_tan_q2)); /* q2 + y^2 * (q4 + y^2 * (q6 + q8*y^2)) */ \
-VEX2(mulps, x8, x8, x2); /* y^2 * (q2 + y^2 * (q4 + y^2 * (q6 + q8*y^2))) */ \
-VEX2(addps, x8, x8, CPTR(float_tan_q0)); /* q0 + y^2 * (q2 + y^2 * (q4 + y^2 * (q6 + q8*y^2))) */ \
-\
-/* Division: numerator/denominator for regular case */ \
-VEX2(divps, x1, x10, x8); /* Final result: tan(y) = numerator/denominator */ \
-\
-/* Select the appropriate result based on conditions */ \
-/* If close to asymptote, use asymptotic approximation, else use rational approximation */ \
-VEX1(movaps, x2, x5); /* Load asymptote condition */ \
-VEX2(andps, x2, x2, x9); /* asymptotic * (distToAsymptote < asympt_limit) */ \
-VEX2(andnps, x5, x5, x1); /* rational * !(distToAsymptote < asympt_limit) */ \
-VEX2(orps, x1, x5, x2); /* Blend asymptotic and rational results */ \
-\
-/* If very small value, use y itself, otherwise use computed result */ \
-VEX2(andnps, x5, x3, x1); /* result * !(abs_y < small_limit) */ \
-VEX2(orps, x0, x3, x5); /* Final result with small value handling */ \
+XmmReg x1, x2, x3, x4; \
+/* k = round(x * 2/pi): adding 1.5*2^23 rounds to integer, lowest mantissa bit is the parity of k */ \
+VEX2(mulps, x1, x0, CPTR(float_tan_2_over_pi)); \
+VEX2(addps, x1, x1, CPTR(float_rintf)); /* biased k */ \
+VEX1(movaps, x2, x1); \
+pslld(x2, 31); \
+psrad(x2, 31); /* odd quadrant mask */ \
+VEX2(subps, x1, x1, CPTR(float_rintf)); /* k */ \
+VEX2(mulps, x1, x1, CPTR(elfloat_half)); /* k/2: k * pi/2 = k/2 * pi, exact */ \
+/* r = x - k * pi/2, four-part pi for precision, |r| <= pi/4 */ \
+VEX2(mulps, x4, x1, CPTR(float_pi1)); \
+VEX2(subps, x3, x0, x4); \
+VEX2(mulps, x4, x1, CPTR(float_pi2)); \
+VEX2(subps, x3, x3, x4); \
+VEX2(mulps, x4, x1, CPTR(float_pi3)); \
+VEX2(subps, x3, x3, x4); \
+VEX2(mulps, x4, x1, CPTR(float_pi4)); \
+VEX2(subps, x3, x3, x4); /* r */ \
+/* tan(r) = r + r*z*P(z), z = r^2 */ \
+VEX2(mulps, x4, x3, x3); /* z */ \
+VEX1(movaps, x1, CPTR(float_tan_c5)); \
+VEX2(mulps, x1, x1, x4); \
+VEX2(addps, x1, x1, CPTR(float_tan_c4)); \
+VEX2(mulps, x1, x1, x4); \
+VEX2(addps, x1, x1, CPTR(float_tan_c3)); \
+VEX2(mulps, x1, x1, x4); \
+VEX2(addps, x1, x1, CPTR(float_tan_c2)); \
+VEX2(mulps, x1, x1, x4); \
+VEX2(addps, x1, x1, CPTR(float_tan_c1)); \
+VEX2(mulps, x1, x1, x4); \
+VEX2(addps, x1, x1, CPTR(float_tan_c0)); /* P(z) */ \
+VEX2(mulps, x4, x4, x3); /* r*z */ \
+VEX2(mulps, x1, x1, x4); \
+VEX2(addps, x1, x1, x3); /* t = tan(r) */ \
+/* odd k: -1/t, even k: t/1 */ \
+VEX2(andnps, x3, x2, x1); /* even: t */ \
+VEX2(andps, x4, x2, CPTR(elfloat_minusone)); /* odd: -1 */ \
+VEX2(orps, x3, x3, x4); /* numerator */ \
+VEX2(andps, x4, x2, x1); /* odd: t */ \
+VEX2(andnps, x2, x2, CPTR(elfloat_one)); /* even: 1 */ \
+VEX2(orps, x4, x4, x2); /* denominator */ \
+VEX2(divps, x0, x3, x4); \
 }
 
-// Fast tangent approximation for AVX version
+// Fast tangent approximation for AVX version, see fast_tanf
 #define TAN_PS_AVX(x0) { \
-YmmReg x1, x2, x3, x4, x5, x6, x7, x8, x9, x10; \
-/* Normalize to [-pi, pi] using multiplication and subtraction */ \
-vmovaps(x1, CPTR_AVX(float_invpi)); /* 1/pi */ \
-vmulps(x2, x0, x1); /* x / pi */ \
-vroundps(x3, x2, FROUND_TO_NEAREST_INT); /* round(x / pi) */ \
-vmovaps(x4, CPTR_AVX(float_pi1)); /* Load pi1 (highest precision part) */ \
-vmulps(x5, x3, x4); /* round(x / pi) * pi1 */ \
-vsubps(x6, x0, x5); /* Remainder after subtracting largest part */ \
-/* Subtract remaining parts for higher precision */ \
-vmovaps(x7, CPTR_AVX(float_pi2)); \
-vmulps(x7, x3, x7); /* round(x / pi) * pi2 */ \
-vsubps(x6, x6, x7); /* Further refine remainder */ \
-vmovaps(x7, CPTR_AVX(float_pi3)); \
-vmulps(x7, x3, x7); /* round(x / pi) * pi3 */ \
-vsubps(x6, x6, x7); /* Further refine remainder */ \
-vmovaps(x7, CPTR_AVX(float_pi4)); \
-vmulps(x7, x3, x7); /* round(x / pi) * pi4 */ \
-vsubps(x6, x6, x7); /* Final remainder, now x is in range [-pi, pi] */ \
-/* Check range for symmetry, normalize to [-pi/2, pi/2] */ \
-vmulps(x5, x4, CPTR_AVX(elfloat_half)); /* halfPI = pi/2 */ \
-vcmpps(x7, x6, x5, _CMP_GT_OQ); /* y > halfPI */ \
-vsubps(x8, x4, x6); /* pi - y */ \
-vblendvps(x6, x6, x8, x7); /* if (y > halfPI) y = pi - y; */ \
-/* Check for y < -halfPI */ \
-vxorps(x7, x5, CPTR_AVX(elsignmask)); /* -halfPI */ \
-vcmpps(x8, x6, x7, _CMP_LT_OQ); /* y < -halfPI */ \
-vxorps(x2, x4, CPTR_AVX(elsignmask)); /* -pi */ \
-vsubps(x2, x2, x6); /* -pi - y */ \
-vblendvps(x6, x6, x2, x8); /* if (y < -halfPI) y = -pi - y; */ \
-/* now y is in [-pi/2, pi/2] */ \
-/* Range reduction end */ \
-\
-/* Check for small values */ \
-vandps(x2, x6, CPTR_AVX(elabsmask)); /* abs_y */ \
-vcmpps(x3, x2, CPTR_AVX(float_tan_small_limit), _CMP_LT_OQ); /* abs_y < small_limit */ \
-/* Save small value result for later blending */ \
-vandps(x7, x6, x3); /* y * (abs_y < small_limit) */ \
-\
-/* Check for asymptotic proximity */ \
-vmovaps(x4, x5); /* Load halfPI */ \
-vsubps(x4, x4, x2); /* distToAsymptote = halfPI - abs_y */ \
-vcmpps(x5, x4, CPTR_AVX(float_tan_asympt_limit), _CMP_LT_OQ); /* distToAsymptote < asympt_limit */ \
-\
-/* Calculate asymptotic approximation */ \
-vmulps(x8, x4, CPTR_AVX(float_tan_asympt_a2)); /* distToAsymptote * 0.35f */ \
-vaddps(x8, x8, CPTR_AVX(float_tan_asympt_a1)); /* 0.97f + distToAsymptote * 0.35f */ \
-vmulps(x8, x8, x4); /* distToAsymptote * (0.97f + distToAsymptote * 0.35f) */ \
-vmovaps(x4, CPTR_AVX(elfloat_one)); /* Load 1.0f */ \
-vdivps(x9, x4, x8); /* 1.0f / (distToAsymptote * (0.97f + distToAsymptote * 0.35f)) */ \
-\
-/* Adjust sign for asymptotic approximation */ \
-vmovaps(x8, x6); /* original y */ \
-vandps(x8, x8, CPTR_AVX(elsignmask)); /* sign of y */ \
-vxorps(x9, x9, x8); /* apply sign to asymptotic result */ \
-\
-/* Calculate rational approximation for regular values */ \
-vmulps(x2, x6, x6); /* y^2 */ \
-\
-/* Compute numerator with higher order terms using FMA instructions */ \
-vmovaps(x10, CPTR_AVX(float_tan_p8)); /* p8 */ \
-vfmadd213ps(x10, x2, CPTR_AVX(float_tan_p6)); /* p6 + p8*y^2 */ \
-vfmadd213ps(x10, x2, CPTR_AVX(float_tan_p4)); /* p4 + y^2 * (p6 + p8*y^2) */ \
-vfmadd213ps(x10, x2, CPTR_AVX(float_tan_p2)); /* p2 + y^2 * (p4 + y^2 * (p6 + p8*y^2)) */ \
-vfmadd213ps(x10, x2, CPTR_AVX(float_tan_p0)); /* p0 + y^2 * (p2 + y^2 * (p4 + y^2 * (p6 + p8*y^2))) */ \
-vmulps(x10, x10, x6); /* y * (p0 + y^2 * (p2 + y^2 * (p4 + y^2 * (p6 + p8*y^2)))) */ \
-\
-/* Compute denominator with higher order terms using FMA instructions */ \
-vmovaps(x8, CPTR_AVX(float_tan_q8)); /* q8 */ \
-vfmadd213ps(x8, x2, CPTR_AVX(float_tan_q6)); /* q6 + q8*y^2 */ \
-vfmadd213ps(x8, x2, CPTR_AVX(float_tan_q4)); /* q4 + y^2 * (q6 + q8*y^2) */ \
-vfmadd213ps(x8, x2, CPTR_AVX(float_tan_q2)); /* q2 + y^2 * (q4 + y^2 * (q6 + q8*y^2)) */ \
-vfmadd213ps(x8, x2, CPTR_AVX(float_tan_q0)); /* q0 + y^2 * (q2 + y^2 * (q4 + y^2 * (q6 + q8*y^2))) */ \
-\
-/* Division: numerator/denominator */ \
-vdivps(x1, x10, x8); /* tan(y) = numerator/denominator */ \
-\
-/* Select appropriate result based on conditions */ \
-/* If close to asymptote, use asymptotic approximation, else use rational approximation */ \
-vblendvps(x1, x1, x9, x5); /* Blend asymptotic and rational results */ \
-\
-/* If very small value, use y itself, otherwise use computed result */ \
-vblendvps(x0, x1, x7, x3); /* Final result with small value handling */ \
+YmmReg x1, x2, x3, x4; \
+/* k = round(x * 2/pi): adding 1.5*2^23 rounds to integer, lowest mantissa bit is the parity of k */ \
+vmovaps(x1, CPTR_AVX(float_tan_2_over_pi)); \
+vfmadd213ps(x1, x0, CPTR_AVX(float_rintf)); /* biased k */ \
+vpslld(x2, x1, 31); /* odd quadrant: sign bit set, enough for vblendvps */ \
+vsubps(x1, x1, CPTR_AVX(float_rintf)); /* k */ \
+vmulps(x1, x1, CPTR_AVX(elfloat_half)); /* k/2: k * pi/2 = k/2 * pi, exact */ \
+/* r = x - k * pi/2, four-part pi for precision, |r| <= pi/4 */ \
+vmovaps(x3, x0); \
+vfnmadd231ps(x3, x1, CPTR_AVX(float_pi1)); \
+vfnmadd231ps(x3, x1, CPTR_AVX(float_pi2)); \
+vfnmadd231ps(x3, x1, CPTR_AVX(float_pi3)); \
+vfnmadd231ps(x3, x1, CPTR_AVX(float_pi4)); /* r */ \
+/* tan(r) = r + r*z*P(z), z = r^2 */ \
+vmulps(x4, x3, x3); /* z */ \
+vmovaps(x1, CPTR_AVX(float_tan_c5)); \
+vfmadd213ps(x1, x4, CPTR_AVX(float_tan_c4)); \
+vfmadd213ps(x1, x4, CPTR_AVX(float_tan_c3)); \
+vfmadd213ps(x1, x4, CPTR_AVX(float_tan_c2)); \
+vfmadd213ps(x1, x4, CPTR_AVX(float_tan_c1)); \
+vfmadd213ps(x1, x4, CPTR_AVX(float_tan_c0)); /* P(z) */ \
+vmulps(x4, x4, x3); /* r*z */ \
+vfmadd213ps(x1, x4, x3); /* t = tan(r) = r*z*P(z) + r */ \
+/* odd k: -1/t, even k: t/1 */ \
+vmovaps(x3, CPTR_AVX(elfloat_minusone)); \
+vblendvps(x3, x1, x3, x2); /* numerator */ \
+vmovaps(x4, CPTR_AVX(elfloat_one)); \
+vblendvps(x4, x4, x1, x2); /* denominator */ \
+vdivps(x0, x3, x4); \
 }
 
 // atan2: based on https://stackoverflow.com/questions/46210708/atan2-approximation-with-11bits-in-mantissa-on-x86with-sse2-and-armwith-vfpv4?noredirect=1&lq=1

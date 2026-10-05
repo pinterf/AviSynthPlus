@@ -258,6 +258,12 @@ Expr language/RPN elements
   functions ``sin``, ``cos``, ``tan``  and ``atan2`` have SSE2/AVX2 optimization, 
   the others have not (if e.g. ``acos`` is used it makes the whole expression to 
   evaluate without JitASM optimization).
+  On the SSE2 path (CPUs without AVX2) the precision of ``sin``, ``cos`` and ``tan``
+  decreases for \|x\| above about 50000.
+  The JIT ``tan`` uses range reduction to [-pi/4, pi/4] and a polynomial approximation,
+  a method described e.g. in the `SLEEF paper`_ (N. Shibata, F. Petrogalli: SLEEF: A Portable
+  Vectorized Library of C Standard Mathematical Functions. IEEE Transactions on Parallel and
+  Distributed Systems, Vol. 31, No. 6, June 2020).
 * Functions: ``round, floor, ceil, trunc`` operators (nearest integer - banker's
   rounding, round down, round up, round to zero). |br| On Intel builds acceleration
   requires at least SSE4.1 capable processor or else the whole expression is
@@ -557,6 +563,9 @@ Changelog
 |                 |  atan: wrong results (JIT). Bug since 3.7.1.             |
 |                 || Fix #505: Vector-C relative-row addressing ignored the  |
 |                 |  current row, mis-scaled the row offset at 16/32 bit     |
+|                 || Fix: JIT tan (SSE2/AVX2) was inaccurate, up to 8%       |
+|                 |  relative error. New implementation, max ~3.5 ulp.       |
+|                 |  Bug since 3.7.4.                                        |
 +-----------------+----------------------------------------------------------+
 | 3.7.4           || Enhancement: vectorizable C implementation helps nonJIT |
 |                 || New parameter: optVectorC                               |
@@ -603,7 +612,7 @@ Changelog
 | AviSynth+ r2542 |  Initial release                                         |
 +-----------------+----------------------------------------------------------+
 
-$Date: 2026/10/05 10:00:00 $
+$Date: 2026/10/05 13:00:00 $
 
 .. _mathematical function:
     https://en.wikipedia.org/wiki/Function_(mathematics)
@@ -629,6 +638,8 @@ $Date: 2026/10/05 10:00:00 $
     http://avisynth.nl/index.php/MaskTools2/mt_lutspa
 .. _"Fade with configurable time curves?":
     https://forum.doom9.org/showthread.php?t=183934
+.. _SLEEF paper:
+    https://arxiv.org/pdf/2001.09258
 
 .. |br| raw:: html
 
