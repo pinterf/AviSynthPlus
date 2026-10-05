@@ -1207,6 +1207,128 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
     }
   }
 
+  // Load 4 pixels from [base + offset] and convert them to 4 floats
+  AVS_FORCEINLINE void load4AsFloat(XmmReg &r, Reg &base, int offset, int op, XmmReg &zero)
+  {
+    if (op == opLoadRelSrc8) {
+      movd(r, dword_ptr[base + offset]);
+      punpcklbw(r, zero);
+      punpcklwd(r, zero);
+      cvtdq2ps(r, r);
+    }
+    else if (op == opLoadRelSrc16) {
+      movq(r, mmword_ptr[base + offset]);
+      punpcklwd(r, zero);
+      cvtdq2ps(r, r);
+    }
+    else // opLoadRelSrcF32
+      movdqu(r, xmmword_ptr[base + offset]);
+  }
+
+  // pshufd immediate: lane i gets source lane src_lane_of(i)
+  template<typename F>
+  static constexpr uint8_t lanes_imm(F src_lane_of) {
+    return (uint8_t)(src_lane_of(0) | (src_lane_of(1) << 2) | (src_lane_of(2) << 4) | (src_lane_of(3) << 6));
+  }
+
+  // Generates code that loads 4 pixels at x + dxh (x = current xcounter) as floats,
+  // repeating the first/last pixel of the row where the position falls outside it.
+  // - Result: pixel i of r = pixel clamp(xcounter + dxh + i, 0, planewidth - 1) of the row
+  //   pointed by 'a' (a: pointer at xcounter, vertical dy offset already applied).
+  // - Unstored pixels: when planewidth is not a multiple of 4, the last group extends past the
+  //   row end (xcounter + i >= planewidth). Those output pixels are never stored, their values
+  //   do not matter.
+  // - Cases, at most one compare and branch:
+  //   - dxh == 0: plain load. Pixels that are stored need no clamping.
+  //   - dxh < 0: only the left edge can be crossed (stored pixels never need a pixel right of
+  //     the row end). Edge: load pixels 0..3, then all = pixel 0, or a partial shift.
+  //   - dxh > 0: only the right edge can be crossed. Edge: load pixels planewidth-4..planewidth-1,
+  //     then all = pixel planewidth-1, or a partial shift.
+  //   - planewidth < 4: only the group at xcounter == 0 is stored, one constant shuffle.
+  // - Constant shuffles: xcounter is a multiple of 4, so the shift of a partial edge case is
+  //   known at code generation time (pshufd immediate, see lanes_imm).
+  // - Shuffles are done after conversion to float: one implementation for 8/16/32 bit,
+  //   only load4AsFloat depends on the pixel type.
+  // - Reads stay within [0, planewidth) of the row, except where a normal (non-relative) load of
+  //   the same pixel group would read as well.
+  AVS_FORCEINLINE void relLoad4(XmmReg &r, Reg &a, Reg &regptrs, XmmReg &zero, int op, int dxh)
+  {
+    const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
+    if (dxh == 0) {
+      // valid lanes need no clamping
+      load4AsFloat(r, a, 0, op, zero);
+      return;
+    }
+    if (planewidth < 4) {
+      // only the group at xcounter == 0 has valid lanes: everything is known at compile time
+      Reg rowp, xb;
+      mov(xb, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
+      shl(xb, shift);
+      mov(rowp, a);
+      sub(rowp, xb); // start of row
+      load4AsFloat(r, rowp, 0, op, zero);
+      const int w1 = planewidth - 1;
+      pshufd(r, r, lanes_imm([=](int i) { return std::max(0, std::min(i + dxh, w1)); }));
+      return;
+    }
+
+    std::string LabelEdge = "relEdge" + getLabelCount();
+    std::string LabelPartial = "relPartial" + getLabelCount();
+    std::string LabelEnd = "relEnd" + getLabelCount();
+
+    Reg newx;
+    mov(newx, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
+    add(newx, dxh);
+    // dxh < 0: only the left edge needs clamping, valid lanes never reach the right edge.
+    // dxh > 0: only the right edge.
+    cmp(newx, dxh < 0 ? 0 : planewidth - 4);
+    if (dxh < 0)
+      jl(LabelEdge); // newx < 0
+    else
+      jg(LabelEdge); // newx > planewidth - 4
+
+    load4AsFloat(r, a, dxh << shift, op, zero); // normal case: no clamping
+    jmp(LabelEnd);
+
+    L(LabelEdge);
+    Reg rowp;
+    mov(rowp, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
+    shl(rowp, shift);
+    neg(rowp);
+    add(rowp, a); // start of row
+    if (dxh < 0) {
+      // load pixels 0..3
+      load4AsFloat(r, rowp, 0, op, zero);
+      const int s = (-dxh) & 3; // -newx for the partial case, -3 < newx < 0
+      if (s != 0) {
+        cmp(newx, -4);
+        jg(LabelPartial);
+      }
+      pshufd(r, r, lanes_imm([](int) { return 0; })); // newx <= -4: all lanes pixel 0
+      if (s != 0) {
+        jmp(LabelEnd);
+        L(LabelPartial);
+        pshufd(r, r, lanes_imm([=](int i) { return std::max(i - s, 0); }));
+      }
+    }
+    else {
+      // load pixels planewidth-4..planewidth-1
+      load4AsFloat(r, rowp, (planewidth - 4) << shift, op, zero);
+      const int t = (dxh - planewidth) & 3; // newx - (planewidth - 4) for the partial case, 0 < t < 4
+      if (t == 1 || t == 2) {
+        cmp(newx, planewidth);
+        jl(LabelPartial);
+      }
+      pshufd(r, r, lanes_imm([](int) { return 3; })); // newx >= planewidth: all lanes pixel planewidth-1
+      if (t == 1 || t == 2) {
+        jmp(LabelEnd);
+        L(LabelPartial);
+        pshufd(r, r, lanes_imm([=](int i) { return std::min(i + t, 3); }));
+      }
+    }
+    L(LabelEnd);
+  }
+
   template<bool processSingle, bool maskUnused>
   AVS_FORCEINLINE void processingLoop(Reg &regptrs, XmmReg &zero, Reg &constptr, Reg &SpatialY)
   {
@@ -1288,12 +1410,6 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
       else if (iter.op == opLoadRelSrc8 || iter.op == opLoadRelSrc16 || iter.op == opLoadRelSrcF32) {
         // either dx or dy is nonzero
         // common part follows for single 4 pixels/cycle and dual 8 pixels/cycle
-        Reg newx;
-        if (iter.dx != 0) {
-          mov(newx, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]); // original base
-          add(newx, iter.dx); // new base
-        }
-
         Reg a;
         mov(a, ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_INPUTS)]); // current pixel group of current line
                                                                                        // adjust read pointer vertically for nonzero dy, keep 0..height-1 limits
@@ -1339,237 +1455,17 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
         //   FullOverRead: clone pixel at (planewidth-1) to each pixel posision in the group
         if (processSingle) {
           // LoadRel8/16/32, single register mode 1x4 pixels
-
-          // Use getLabelCount: names should be unique across multiple calls to processingLoop
-          std::string LabelNeg = "neg" + getLabelCount();
-          std::string LabelOver = "over" + getLabelCount();
-          std::string LabelEnd = "end" + getLabelCount();
-
           XmmReg r1;
-
-          if (iter.dx < 0) { // Optim: read from left is possible only for dx<0 case
-            cmp(newx, 0);
-            jl(LabelNeg); // newx < 0, read (partially or fully) from before the leftmost pixel
-          }
-          if (iter.dx != 0) { // Optim: read after rightmost pixel is possible only for dx>0 case
-                              // Also check for dx<0, because of possible memory overread
-                              // e.g.: planewidth = 64, dx = -1, 16 bit pixels, 16 bytes/cycle, reading from offsets -1(0), 15, 31, 47, then 63
-                              // When we read 16 bytes from offset 63, we are overaddressing the 64 byte scanline,
-                              // which may give access violation when pointer is in the most bottom line.
-            cmp(newx, planewidth - (pixels_per_cycle - 1)); // read (partially of fully) after the rightmost pixel
-            jge(LabelOver);
-          }
-
-          // It's safe to read the whole pixel group
-          int offset;
-          if (iter.op == opLoadRelSrc8)
-            offset = iter.dx;
-          else if (iter.op == opLoadRelSrc16)
-            offset = iter.dx * sizeof(uint16_t);
-          else if (iter.op == opLoadRelSrcF32)
-            offset = iter.dx * sizeof(float);
-
-          if (iter.op == opLoadRelSrc8) {
-            movd(r1, dword_ptr[a + offset]); // 4 pixels, 4 bytes
-            punpcklbw(r1, zero);
-            punpcklwd(r1, zero);
-            cvtdq2ps(r1, r1);
-          }
-          else if (iter.op == opLoadRelSrc16) {
-            movq(r1, mmword_ptr[a + offset]); // 4 pixels, 8 bytes
-            punpcklwd(r1, zero);
-            cvtdq2ps(r1, r1);
-          }
-          else if (iter.op == opLoadRelSrcF32) {
-            if (iter.dx % 4 == 0)
-              movdqa(r1, xmmword_ptr[a + offset]); // 4 pixels, 16 bytes aligned
-            else
-              movdqu(r1, xmmword_ptr[a + offset]); // 4 pixels, 16 bytes unaligned
-          }
-          if (iter.dx != 0) {
-            jmp(LabelEnd); // generate jump only when over/negative branches exist
-          }
-
-          if (iter.dx != 0) {
-            L(LabelOver);
-            std::string PartialOverread = "PartialOverread" + getLabelCount();
-
-            if (iter.dx > 0) { // FullOverRead possible only when dx>0
-              cmp(newx, planewidth);
-              jl(PartialOverread); // if newx < planewidth ->
-
-                                   // case: FullOver
-                                   // even the first pixel to read is beyond the end of line
-                                   // We have to clone the rightmost pixel from (planewidth-1)
-              if (iter.op == opLoadRelSrc8) {
-                sub(a, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
-                add(a, planewidth - 1);
-                // reuse newx
-                movzx(newx, byte_ptr[a]);
-                movd(r1, newx);
-                punpcklbw(r1, zero); // words
-                pshufb(r1, CPTR(elShuffleForRight6)); // duplicate last word to all
-
-                punpcklwd(r1, zero);
-                cvtdq2ps(r1, r1);
-              }
-              else if (iter.op == opLoadRelSrc16) {
-                Reg tmp;
-                mov(tmp, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
-                shl(tmp, 1); // for 16 bit 2*xcounter
-                sub(a, tmp);
-                add(a, (planewidth - 1) * 2);
-                // reuse newx
-                movzx(newx, word_ptr[a]);
-                movd(r1, newx);
-                pshufb(r1, CPTR(elShuffleForRight6)); // duplicate last word to all
-
-                punpcklwd(r1, zero);
-                cvtdq2ps(r1, r1);
-              }
-              else if (iter.op == opLoadRelSrcF32) {
-                Reg tmp;
-                mov(tmp, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
-                shl(tmp, 2); // for 32 bit 4*xcounter
-                sub(a, tmp);
-                add(a, (planewidth - 1) * 4);
-                movd(r1, dword_ptr[a]);
-                pshufd(r1, r1, (0 << 0) | (0 << 2) | (0 << 4) | (0 << 6));
-              }
-              jmp(LabelEnd);
-            } // full OverRead path, needed when iter.dx>0
-
-            // case: Partial overread. Valid pixels are newx..planewidth-1 (newx < planewidth here).
-            // - read a full pixel group from newx (newx is not aligned: unaligned load)
-            // - duplicate pixel (planewidth-1) into the upper lanes
-            // Reads up to pixels_per_cycle-1 pixels past planewidth. Safe: the frame buffer is
-            // allocated with a 64-byte over-read margin, so even a full 64-byte (AVX-512) load
-            // starting at the last pixel stays within the allocation.
-            L(PartialOverread);
-            if (iter.op == opLoadRelSrc8) {
-              sub(a, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]); // back x counter bytes to the beginning
-              add(a, newx);     // new position
-              movd(r1, dword_ptr[a]); // 4 pixels, 4 bytes
-              punpcklbw(r1, zero); // words
-              punpcklwd(r1, zero);
-              cvtdq2ps(r1, r1);
-            }
-            else if (iter.op == opLoadRelSrc16) {
-              //a = a - 2 * xcounter + 2 * newx;
-              sub(newx, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
-              shl(newx, 1);
-              add(a, newx);
-              movq(r1, mmword_ptr[a]); // 4 pixels, 8 bytes
-                                       // no shift here, just duplicate appropriate pixel into the high ones
-              punpcklwd(r1, zero);
-              cvtdq2ps(r1, r1);
-            }
-            else if (iter.op == opLoadRelSrcF32) {
-              //a = a - 4 * xcounter + 4 * newx;
-              sub(newx, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
-              shl(newx, 2);
-              add(a, newx);
-
-
-              // no real shift here, just duplicate appropriate pixel into the high ones. But we have two registers
-              movdqu(r1, xmmword_ptr[a]); // 4 pixels, 16 bytes, no need for upper 4 pixels
-            }
-            // we have 4 floats here in r1, common part
-            int what = ((planewidth - iter.dx - 1) & (pixels_per_cycle - 1));
-            //                        what
-            //                         0     ShuffleForRight2_32  keep r1 dword #0   , spread it to 1..3, then spread r1.3 to r2 (ShuffleForRight2_32(r2,r1)
-            //                         1     ShuffleForRight1_32  keep r1 dword #0..1, spread it to 2..3, then spread r1.3 to r2
-            //                         2     ShuffleForRight0_32  keep r1 dword #0..2, spread it to 3   , then spread r1.3 to r2
-            //                         3                          keep r1 dword #0..3,                   , then spread r1.3 to r2
-            //                         4                          keep r1 dword #0..3,                   , keep r2 dword #0   , spread it to 1..3
-            //                         5                          keep r1 dword #0..3,                   , keep r2 dword #0..1, spread it to 2..3
-            //                         6                          keep r1 dword #0..3,                   , keep r2 dword #0..2, spread it to    3
-
-            switch (what) {
-            case 0:
-              pshufd(r1, r1, (0 << 0) | (0 << 2) | (0 << 4) | (0 << 6)); // fill 3 upper dwords of r1 from r1.0
-              break;
-            case 1:
-              pshufd(r1, r1, (0 << 0) | (1 << 2) | (1 << 4) | (1 << 6)); // fill 2 upper dwords of r1 from r1.1
-              break;
-            case 2:
-              pshufd(r1, r1, (0 << 0) | (1 << 2) | (2 << 4) | (2 << 6)); // fill 1 upper dwords of r1 from r1.2
-              break;
-            }
-            // continues on labelEnd
-            //}
-            if (iter.dx < 0)
-              jmp(LabelEnd);
-          } // over: iter.dx != 0
-          if (iter.dx < 0) {
-            L(LabelNeg);
-            // read from negative area on the left side, read exactly from 0th, then shift
-            // When reading from negative x coordinates we read exactly from 0th, then shift and duplicate
-            // For extreme minus offsets we duplicate 0th (leftmost) pixel to each position
-            // example: dx = -1
-            // -1 0  1  2  3  4  5  6  7
-            // A  A  B  C  D  E  F  G         we need this
-            //    A  B  C  D  E  F  G  H      read [0]
-            //    0  A  B  C  D  E  F  G  H   shift
-            //    A  A  B  C  D  E  F  G  H   duplicate by shuffle
-            if (iter.op == opLoadRelSrc8 || iter.op == opLoadRelSrc16) {
-              if (iter.op == opLoadRelSrc8) {
-                sub(a, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]); // go back to the beginning
-                movd(r1, dword_ptr[a]); // 8 pixels, 8 bytes
-                punpcklbw(r1, zero); // bytes to words
-              }
-              else if (iter.op == opLoadRelSrc16) {
-                // go back to the beginning, in 16 bit, *2
-                Reg tmp;
-                mov(tmp, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
-                shl(tmp, 1); // for 16 bit 2*xcounter
-                sub(a, tmp);
-                movq(r1, mmword_ptr[a]); // 8 pixels, 16 bytes
-              }
-              punpcklwd(r1, zero);
-              cvtdq2ps(r1, r1);
-            }
-            else if (iter.op == opLoadRelSrcF32) {
-              Reg tmp;
-              mov(tmp, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
-              shl(tmp, 2); // *4
-              sub(a, tmp);
-              movdqa(r1, xmmword_ptr[a]); // 4 pixels, 16 bytes aligned
-            }
-            std::string PartialReadBefore = "PartialReadBefore" + getLabelCount();
-
-            cmp(newx, -pixels_per_cycle);
-            jg(PartialReadBefore);
-            // FullReadBefore: newx <= -pixels_per_cycle, clone 0th (leftmost) pixel to all
-            pshufd(r1, r1, (0 << 0) | (0 << 2) | (0 << 4) | (0 << 6));
-            jmp(LabelEnd);
-
-            L(PartialReadBefore);
-            // -pixels_per_cycle < newx < 0
-            int bytes_to_shift = sizeof(float) * min(pixels_per_cycle - 1, (-iter.dx) & (pixels_per_cycle - 1));
-            //    shift bytes
-            //         4                  r1 << 4     shuffle r1.1 to r1.0-0
-            //         8                  r1 << 8     shuffle r1.2 to r1.0-1
-            //         12                 r1 << 12    shuffle r1.3 to r1.0-2
-            pslldq(r1, bytes_to_shift); // todo: shift + shuffle = single shuffle
-
-            switch (bytes_to_shift) { // 4, 8, 12
-            case 4:
-              pshufd(r1, r1, (1 << 0) | (1 << 2) | (2 << 4) | (3 << 6)); // elShuffleForLeft0_32 // shuffle r1.1 to r1.0-0
-              break;
-            case 8:
-              pshufd(r1, r1, (2 << 0) | (2 << 2) | (2 << 4) | (3 << 6)); // elShuffleForLeft1_32 // shuffle r1.2 to r1.0-1
-              break;
-            case 12:
-              pshufd(r1, r1, (3 << 0) | (3 << 2) | (3 << 4) | (3 << 6)); // elShuffleForLeft2_32 // shuffle r1.3 to r1.0-2
-              break;
-            }
-          } // negative
-          L(LabelEnd);
+          relLoad4(r1, a, regptrs, zero, iter.op, iter.dx);
           stack1.push_back(r1);
-        } // end of single Relative Mode
+        }
         else {
           // LoadRel8/16/32, dual register mode 2x4 pixels
+          Reg newx;
+          if (iter.dx != 0) {
+            mov(newx, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]); // original base
+            add(newx, iter.dx); // new base
+          }
 
           // Use getLabelCount: names should be unique across multiple calls to processingLoop
           std::string LabelNeg = "neg" + getLabelCount();
