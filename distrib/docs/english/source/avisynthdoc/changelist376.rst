@@ -533,6 +533,9 @@ Optimizations
 - "TemporalSoften": AVX2 path for 8 and 10-16 bit (1.1-1.3x in average mode, 1.3-1.5x with
   thresholds).
 - "Blur", "Sharpen": new SSSE3 path for 8 bit; MMX paths removed.
+- "Expr": relative pixel load (``x[dx,dy]``): new AVX2 JIT version, ~2x faster on AVX2 CPUs
+  (an expression with relative pixels ran on the SSE2 JIT before). The SSE2 JIT no longer requires
+  SSSE3 (non-SSSE3 CPUs ran the whole expression in C) and is slightly quicker.
 
 Documentation
 ~~~~~~~~~~~~~

@@ -371,8 +371,9 @@ Indexed, addressable source clip pixels by relative x,y positions.
     ``"x[-1,-1] x[-1,0] x[-1,1] y[0,-10] + + + 4 /"``
 
 | When a pixel would come from off-screen, the pixels are cloned from the edge.
-| Optimized version of indexed pixels requires SSSE3, and no AVX2 version is
-  available. Non-SSSE3 falls back to C for the whole expression.
+| Indexed pixels are JIT optimized for SSE2 and AVX2 (before 3.7.6: SSSE3 required,
+  no AVX2 version: an expression with indexed pixels ran on the SSE2 JIT even on
+  AVX2 CPUs).
 
 Auto-scale inputs with "scale_inputs"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -570,6 +571,9 @@ Changelog
 |                 || Fix: JIT % (modulo) now gives the same result as        |
 |                 |  fmodf; was 0 or slightly negative near multiples        |
 |                 |  of the divisor (e.g. 73 % 7.3).                         |
+|                 || Relative pixel load (x[dx,dy]): new AVX2 JIT version,   |
+|                 |  ~2x faster on AVX2 CPUs; SSE2 JIT no longer requires    |
+|                 |  SSSE3, slightly quicker.                                |
 +-----------------+----------------------------------------------------------+
 | 3.7.4           || Enhancement: vectorizable C implementation helps nonJIT |
 |                 || New parameter: optVectorC                               |
