@@ -1490,8 +1490,6 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
           if (iter.dx != 0) {
             L(LabelOver);
             std::string PartialOverread = "PartialOverread" + getLabelCount();
-            std::string NoFullOverReadFromNewX = "NoFullOverReadFromNewX" + getLabelCount();
-            std::string labelDoOver = "DoOver" + getLabelCount();
 
             if (iter.dx > 0) { // FullOverRead possible only when dx>0
               cmp(newx, planewidth);
@@ -1538,100 +1536,18 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
               jmp(LabelEnd);
             } // full OverRead path, needed when iter.dx>0
 
-              // case: Partial overread
-              // read the block, then clone the last valid pixel from position (planewidth-1)
-              // problem: newx is not aligned
+            // case: Partial overread. Valid pixels are newx..planewidth-1 (newx < planewidth here).
+            // - read a full pixel group from newx (newx is not aligned: unaligned load)
+            // - duplicate pixel (planewidth-1) into the upper lanes
+            // Reads up to pixels_per_cycle-1 pixels past planewidth. Safe: the frame buffer is
+            // allocated with a 64-byte over-read margin, so even a full 64-byte (AVX-512) load
+            // starting at the last pixel stays within the allocation.
             L(PartialOverread);
-
-            // planewidth == 14  dx=7   newx = 0+7=7, newx>=planewidth-7, then not newx>=planewidth => newx = 13 => planewidth-newx = 1
-            // sample 1: newx is in different segment than planewidth-1
-            // [xcounter]
-            // [a]           [newx]    [pw-1]
-            // V             V           V
-            // 0 1 2 3 4 5 6 7 8 9 A B C D e f g h i j k l
-            //               P Q R S T U V w              need this
-            //               0 1 2 3 4 5 6 7              we can read this
-            //               P Q R S T U V w              last pixel is beyond
-            //               P Q R S T U V V              need this
-            // sample 2: newx is in the same segment than planewidth-1
-            // planewidth == 13  dx=3
-            //           [xcounter] [newx]
-            //                [a][newx][pw-1]
-            //                 V     V V
-            // 0 1 2 3 4 5 6 7 8 9 A B C d e f g h i j
-            //                       P Q x x x x x x        need this
-            //                       P Q Q Q Q Q Q Q        duplicated the last valid pixel
-            //                 0 1 2 3 4 5 6 7              we can read this
-            // when newx and (planewidth-1) are in different segments then we read from newx
-            Reg tmp;
-            mov(tmp, newx);
-            and_(tmp, ~(pixels_per_cycle - 1));
-            cmp(tmp, (planewidth & ~(pixels_per_cycle - 1)));
-            jle(NoFullOverReadFromNewX); // jump if (newx and ~0x07) < (planewidth & ~0x07) (in another segment)
-
-                                         // read from current (last) pointer,
-            if (iter.op == opLoadRelSrc8 || iter.op == opLoadRelSrc16) {
-              if (iter.op == opLoadRelSrc8) {
-                movd(r1, dword_ptr[a]); // 4 pixels, 4 bytes
-                punpcklbw(r1, zero); // words
-              }
-              else { // opLoadRel16
-                movq(r1, mmword_ptr[a]); // 8 pixels, 16 bytes, here still aligned
-              }
-              /*
-              psrldq(r1, ((planewidth - 1) & (pixels_per_cycle - 1)) * sizeof(uint16_t)); // Shift right by (planewidth - 1) & 7 to lose low words
-              sub(newx, planewidth - (pixels_per_cycle - 1)); // find out shuffle pointer -1, ... -7 -> 6 ... 0
-              shl(newx, 4); // *16 for shuffle table
-              // LabelDoOver copied here
-              // reuse a : Reg shuffleTable;
-              lea(a, CPTR(elShuffleForRight0)); // ptr for word shuffle
-              pshufb(r1, xmmword_ptr[a + newx]);
-              */
-              punpcklwd(r1, zero);
-              cvtdq2ps(r1, r1);
-              //jmp(LabelEnd);
-              //jmp(labelDoOver);
-            }
-            else if (iter.op == opLoadRelSrcF32) {
-              // omg it's complicated
-              movdqa(r1, xmmword_ptr[a]); // 4 pixels, 16 bytes, here still aligned
-            }
-            int bytes_to_shift = ((planewidth - 1) & (pixels_per_cycle - 1)) * sizeof(float);
-            if (bytes_to_shift > 0) {
-              psrldq(r1, bytes_to_shift);
-              switch (bytes_to_shift) { // 4, 8, 12
-              case 4:
-                pshufd(r1, r1, (0 << 0) | (1 << 2) | (2 << 4) | (2 << 6));
-                break;
-              case 8:
-                pshufd(r1, r1, (0 << 0) | (1 << 2) | (1 << 4) | (1 << 6));
-                break;
-              case 12:
-                pshufd(r1, r1, (0 << 0) | (0 << 2) | (0 << 4) | (0 << 6));
-                break;
-              }
-            }
-            jmp(LabelEnd);
-            //}
-
-            L(NoFullOverReadFromNewX);
-            // read from newx
             if (iter.op == opLoadRelSrc8) {
               sub(a, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]); // back x counter bytes to the beginning
               add(a, newx);     // new position
               movd(r1, dword_ptr[a]); // 4 pixels, 4 bytes
               punpcklbw(r1, zero); // words
-                                   /*
-                                   // no shift here, just duplicate appropriate pixel into the high ones
-                                   mov(newx, (6 - ((planewidth - iter.dx - 1) & (pixels_per_cycle - 1))) << 4); // find out shuffle pointer
-                                   // shuffle by the pattern, table offset in newx, and finalizes
-                                   // here r1 contains words
-                                   // todo direct load
-                                   Reg shuffleTable;
-                                   lea(shuffleTable, CPTR(elShuffleForRight4)); // for dual: elShuffleForRight0
-                                   add(shuffleTable, newx);
-                                   pshufb(r1, xmmword_ptr[shuffleTable]);
-                                   */
               punpcklwd(r1, zero);
               cvtdq2ps(r1, r1);
             }
@@ -1642,21 +1558,6 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
               add(a, newx);
               movq(r1, mmword_ptr[a]); // 4 pixels, 8 bytes
                                        // no shift here, just duplicate appropriate pixel into the high ones
-                                       /*
-                                       // reuse newx
-                                       mov(newx, (6 - ((planewidth - iter.dx - 1) & (pixels_per_cycle - 1))) << 4); // find out shuffle pointer
-                                       // ((planewidth - iter.dx - 1) & (pixels_per_cycle - 1))    keep
-                                       //                         0                                ShuffleForRight6     keep word #0, spread it to 1..7
-                                       //                         1                                ShuffleForRight5     keep word #0..1, spread it to 2..7
-                                       //
-                                       //                         6                                ShuffleForRight0     keep word #0..6, spread it to 7..7
-                                       // continues on labelDoOver
-                                       // todo direct load
-                                       Reg shuffleTable;
-                                       lea(shuffleTable, CPTR(elShuffleForRight4)); // for dual: elShuffleForRight0
-                                       add(shuffleTable, newx);
-                                       pshufb(r1, xmmword_ptr[shuffleTable]);
-                                       */
               punpcklwd(r1, zero);
               cvtdq2ps(r1, r1);
             }
@@ -1918,8 +1819,6 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
 
             // shuffleTable = elShuffleForRight0 + 16*(newx-(planewidth-7))
             std::string PartialOverread = "PartialOverread" + getLabelCount();
-            std::string NoFullOverReadFromNewX = "NoFullOverReadFromNewX" + getLabelCount();
-            std::string labelDoOver = "DoOver" + getLabelCount();
 
             if (iter.dx > 0) { // FullOverRead possible only when dx>0
               cmp(newx, planewidth);
@@ -1973,122 +1872,13 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
               jmp(LabelEnd);
             } // full OverRead path, needed when iter.dx>0
 
-              // case: Partial overread
-              // read the block, then clone the last valid pixel from position (planewidth-1)
-              // problem: newx is not aligned
+            // case: Partial overread. Valid pixels are newx..planewidth-1 (newx < planewidth here).
+            // - read a full pixel group from newx (newx is not aligned: unaligned load)
+            // - duplicate pixel (planewidth-1) into the upper lanes
+            // Reads up to pixels_per_cycle-1 pixels past planewidth. Safe: the frame buffer is
+            // allocated with a 64-byte over-read margin, so even a full 64-byte (AVX-512) load
+            // starting at the last pixel stays within the allocation.
             L(PartialOverread);
-            // planewidth == 14  dx=7   newx = 0+7=7, newx>=planewidth-7, then not newx>=planewidth => newx = 13 => planewidth-newx = 1
-            // sample 1: newx is in different segment than planewidth-1
-            // [xcounter]
-            // [a]           [newx]    [pw-1]
-            // V             V           V
-            // 0 1 2 3 4 5 6 7 8 9 A B C D e f g h i j k l
-            //               P Q R S T U V w              need this
-            //               0 1 2 3 4 5 6 7              we can read this
-            //               P Q R S T U V w              last pixel is beyond
-            //               P Q R S T U V V              need this
-            // sample 2: newx is in the same segment than planewidth-1
-            // planewidth == 13  dx=3
-            //           [xcounter] [newx]
-            //                [a][newx][pw-1]
-            //                 V     V V
-            // 0 1 2 3 4 5 6 7 8 9 A B C d e f g h i j
-            //                       P Q x x x x x x        need this
-            //                       P Q Q Q Q Q Q Q        duplicated the last valid pixel
-            //                 0 1 2 3 4 5 6 7              we can read this
-            // when newx and (planewidth-1) are in different segments then we read from newx
-            Reg tmp;
-            mov(tmp, newx);
-            and_(tmp, ~(pixels_per_cycle - 1));
-            cmp(tmp, (planewidth & ~(pixels_per_cycle - 1)));
-            jle(NoFullOverReadFromNewX); // jump if (newx and ~0x07) < (planewidth & ~0x07) (in another segment)
-
-                                         // read from current (last) pointer,
-            if (iter.op == opLoadRelSrc8 || iter.op == opLoadRelSrc16) {
-              if (iter.op == opLoadRelSrc8) {
-                movq(r1, mmword_ptr[a]); // 8 pixels, 8 bytes
-                punpcklbw(r1, zero); // words
-              }
-              else { // opLoadRel16
-                movdqa(r1, xmmword_ptr[a]); // 8 pixels, 16 bytes, here still aligned
-              }
-              psrldq(r1, ((planewidth - 1) & (pixels_per_cycle - 1)) * sizeof(uint16_t)); // Shift right by (planewidth - 1) & 7 to lose low words
-              sub(newx, planewidth - (pixels_per_cycle - 1)); // find out shuffle pointer -1, ... -7 -> 6 ... 0
-              shl(newx, 4); // *16 for shuffle table
-                            // LabelDoOver copied here
-                            // reuse a : Reg shuffleTable;
-              lea(a/*shuffleTable*/, CPTR(elShuffleForRight0)); // ptr for word shuffle
-                                                                //add(a/*shuffleTable*/, newx);
-              pshufb(r1, xmmword_ptr[a/*shuffleTable*/ + newx]);
-
-              movdqa(r2, r1);
-              punpcklwd(r1, zero);
-              punpckhwd(r2, zero);
-              cvtdq2ps(r1, r1);
-              cvtdq2ps(r2, r2);
-              jmp(LabelEnd);
-            }
-            else if (iter.op == opLoadRelSrcF32) {
-              // omg it's complicated
-
-              // palignr memo
-              // temp1[255:0]  ((DEST[127:0] << 128) OR SRC[127:0]) >> (imm8*8);
-              // DEST[127:0]  temp1[127:0]
-
-              int bytes_to_shift = ((planewidth - 1) & (pixels_per_cycle - 1)) * sizeof(float);
-              if (bytes_to_shift < 16) {
-                // src              dst
-                // r2               r1
-                // 15 14 13.... 0   15 14 13 ... 0
-                //    15 14 13  1   0  15 14.... 1  palignr(dst, src, 1)
-                //              15  14 13  ..... 15 palignr(dst, src, 15)
-                movdqa(r1, xmmword_ptr[a]); // 4 pixels, 16 bytes, here still aligned
-                movdqa(r2, xmmword_ptr[a + 16]); // 4 pixels, 16 bytes
-                if (bytes_to_shift > 0) {
-                  palignr(r1, r2, bytes_to_shift); // shift right dualreg. r1 is ready.
-                  psrldq(r2, bytes_to_shift); // Shift right upper part
-                  switch (bytes_to_shift) { // 4, 8, 12
-                  case 4:
-                    pshufd(r2, r2, (0 << 0) | (1 << 2) | (2 << 4) | (2 << 6)); // elShuffleForRight0_32
-                    break;
-                  case 8:
-                    pshufd(r2, r2, (0 << 0) | (1 << 2) | (1 << 4) | (1 << 6));
-                    break;
-                  case 12:
-                    pshufd(r2, r2, (0 << 0) | (0 << 2) | (0 << 4) | (0 << 6)); // elShuffleForRight2_32
-                    break;
-                  }
-                }
-              }
-              else if (bytes_to_shift == 16) {
-                // src              dst
-                // r2               r1
-                // 15 14 13.... 0   15 14 13 ... 0  --> 16 bytes: r1 = r2
-                movdqa(r1, xmmword_ptr[a + 16]); // 4 pixels, 16 bytes, no need [a + 0], here still aligned
-                pshufd(r2, r1, (3 << 0) | (3 << 2) | (3 << 4) | (3 << 6)); // fill r2 with highest dword of r1
-              }
-              else {
-                // bytes to shift > 16 (20, 24, 28), ignore lower 4 pixels, move and shift and spread from upper 4 pixels
-                movdqa(r1, xmmword_ptr[a + 16]); // 4 pixels, 16 bytes, no need [a + 0], here still aligned
-                psrldq(r1, bytes_to_shift - 16); // Shift right upper part
-                switch (bytes_to_shift) { // 0, 4, 8, 12
-                case 20:
-                  pshufd(r1, r1, (0 << 0) | (1 << 2) | (2 << 4) | (2 << 6)); // elShuffleForRight0_32
-                  break;
-                case 24:
-                  pshufd(r1, r1, (0 << 0) | (1 << 2) | (1 << 4) | (1 << 6));
-                  break;
-                case 28:
-                  pshufd(r1, r1, (0 << 0) | (0 << 2) | (0 << 4) | (0 << 6)); // elShuffleForRight2_32
-                  break;
-                }
-                pshufd(r2, r1, (3 << 0) | (3 << 2) | (3 << 4) | (3 << 6)); // fill r2 with highest dword of r1
-              }
-              jmp(LabelEnd);
-            }
-
-            L(NoFullOverReadFromNewX);
-            // read from newx
             //a = a - 1,2,4 * xcounter + 1,2,4 * newx;
             sub(newx, ptr[regptrs + sizeof(void *) * (RWPTR_START_OF_XCOUNTER)]);
             if (iter.op == opLoadRelSrc8 || iter.op == opLoadRelSrc16) {
