@@ -1145,6 +1145,165 @@ vorps(x, x, aX); /* sign of x */ \
 vorps(x, x, aD); /* d == 0: NaN */ \
 }
 
+// Register types for the code generator functions below. They are not class members,
+// so they cannot use the evaluators' inherited Reg / XmmReg names.
+using JitReg = jitasm::Reg;
+using JitXmmReg = jitasm::XmmReg;
+
+
+// pshufd immediate: lane x gets source lane src_lane_of(x)
+template<typename F>
+static constexpr uint8_t lanes_imm(F src_lane_of) {
+  return (uint8_t)(src_lane_of(0) | (src_lane_of(1) << 2) | (src_lane_of(2) << 4) | (src_lane_of(3) << 6));
+}
+
+
+// Load 4 pixels from [base + offset] and convert them to 4 floats.
+// VEX: VEX-encoded instructions for the AVX2 evaluator; 'zero' for the SSE2 unpack based
+//      widening is not needed, direct vpmovzx* zero-extends directly.
+template<bool VEX, class J>
+static AVS_FORCEINLINE void emitLoad4AsFloat(J& j, JitXmmReg& r, JitReg& base, int offset, int op, const JitXmmReg* zero)
+{
+  if constexpr (VEX) {
+    if (op == opLoadRelSrc8) {
+      j.vpmovzxbd(r, j.dword_ptr[base + offset]);
+      j.vcvtdq2ps(r, r);
+    }
+    else if (op == opLoadRelSrc16) {
+      j.vpmovzxwd(r, j.qword_ptr[base + offset]);
+      j.vcvtdq2ps(r, r);
+    }
+    else // opLoadRelSrcF32
+      j.vmovdqu(r, j.xmmword_ptr[base + offset]);
+  }
+  else {
+    if (op == opLoadRelSrc8) {
+      j.movd(r, j.dword_ptr[base + offset]);
+      j.punpcklbw(r, *zero);
+      j.punpcklwd(r, *zero);
+      j.cvtdq2ps(r, r);
+    }
+    else if (op == opLoadRelSrc16) {
+      j.movq(r, j.mmword_ptr[base + offset]);
+      j.punpcklwd(r, *zero);
+      j.cvtdq2ps(r, r);
+    }
+    else // opLoadRelSrcF32
+      j.movdqu(r, j.xmmword_ptr[base + offset]);
+  }
+}
+
+template<bool VEX, class J>
+static AVS_FORCEINLINE void emitPshufd(J& j, JitXmmReg& r, uint8_t imm)
+{
+  if constexpr (VEX)
+    j.vpshufd(r, r, imm);
+  else
+    j.pshufd(r, r, imm);
+}
+
+// Generates code (into JIT function j) that loads 4 pixels at x + dxh (x = current xcounter) as floats,
+// repeating the first/last pixel of the row where the position falls outside it.
+// - Result: pixel i of r = pixel clamp(xcounter + dxh + i, 0, planewidth - 1) of the row
+//   pointed by 'a' (a: pointer at xcounter, vertical dy offset already applied).
+// - Unstored pixels: when planewidth is not a multiple of 4, the last group extends past the
+//   row end (xcounter + i >= planewidth). Those output pixels are never stored, their values
+//   do not matter.
+// - Cases, at most one compare and branch:
+//   - dxh == 0: plain load. Pixels that are stored need no clamping.
+//   - dxh < 0: only the left edge can be crossed (stored pixels never need a pixel right of
+//     the row end). Edge: load pixels 0..3, then all = pixel 0, or a partial shift.
+//   - dxh > 0: only the right edge can be crossed. Edge: load pixels planewidth-4..planewidth-1,
+//     then all = pixel planewidth-1, or a partial shift.
+//   - planewidth < 4: only the group at xcounter == 0 is stored, one constant shuffle.
+// - Constant shuffles: xcounter is a multiple of 4, so the shift of a partial edge case is
+//   known at code generation time (pshufd immediate, see lanes_imm).
+// - Shuffles are done after conversion to float: one implementation for 8/16/32 bit,
+//   only emitLoad4AsFloat depends on the pixel type.
+// - Reads stay within [0, planewidth) of the row, except where a normal (non-relative) load of
+//   the same pixel group would read as well.
+// - Used by the SSE2 (VEX=false) and AVX2 (VEX=true) evaluators; xcounter is a multiple of 4
+//   in both (8 or 16 in AVX2).
+template<bool VEX, class J>
+static void emitRelLoad4(J& j, JitXmmReg& r, JitReg& a, JitReg& regptrs, const JitXmmReg* zero, int op, int dxh, int planewidth)
+{
+  const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
+  if (dxh == 0) {
+    // valid lanes need no clamping
+    emitLoad4AsFloat<VEX>(j, r, a, 0, op, zero);
+    return;
+  }
+  if (planewidth < 4) {
+    // only the group at xcounter == 0 has valid lanes: everything is known at compile time
+    JitReg rowp, xb;
+    j.mov(xb, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
+    j.shl(xb, shift);
+    j.mov(rowp, a);
+    j.sub(rowp, xb); // start of row
+    emitLoad4AsFloat<VEX>(j, r, rowp, 0, op, zero);
+    const int w1 = planewidth - 1;
+    emitPshufd<VEX>(j, r, lanes_imm([=](int i) { return std::max(0, std::min(i + dxh, w1)); }));
+    return;
+  }
+
+  std::string LabelEdge = "relEdge" + j.getLabelCount();
+  std::string LabelPartial = "relPartial" + j.getLabelCount();
+  std::string LabelEnd = "relEnd" + j.getLabelCount();
+
+  JitReg newx;
+  j.mov(newx, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
+  j.add(newx, dxh);
+  // dxh < 0: only the left edge needs clamping, valid lanes never reach the right edge.
+  // dxh > 0: only the right edge.
+  j.cmp(newx, dxh < 0 ? 0 : planewidth - 4);
+  if (dxh < 0)
+    j.jl(LabelEdge); // newx < 0
+  else
+    j.jg(LabelEdge); // newx > planewidth - 4
+
+  emitLoad4AsFloat<VEX>(j, r, a, dxh << shift, op, zero); // normal case: no clamping
+  j.jmp(LabelEnd);
+
+  j.L(LabelEdge);
+  JitReg rowp;
+  j.mov(rowp, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
+  j.shl(rowp, shift);
+  j.neg(rowp);
+  j.add(rowp, a); // start of row
+  if (dxh < 0) {
+    // load pixels 0..3
+    emitLoad4AsFloat<VEX>(j, r, rowp, 0, op, zero);
+    const int s = (-dxh) & 3; // -newx for the partial case, -3 < newx < 0
+    if (s != 0) {
+      j.cmp(newx, -4);
+      j.jg(LabelPartial);
+    }
+    emitPshufd<VEX>(j, r, lanes_imm([](int) { return 0; })); // newx <= -4: all lanes pixel 0
+    if (s != 0) {
+      j.jmp(LabelEnd);
+      j.L(LabelPartial);
+      emitPshufd<VEX>(j, r, lanes_imm([=](int i) { return std::max(i - s, 0); }));
+    }
+  }
+  else {
+    // load pixels planewidth-4..planewidth-1
+    emitLoad4AsFloat<VEX>(j, r, rowp, (planewidth - 4) << shift, op, zero);
+    const int t = (dxh - planewidth) & 3; // newx - (planewidth - 4) for the partial case, 0 < t < 4
+    if (t == 1 || t == 2) {
+      j.cmp(newx, planewidth);
+      j.jl(LabelPartial);
+    }
+    emitPshufd<VEX>(j, r, lanes_imm([](int) { return 3; })); // newx >= planewidth: all lanes pixel planewidth-1
+    if (t == 1 || t == 2) {
+      j.jmp(LabelEnd);
+      j.L(LabelPartial);
+      emitPshufd<VEX>(j, r, lanes_imm([=](int i) { return std::min(i + t, 3); }));
+    }
+  }
+  j.L(LabelEnd);
+}
+
+
 struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intptr_t *, intptr_t, intptr_t> {
 
   std::vector<ExprOp> ops;
@@ -1170,30 +1329,6 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
     case 2: andps(r, CPTR(loadmask1100)); break;
     case 3: andps(r, CPTR(loadmask1110)); break;
     }
-  }
-
-  // Load 4 pixels from [base + offset] and convert them to 4 floats
-  AVS_FORCEINLINE void load4AsFloat(XmmReg& r, Reg& base, int offset, int op, XmmReg& zero)
-  {
-    if (op == opLoadRelSrc8) {
-      movd(r, dword_ptr[base + offset]);
-      punpcklbw(r, zero);
-      punpcklwd(r, zero);
-      cvtdq2ps(r, r);
-    }
-    else if (op == opLoadRelSrc16) {
-      movq(r, mmword_ptr[base + offset]);
-      punpcklwd(r, zero);
-      cvtdq2ps(r, r);
-    }
-    else // opLoadRelSrcF32
-      movdqu(r, xmmword_ptr[base + offset]);
-  }
-
-  // pshufd immediate: lane i gets source lane src_lane_of(i)
-  template<typename F>
-  static constexpr uint8_t lanes_imm(F src_lane_of) {
-    return (uint8_t)(src_lane_of(0) | (src_lane_of(1) << 2) | (src_lane_of(2) << 4) | (src_lane_of(3) << 6));
   }
 
   // Load 8 pixels from [base + offset] and convert them to 2x4 floats
@@ -1222,102 +1357,9 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
     }
   }
 
-  // Generates code that loads 4 pixels at x + dxh (x = current xcounter) as floats,
-  // repeating the first/last pixel of the row where the position falls outside it.
-  // - Result: pixel i of r = pixel clamp(xcounter + dxh + i, 0, planewidth - 1) of the row
-  //   pointed by 'a' (a: pointer at xcounter, vertical dy offset already applied).
-  // - Unstored pixels: when planewidth is not a multiple of 4, the last group extends past the
-  //   row end (xcounter + i >= planewidth). Those output pixels are never stored, their values
-  //   do not matter.
-  // - Cases, at most one compare and branch:
-  //   - dxh == 0: plain load. Pixels that are stored need no clamping.
-  //   - dxh < 0: only the left edge can be crossed (stored pixels never need a pixel right of
-  //     the row end). Edge: load pixels 0..3, then all = pixel 0, or a partial shift.
-  //   - dxh > 0: only the right edge can be crossed. Edge: load pixels planewidth-4..planewidth-1,
-  //     then all = pixel planewidth-1, or a partial shift.
-  //   - planewidth < 4: only the group at xcounter == 0 is stored, one constant shuffle.
-  // - Constant shuffles: xcounter is a multiple of 4, so the shift of a partial edge case is
-  //   known at code generation time (pshufd immediate, see lanes_imm).
-  // - Shuffles are done after conversion to float: one implementation for 8/16/32 bit,
-  //   only load4AsFloat depends on the pixel type.
-  // - Reads stay within [0, planewidth) of the row, except where a normal (non-relative) load of
-  //   the same pixel group would read as well.
   AVS_FORCEINLINE void relLoad4(XmmReg& r, Reg& a, Reg& regptrs, XmmReg& zero, int op, int dxh)
   {
-    const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
-    if (dxh == 0) {
-      // valid lanes need no clamping
-      load4AsFloat(r, a, 0, op, zero);
-      return;
-    }
-    if (planewidth < 4) {
-      // only the group at xcounter == 0 has valid lanes: everything is known at compile time
-      Reg rowp, xb;
-      mov(xb, ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
-      shl(xb, shift);
-      mov(rowp, a);
-      sub(rowp, xb); // start of row
-      load4AsFloat(r, rowp, 0, op, zero);
-      const int w1 = planewidth - 1;
-      pshufd(r, r, lanes_imm([=](int i) { return std::max(0, std::min(i + dxh, w1)); }));
-      return;
-    }
-
-    std::string LabelEdge = "relEdge" + getLabelCount();
-    std::string LabelPartial = "relPartial" + getLabelCount();
-    std::string LabelEnd = "relEnd" + getLabelCount();
-
-    Reg newx;
-    mov(newx, ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
-    add(newx, dxh);
-    // dxh < 0: only the left edge needs clamping, valid lanes never reach the right edge.
-    // dxh > 0: only the right edge.
-    cmp(newx, dxh < 0 ? 0 : planewidth - 4);
-    if (dxh < 0)
-      jl(LabelEdge); // newx < 0
-    else
-      jg(LabelEdge); // newx > planewidth - 4
-
-    load4AsFloat(r, a, dxh << shift, op, zero); // normal case: no clamping
-    jmp(LabelEnd);
-
-    L(LabelEdge);
-    Reg rowp;
-    mov(rowp, ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
-    shl(rowp, shift);
-    neg(rowp);
-    add(rowp, a); // start of row
-    if (dxh < 0) {
-      // load pixels 0..3
-      load4AsFloat(r, rowp, 0, op, zero);
-      const int s = (-dxh) & 3; // -newx for the partial case, -3 < newx < 0
-      if (s != 0) {
-        cmp(newx, -4);
-        jg(LabelPartial);
-      }
-      pshufd(r, r, lanes_imm([](int) { return 0; })); // newx <= -4: all lanes pixel 0
-      if (s != 0) {
-        jmp(LabelEnd);
-        L(LabelPartial);
-        pshufd(r, r, lanes_imm([=](int i) { return std::max(i - s, 0); }));
-      }
-    }
-    else {
-      // load pixels planewidth-4..planewidth-1
-      load4AsFloat(r, rowp, (planewidth - 4) << shift, op, zero);
-      const int t = (dxh - planewidth) & 3; // newx - (planewidth - 4) for the partial case, 0 < t < 4
-      if (t == 1 || t == 2) {
-        cmp(newx, planewidth);
-        jl(LabelPartial);
-      }
-      pshufd(r, r, lanes_imm([](int) { return 3; })); // newx >= planewidth: all lanes pixel planewidth-1
-      if (t == 1 || t == 2) {
-        jmp(LabelEnd);
-        L(LabelPartial);
-        pshufd(r, r, lanes_imm([=](int i) { return std::min(i + t, 3); }));
-      }
-    }
-    L(LabelEnd);
+    emitRelLoad4<false>(*this, r, a, regptrs, &zero, op, dxh, planewidth);
   }
 
   // Generates code that loads 8 pixels at x + dx (x = current xcounter, multiple of 8) as floats.
@@ -2314,9 +2356,93 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
   int planewidth; // original, lut can overwrite
   int planeheight;
   bool singleMode;
+  int labelCount; // to have unique label strings
+
+  std::string getLabelCount()
+  {
+    return std::to_string(++labelCount);
+  }
 
   ExprEvalAvx2(std::vector<ExprOp> &ops, int numInputs, int cpuFlags, int planewidth, int planeheight, bool singleMode) : ops(ops), numInputs(numInputs), cpuFlags(cpuFlags),
-    planewidth(planewidth), planeheight(planeheight), singleMode(singleMode) {}
+    planewidth(planewidth), planeheight(planeheight), singleMode(singleMode), labelCount(0) {}
+
+  // Load 8 pixels from [base + offset] and convert them to 8 floats
+  AVS_FORCEINLINE void load8AsFloat(YmmReg& r, Reg& base, int offset, int op)
+  {
+    if (op == opLoadRelSrc8) {
+      vpmovzxbd(r, qword_ptr[base + offset]);
+      vcvtdq2ps(r, r);
+    }
+    else if (op == opLoadRelSrc16) {
+      vpmovzxwd(r, xmmword_ptr[base + offset]);
+      vcvtdq2ps(r, r);
+    }
+    else // opLoadRelSrcF32
+      vmovdqu(r, ymmword_ptr[base + offset]);
+  }
+
+  // Generates code that loads 8 pixels at x + dx (x = current xcounter, multiple of 8) as floats,
+  // repeating the first/last pixel of the row where the position falls outside it.
+  // Fast path: when no pixel of the group needs clamping, a single 8-pixel load.
+  // Otherwise (row edges, a few groups per row) emitRelLoad4 (VEX) at dx and dx + 4, combined
+  // into r: the second half's stored pixels are a subset of what emitRelLoad4 assumes as stored.
+  AVS_FORCEINLINE void relLoad8(YmmReg& r, Reg& a, Reg& regptrs, YmmReg& zero, int op, int dx)
+  {
+    const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
+    if (dx == 0) {
+      load8AsFloat(r, a, 0, op); // stored pixels need no clamping
+      return;
+    }
+    std::string LabelEdge = "relEdge8_" + getLabelCount();
+    std::string LabelEnd = "relEnd8_" + getLabelCount();
+    Reg newx;
+    mov(newx, ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
+    add(newx, dx);
+    // dx < 0: only the left edge, dx > 0: only the right edge can be crossed (see emitRelLoad4)
+    cmp(newx, dx < 0 ? 0 : planewidth - 8);
+    if (dx < 0)
+      jl(LabelEdge); // newx < 0
+    else
+      jg(LabelEdge); // newx > planewidth - 8
+    load8AsFloat(r, a, dx << shift, op);
+    jmp(LabelEnd);
+    L(LabelEdge);
+    XmmReg lo, hi;
+    emitRelLoad4<true>(*this, lo, a, regptrs, nullptr, op, dx, planewidth);
+    emitRelLoad4<true>(*this, hi, a, regptrs, nullptr, op, dx + 4, planewidth);
+    vinsertf128(r, zero, lo, 0);
+    vinsertf128(r, r, hi, 1);
+    L(LabelEnd);
+  }
+
+  // Generates code that loads 16 pixels at x + dx (x = current xcounter, multiple of 16) as floats.
+  // Fast path: a single check for the whole group; otherwise relLoad8 at dx and dx + 8.
+  AVS_FORCEINLINE void relLoad16(YmmReg& r1, YmmReg& r2, Reg& a, Reg& regptrs, YmmReg& zero, int op, int dx)
+  {
+    const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
+    if (dx == 0) {
+      load8AsFloat(r1, a, 0, op); // stored pixels need no clamping
+      load8AsFloat(r2, a, 8 << shift, op);
+      return;
+    }
+    std::string LabelEdge = "relEdge16_" + getLabelCount();
+    std::string LabelEnd = "relEnd16_" + getLabelCount();
+    Reg newx;
+    mov(newx, ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
+    add(newx, dx);
+    cmp(newx, dx < 0 ? 0 : planewidth - 16);
+    if (dx < 0)
+      jl(LabelEdge); // newx < 0
+    else
+      jg(LabelEdge); // newx > planewidth - 16
+    load8AsFloat(r1, a, dx << shift, op);
+    load8AsFloat(r2, a, (dx + 8) << shift, op);
+    jmp(LabelEnd);
+    L(LabelEdge);
+    relLoad8(r1, a, regptrs, zero, op, dx);
+    relLoad8(r2, a, regptrs, zero, op, dx + 8);
+    L(LabelEnd);
+  }
 
   template<bool processSingle, bool maskUnused>
   AVS_FORCEINLINE void processingLoop(Reg &regptrs, YmmReg &zero, Reg &constptr, Reg &SpatialY)
@@ -2416,6 +2542,54 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
           vmovd(r1x, dword_ptr[regptrs + sizeof(void*) * (iter.e.ival + RWPTR_START_OF_INTERNAL_FRAMEPROP_VARIABLES)]);
           vbroadcastss(r1, r1x);
           vmovaps(r2, r1);
+          stack.push_back(std::make_pair(r1, r2));
+        }
+      }
+      else if (iter.op == opLoadRelSrc8 || iter.op == opLoadRelSrc16 || iter.op == opLoadRelSrcF32) {
+        // either dx or dy is nonzero
+        Reg a;
+        mov(a, ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_INPUTS)]); // current pixel group of current line
+        // adjust read pointer vertically for nonzero dy, keep 0..height-1 limits
+        if (iter.dy < 0) {
+          // Read from above
+          Reg dy, sy;
+          mov(sy, SpatialY);
+          mov(dy, -iter.dy); // dy = -dy;
+          cmp(dy, sy);
+          cmovg(dy, sy); // if (dy > SpatialY) dy = SpatialY;
+#ifdef JITASM64
+          imul(dy, qword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
+#else
+          imul(dy, dword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
+#endif
+          sub(a, dy); // a -= dy * stride
+        }
+        else if (iter.dy > 0) {
+          // Read from bottom
+          Reg dy, sy;
+          mov(sy, planeheight - 1);
+          sub(sy, SpatialY);
+          mov(dy, iter.dy);
+          cmp(dy, sy);
+          cmovg(dy, sy); // if (dy > (planeheight - 1) - SpatialY) dy = (planeheight - 1) - SpatialY;
+#ifdef JITASM64
+          imul(dy, qword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
+#else
+          imul(dy, dword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
+#endif
+          add(a, dy); // a += dy * stride
+        }
+        // dy shift is done already, 'a' points to xcounter in the source row
+        if (processSingle) {
+          // 8 pixels
+          YmmReg r1;
+          relLoad8(r1, a, regptrs, zero, iter.op, iter.dx);
+          stack1.push_back(r1);
+        }
+        else {
+          // 16 pixels
+          YmmReg r1, r2;
+          relLoad16(r1, r2, a, regptrs, zero, iter.op, iter.dx);
           stack.push_back(std::make_pair(r1, r2));
         }
       }
@@ -6331,15 +6505,12 @@ Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector
 
 #ifdef INTEL_INTRINSICS
       // Check CPU instuction level constraints:
-      // opLoadRel8/16/32: no AVX2 support (SSE2 only)
       // round, floor, ceil, trunc: minimun SSE4.1
       // Trig.func: C only
       d.planeOptAvx2[i] = optAvx2;
       d.planeOptSSE2[i] = optSSE2;
       for (size_t j = 0; j < d.ops[i].size(); j++) {
         const uint32_t op = d.ops[i][j].op;
-        if (op == opLoadRelSrc8 || op == opLoadRelSrc16 || op == opLoadRelSrcF32)
-          d.planeOptAvx2[i] = false; // avx2 path not implemented
         // some trig.functions C only, except Sin and Cos and Atan2 and tan
         if (op == opAsin || op == opAcos || op == opAtan) {
           d.planeOptAvx2[i] = false;
