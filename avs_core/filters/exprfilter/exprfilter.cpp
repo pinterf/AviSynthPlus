@@ -1106,23 +1106,79 @@ else { \
 vxorps(y, t1, sign); \
 }
 
-// return (x - std::round(x / d)*d);
+// x % d, same result as C fmodf when |x/d| < 2^24:
+// q = trunc(|x|/|d|) can be one too big (division rounding), never too small.
+// r = |x| - q*|d| is exactly representable; computed exactly (SSE2: in double, AVX2: by FMA)
+// r < 0 (q was one too big): r += |d|. Result gets the sign of x (also -0); d == 0: NaN.
+// SSE2 intrinsic equivalent of FMOD_PS:
+//   __m128 fmod_ps(__m128 x, __m128 d) {
+//     const __m128 absmask = _mm_castsi128_ps(_mm_set1_epi32(0x7fffffff));
+//     __m128 ax = _mm_and_ps(x, absmask);
+//     __m128 ad = _mm_and_ps(d, absmask);
+//     __m128 q = _mm_cvtepi32_ps(_mm_cvttps_epi32(_mm_div_ps(ax, ad)));
+//     __m128d lo = _mm_sub_pd(_mm_cvtps_pd(ax), _mm_mul_pd(_mm_cvtps_pd(q), _mm_cvtps_pd(ad)));
+//     __m128d hi = _mm_sub_pd(_mm_cvtps_pd(_mm_movehl_ps(ax, ax)),
+//                             _mm_mul_pd(_mm_cvtps_pd(_mm_movehl_ps(q, q)), _mm_cvtps_pd(_mm_movehl_ps(ad, ad))));
+//     __m128 r = _mm_movelh_ps(_mm_cvtpd_ps(lo), _mm_cvtpd_ps(hi));
+//     r = _mm_add_ps(r, _mm_and_ps(_mm_cmplt_ps(r, _mm_setzero_ps()), ad));
+//     r = _mm_or_ps(r, _mm_andnot_ps(absmask, x));
+//     return _mm_or_ps(r, _mm_cmpeq_ps(ad, _mm_setzero_ps()));
+//   }
 #define FMOD_PS(x, d) { \
-XmmReg aTmp; \
-movaps(aTmp, x); \
-divps(aTmp, d); \
-cvttps2dq(aTmp,aTmp); \
-cvtdq2ps(aTmp,aTmp); \
-mulps(aTmp, d); \
-subps(x, aTmp); }
+XmmReg aX, aD, aQ, aR, aT0, aT1, aT2; \
+movaps(aX, x); \
+andps(aX, CPTR(elabsmask)); /* |x| */ \
+movaps(aD, d); \
+andps(aD, CPTR(elabsmask)); /* |d| */ \
+movaps(aQ, aX); \
+divps(aQ, aD); \
+cvttps2dq(aQ, aQ); \
+cvtdq2ps(aQ, aQ); /* q = trunc(|x|/|d|) */ \
+/* r = |x| - q*|d| in double: 24x24 bit product is exact, the difference is representable */ \
+cvtps2pd(aT0, aQ); \
+cvtps2pd(aT1, aD); \
+mulpd(aT0, aT1); \
+cvtps2pd(aT1, aX); \
+subpd(aT1, aT0); \
+cvtpd2ps(aR, aT1); /* lanes 0,1 */ \
+movhlps(aQ, aQ); \
+movaps(aT2, aD); \
+movhlps(aT2, aT2); \
+movhlps(aX, aX); \
+cvtps2pd(aT0, aQ); \
+cvtps2pd(aT1, aT2); \
+mulpd(aT0, aT1); \
+cvtps2pd(aT1, aX); \
+subpd(aT1, aT0); \
+cvtpd2ps(aT1, aT1); \
+movlhps(aR, aT1); /* lanes 2,3 */ \
+xorps(aT0, aT0); \
+movaps(aT1, aR); \
+cmpltps(aT1, aT0); \
+andps(aT1, aD); \
+addps(aR, aT1); /* r < 0: r += |d| */ \
+cmpeqps(aD, aT0); /* d == 0 */ \
+andps(x, CPTR(elsignmask)); \
+orps(x, aR); /* sign of x */ \
+orps(x, aD); /* d == 0: NaN */ \
+}
 
 #define FMOD_PS_AVX(x, d) { \
-YmmReg aTmp; \
-vdivps(aTmp, x, d); \
-vcvttps2dq(aTmp,aTmp); \
-vcvtdq2ps(aTmp,aTmp); \
-vmulps(aTmp, aTmp, d); \
-vsubps(x, x, aTmp); }
+YmmReg aX, aD, aQ, aZ; \
+vandps(aX, x, CPTR_AVX(elabsmask)); /* |x| */ \
+vandps(aD, d, CPTR_AVX(elabsmask)); /* |d| */ \
+vdivps(aQ, aX, aD); \
+vroundps(aQ, aQ, FROUND_TO_ZERO | FROUND_NO_EXC); /* q = trunc(|x|/|d|) */ \
+vfnmadd231ps(aX, aQ, aD); /* r = |x| - q*|d|, single rounding: exact */ \
+vxorps(aZ, aZ, aZ); \
+vcmpps(aQ, aX, aZ, _CMP_LT_OQ); \
+vandps(aQ, aQ, aD); \
+vaddps(aX, aX, aQ); /* r < 0: r += |d| */ \
+vcmpps(aD, aD, aZ, _CMP_EQ_OQ); /* d == 0 */ \
+vandps(x, x, CPTR_AVX(elsignmask)); \
+vorps(x, x, aX); /* sign of x */ \
+vorps(x, x, aD); /* d == 0: NaN */ \
+}
 
 struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intptr_t *, intptr_t, intptr_t> {
 
