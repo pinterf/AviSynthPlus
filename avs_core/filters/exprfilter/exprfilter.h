@@ -1,3 +1,6 @@
+// AviSynth+ Expression filter
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 #ifndef __Exprfilter_h
 #define __Exprfilter_h
 

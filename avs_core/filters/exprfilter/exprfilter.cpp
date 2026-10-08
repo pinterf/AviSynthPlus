@@ -1,77 +1,25 @@
 /*
 *
-* Avisynth+ Expression filter, ported from the VapourSynth project
-* Copyright (c) 2012-2015 Fredrik Mellbin
+* Avisynth+ Expression filter
+* SPDX-License-Identifier: GPL-2.0-or-later
+* Base version: ported from the VapourSynth project (Expr, VS r39)
+*   Copyright (c) 2012-2015 Fredrik Mellbin
+* Modified and extended by the AviSynth+ project. Ideas and syntax elements:
+*   masktools2 mt_lut family: built-in constants (ymin/ymax/cmin/cmax/range_*),
+*     scaleb/scalef, clip, spatial input (mt_lutspa -> sx/sy/sxr/syr), lut modes
+*   wonkey_monkey: variables, store (@) and store-and-pop (^),
+*     frameno and time; after his RPN filters
+*   akarin.Expr (VSAkarin): clip.PropName frame property syntax,
+*     SIMD sin/cos (VapourSynth Expr port), :m border mode compatibility
+* Full feature list: see the documentation (expr.rst).
 *
-* Additions and differences to VS r39 version:
-* ------------------------------
-* (similar features to the masktools mt_lut family syntax)
-* Operator aliases:
-*   Caret (^) can be used like pow
-*   For equality check "==" can be used like "="
-*   & same as and
-*   | same as or
-* New operator: != (not equal)
-* Built-in constants
-*   ymin, ymax (ymin_a .. ymin_z for individual clips) - the usual luma limits (16..235 or scaled equivalents)
-*   cmin, cmax (cmin_a .. cmin_z) - chroma limits (16..240 or scaled equivalents)
-*   range_half (range_half_a .. range_half_z) - half of the range, (128 or scaled equivalents)
-*   range_size, range_half, range_min, range_max (range_size_a .. range_size_z , etc..)
-* Autoscale helper functions (operand is treated as being a 8 bit constant unless i8..i16 or f32 is specified)
-*   scaleb (scale by bit shift - mul or div by 2, 4, 6, 8...)
-*   scalef (scale by stretch full scale - mul or div by source_max/target_max
-* Keywords for modifying base bit depth for scaleb and scalef
-*   i8, i10, i12, i14, i16, f32
-* Built-in math constant
-*   pi
-* Alpha plane handling. When no separate expression is supplied for alpha, plane is copied instead of reusing last expression parameter
-* Proper clamping when storing 10,12 or 14 bit outputs
-* Faster storing of results for 8 and 10-16 bit outputs
-* 16 pixels/cycle instead of 8 when avx2, with fallback to 8-pixel case on the right edge. Thus no need for 64 byte alignment for 32 bit float.
-* (Load zeros for nonvisible pixels, when simd block size goes beyond image width, to prevent garbage input for simd calculation)
-* Optimizations: x^0.5 is sqrt, ^1 +0 -0 *1 /1 to nothing, ^2, ^3, ^4 is done by faster and more precise multiplication
-* spatial input variables in expr syntax:
-*    sx, sy (absolute x and y coordinates, 0 to width-1 and 0 to height-1)
-*    sxr, syr (relative x and y coordinates, from 0 to 1.0)
-* Optimize: recognize constant plane expression: use fast memset instead of generic simd process. Approx. 3-4x (32 bits) to 10-12x (8 bits) speedup
-* Optimize: Recognize single clip letter in expression: use fast plane copy (BitBlt)
-*   (e.g. for 8-16 bits: instead of load-convert_to_float-clamp-convert_to_int-store). Approx. 1.4x (32 bits), 3x (16 bits), 8-9x (8 bits) speedup
-* Optimize: do not call GetFrame for input clips that are not referenced or plane-copied
-* 20171211: Implement relative pixel indexing e.g. x[-1,-3], requires SSSE3
-*           Fix jitasm code generation (corrupt code when doing register reorders)
-* 20171212: Variables:  A..Z
-*           To store the current top value of the stack to a variable: A@ .. Z@
-*           To store the current top value and pop it from the top of the stack: A^.. Z^
-*           To use a stored variable: single uppercase letter. E.g. A
-* 20171214: Trig.functions (C only): sin, cos, tan, asin, acos, atan
-*           '%' The implementation is fmod-like: x - trunc(x/d)*d.
-*             Note: SSE2 and up is using trunc for float->integer conversion, works for usual width/height magnitude.
-*             (A float can hold a 24 bit integer w/o losing precision)
-*           expr constants: 'width', 'height' for current plane width and height
-*           expr auto variable: 'frameno' holds the current frame number 0..total number of frames-1
-*           expr auto variable: 'time' relative time in clip, 0 <= time <= 1
-*                calculation: time = frameno/(total number of frames - 1)
-* 20180614 new parameters: scale_inputs, clamp_float
-*          implement 'clip' three operand operator like in masktools2: x minvalue maxvalue clip -> max(min(x, maxvalue), minvalue)
-* 20191120 yrange_min, yrange_half, yrange_max, clamp_float_UV param, allow "float_UV" for scale_inputs
-*          yscalef, yscaleb forcing non-chroma rules for scaling even when processing chroma planes
-* 202107xx round, floor, ceil, trunc (acceleration from SSE4.1 and up)
-*          arbitrary variable names; instead of 'A' to 'Z', up to 256 of them can be used
-* 20210924 frame property access clip.framePropName syntax after VSAkarin idea (no array access yet)
-*          sin and cos as SIMD (VSAkarin, port from VS)
-* 20211116 neg
-* 20211117 atan2 as SIMD
-* 20211118 sgn
-* 20211127 lutx, lutxy (lut=1 and 2)
-* 20211128 allow f32 for 'scale_inputs' when "int", "intf", "all", "allf"
-* 20250309 tan as SIMD
-* 20261007 accurate tan as SIMD
-*          accurate fmod (%)
-*          AVX2 relative pixel support
-*          relative pixels: SSE2 is enough (was: SSSE3), refactored
-*          add relative pixel border modes x[dx,dy]:c (clamp, default), :m (mirror), :r (reflect101),
-*            :k (constant from stack), :w (wrap)
-*          fix: round/floor/ceil/trunc before a relative load or asin/acos/atan (crash/wrong result)
+* Optimizations
+*   x^0.5 is sqrt, ^1 +0 -0 *1 /1 to nothing, ^2, ^3, ^4 by multiplication
+*   constant plane expression: plane fill instead of the generic SIMD process
+*   single clip letter expression: plane copy (BitBlt)
+*   no GetFrame for input clips that are not referenced or plane-copied
+*
+* Version history: see the changelog in the documentation (expr.rst).
 *
 * Differences from masktools 2.2.15
 * ---------------------------------
@@ -355,6 +303,10 @@ static constexpr ExprUnion logexpconst alignas(16)[66][4] = {
     XCONST(+2.0000714765E-1f), // cephes_log_p6
     XCONST(-2.4999993993E-1f), // cephes_log_p7
     XCONST(+3.3333331174E-1f), // cephes_log_p8
+    // sin/cos (SINCOS_PS), ported from VapourSynth's Expr.
+    // Range reduction and sin polynomial: glibc libmvec sinf (Intel SVML-derived, LGPL-2.1+),
+    // sysdeps/x86_64/fpu/svml_s_trig_data.S: __sInvPI, __sRShifter, __sPI1..__sPI4, __sA3..__sA9.
+    // cos polynomial (float_cosC2..C8): unknown origin, degree 8 minimax on [-pi/2, pi/2].
     XCONST(0x3ea2f983), // float_invpi, 1/pi = 0.31830988618379067154f
     XCONST(0x4b400000), // float_rintf  Used for rounding
     XCONST(0x40490000), // float_pi1    High precision part of Pi
@@ -434,6 +386,7 @@ static constexpr ExprUnion logexpconst_avx alignas(32)[66][8] = {
   XCONST(+2.0000714765E-1f), // cephes_log_p6
   XCONST(-2.4999993993E-1f), // cephes_log_p7
   XCONST(+3.3333331174E-1f), // cephes_log_p8
+  // sin/cos: see logexpconst
   XCONST(0x3ea2f983), // float_invpi, 1/pi = 0.31830988618379067154f
   XCONST(0x4b400000), // float_rintf  Used for rounding
   XCONST(0x40490000), // float_pi1    High precision part of Pi
@@ -944,6 +897,9 @@ vandps(x0, x0, x3); \
 /* no need. input was "x0" for y */ \
 }
 
+// sin/cos: k = round(x/pi) (1.5*2^23 shifter), r = x - k*pi (four-part pi, Cody-Waite),
+// sign flipped for odd k; sin(r) = r + r^3*P(r^2) (degree 9), cos(r) = 1 + r^2*Q(r^2) (degree 8),
+// |r| <= pi/2. Same scheme and comments as glibc libmvec sinf (see the constant table).
 #define SINCOS_PS(issin, y, x) { \
 XmmReg t1, sign, t2, t3, t4; \
 /* // Remove sign */ \
@@ -1029,6 +985,7 @@ else { \
 VEX2(xorps, y, t1, sign); \
 }
 
+// sin/cos, AVX2 version of SINCOS_PS
 // y dst x src
 #define SINCOS_PS_AVX(issin, y, x) { \
 YmmReg t1, sign, t2, t3, t4; \

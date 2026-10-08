@@ -684,6 +684,23 @@ Examples
 
  See Doom9 thread `"Fade with configurable time curves?"`_ for more information.
 
+External Links
+--------------
+
+* `VapourSynth`_ Expr documentation: the base of this filter
+* `akarin.Expr`_ (VapourSynth plugin): extended Expr, ``:m`` border mode compatible
+* `MaskTools2`_ (``mt_lut`` family) and `mt_lutspa`_: similar syntax, spatial variables
+* `rgba_rpn`_ RPN filters by wonkey_monkey: origin of the variable store (``A@``) and
+  store-and-pop (``A^``) syntax, frame number and time variables
+* `SLEEF paper`_: vectorized math functions, the method of the JIT ``tan``
+* Border handling in other libraries: `OpenCV`_ border types, `numpy.pad`_ and
+  `scipy.ndimage`_ modes
+* `Doom9 thread`_: Mandelbrot zoomer, original code and idea
+* `"Fade with configurable time curves?"`_ (doom9.org): using the ``time`` variable
+* Background: `RPN`_ (Reverse Polish notation), `mathematical function`_, `JIT compiler`_,
+  `LUT`_, `chroma subsampling`_, `SSE2`_, `AVX2`_
+
+
 Changelog
 ----------
 
@@ -723,10 +740,11 @@ Changelog
 |                 || TAB, CR, LF are valid string delimiters inside expr     |
 |                 |  string                                                  |
 |                 || Enhanced: arbitrary variable names, not only A to Z     |
+|                 |  (up to 256 variables)                                   |
 |                 || Access clip's frame properties:                         |
 |                 |  *clipletter.frameProperty* syntax                       |
 |                 || Enhanced: ``sin`` and ``cos``: SIMD acceleration        |
-|                 || New: ``atan2``                                          |
+|                 || New: ``atan2`` (SIMD accelerated)                       |
 |                 || New: ``neg, sgn``                                       |
 |                 || Enhanced: allow ‘f32’ as internal autoscale target      |
 |                 |  besides integer i8..i16                                 |
@@ -735,14 +753,18 @@ Changelog
 +-----------------+----------------------------------------------------------+
 | AviSynth+ 3.5.0 || Allow ``"floatUV"`` for parameter ``"clamp_float"``     |
 |                 || New parameter ``"clamp_float_UV"``                      |
+|                 || Allow ``"floatUV"`` for parameter ``"scale_inputs"``    |
+|                 || New: ``yrange_min, yrange_half, yrange_max`` and        |
+|                 |  ``yscalef, yscaleb``: luma (non-chroma) rules even when |
+|                 |  processing chroma planes                                |
 +-----------------+----------------------------------------------------------+
 | AviSynth+ r2724 || New three operand function: clip                        |
 |                 || New parameter ``"clamp_float"``                         |
 |                 || New parameter ``"scale_inputs"``                        |
 +-----------------+----------------------------------------------------------+
 | AviSynth+ r2574 || New: indexable source clip pixels by relative x,y       |
-|                 |  positions like x[-1,1]                                  |
-|                 || New functions: ``sin cos tan asin acos atan``           |
+|                 |  positions like x[-1,1] (JIT requires SSSE3)             |
+|                 || New functions: ``sin cos tan asin acos atan`` (no JIT)  |
 |                 || New operator: % (modulo)                                |
 |                 || New: variables: uppercase letters A..Z for storing and  |
 |                 |  reuse temporary results, frequently used computations.  |
@@ -755,7 +777,7 @@ Changelog
 | AviSynth+ r2542 |  Initial release                                         |
 +-----------------+----------------------------------------------------------+
 
-$Date: 2026/10/06 10:40:00 $
+$Date: 2026/10/08 12:20:00 $
 
 .. _mathematical function:
     https://en.wikipedia.org/wiki/Function_(mathematics)
@@ -791,6 +813,8 @@ $Date: 2026/10/06 10:40:00 $
     https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.convolve.html
 .. _akarin.Expr:
     https://github.com/AkarinVS/vapoursynth-plugin
+.. _rgba_rpn:
+    https://horman.net/avisynth/rgba_rpn.html
 
 .. |br| raw:: html
 
