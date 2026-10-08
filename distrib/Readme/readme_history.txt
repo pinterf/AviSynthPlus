@@ -9,8 +9,24 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20261005 3.7.5.rXXXX (pre 3.7.6)
+20261008 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Expr: relative pixel load border modes, as an optional suffix after x[dx,dy]:
+  :c - clamp, the edge pixel is cloned (default, same as no suffix)      a a a | a b c d
+  :m - mirror, edge pixel repeated (akarin.Expr compatible)              c b a | a b c d
+  :r - mirror, edge pixel not repeated (OpenCV BORDER_REFLECT_101)       d c b | a b c d
+  :k - constant filler (OpenCV BORDER_CONSTANT)                          k k k | a b c d
+  :w - wrap around (OpenCV BORDER_WRAP)                                  f g h | a b c d
+  e.g. "x[-2,0]:m x[2,0]:m + 2 /". Other suffixes are an error.
+  :k takes the filler from the stack before the pixel reference: "k x[dx,dy]:k". It must be a
+  constant (checked after constant folding): a number or a constant expression, e.g.
+  "range_half x[0,-1]:k", "64 2 * x[1,0]:k". It is in the value domain of the expression: a raw
+  pixel value by default, the converted value when scale_inputs is used.
+  Mirror and wrap modes reflect or wrap as many times as needed (periodic), relevant on subsampled chroma planes
+  where dx/dy (limited by the luma size) can exceed the plane size.
+  The SSE2/AVX2 JIT reflects or wraps once, a plane where a mirror or wrap mode offset needs
+  more runs in C (the other planes stay JIT); so does a plane where dx > planewidth-3 (:m, :w)
+  or dx > planewidth-4 (:r). Clamp (:c) and constant (:k) are always JIT.
 - Expr: relative pixel load (e.g. x[-1,0]) has an AVX2 JIT version. Before, an expression with
   relative pixels ran on the SSE2 JIT even on AVX2 CPUs; now it runs ~2x faster on them
   (1080p, 8/16/32 bit). The row edge handling is shared with the SSE2 path.

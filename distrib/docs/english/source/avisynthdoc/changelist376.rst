@@ -289,6 +289,12 @@ Build environment, Interface
   (e.g. when SSE2/AVX2/AVX512 specific ``.cpp`` files are built with different per-file compiler flags). 
   Part of our public headers, but no interface change was done.
 
+- "Expr": relative pixel load border modes: ``x[dx,dy]:c`` (clamp, clone the edge pixel; default,
+  same as without suffix), ``x[dx,dy]:m`` (mirror, edge pixel repeated; akarin.Expr compatible),
+  ``x[dx,dy]:r`` (mirror without repeating the edge pixel, like OpenCV ``BORDER_REFLECT_101``),
+  ``k x[dx,dy]:k`` (constant filler ``k`` from the stack, must be constant, e.g. ``range_half``;
+  like OpenCV ``BORDER_CONSTANT``) and ``x[dx,dy]:w`` (wrap around, like OpenCV ``BORDER_WRAP``).
+  All modes are JIT optimized (SSE2, AVX2).
 
 Bugfixes
 ~~~~~~~~
