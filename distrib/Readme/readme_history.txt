@@ -32,6 +32,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   (1080p, 8/16/32 bit). The row edge handling is shared with the SSE2 path.
 - Expr: relative pixel load (e.g. x[-1,0]) in the SSE2 JIT no longer requires SSSE3; CPUs without
   SSSE3 used to run the whole expression in C. Hugely refactored ans simplified edge handling.
+- Fix: Expr: a ternary with a constant condition (e.g. "0 a b ?") and a variable store (A@, A^), dup
+  or swap among its operands: the optimizer removed the wrong part, giving a wrong result or a crash.
+  E.g. "0 7 sx A^ A ?" returned 0 instead of sx; "0 sx dup ?" crashed. Such ternaries are no longer
+  folded. Existed since the first Expr version.
 - Fix: Expr: % (modulo) in the SSE2/AVX2 JIT now gives the same result as the C path (fmodf).
   The JIT computed x - trunc(x/d)*d in float: near multiples of d the rounded division gave a quotient
   one too big, so the result was 0 or slightly negative instead of almost d (e.g. 73 % 7.3 gave 0,

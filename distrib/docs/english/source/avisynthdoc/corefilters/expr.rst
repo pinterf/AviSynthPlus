@@ -718,6 +718,9 @@ Changelog
 |                 || Fix: JIT % (modulo) now gives the same result as        |
 |                 |  fmodf; was 0 or slightly negative near multiples        |
 |                 |  of the divisor (e.g. 73 % 7.3).                         |
+|                 || Fix: constant condition ternary with a variable store   |
+|                 |  (A@, A^), dup or swap among its operands: wrong result  |
+|                 |  or crash (e.g. "0 7 sx A^ A ?", "0 sx dup ?").          |
 |                 || Relative pixel load (x[dx,dy]): new AVX2 JIT version,   |
 |                 |  ~2x faster on AVX2 CPUs; SSE2 JIT no longer requires    |
 |                 |  SSSE3, slightly quicker.                                |
@@ -777,7 +780,7 @@ Changelog
 | AviSynth+ r2542 |  Initial release                                         |
 +-----------------+----------------------------------------------------------+
 
-$Date: 2026/10/08 12:20:00 $
+$Date: 2026/10/08 13:30:00 $
 
 .. _mathematical function:
     https://en.wikipedia.org/wiki/Function_(mathematics)

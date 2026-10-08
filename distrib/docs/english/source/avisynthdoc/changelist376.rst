@@ -469,6 +469,10 @@ Bugfixes
 - Fix: "Expr" ``%`` (modulo) in the SSE2/AVX2 JIT now gives the same result as the C path
   (``fmodf``). Near multiples of the divisor the result was 0 or slightly negative instead of
   almost the divisor (e.g. ``73 % 7.3``). Existed since ``%`` was added (r2574).
+- Fix: "Expr" ternary with a constant condition (e.g. ``0 a b ?``) and a variable store
+  (``A@``, ``A^``), ``dup`` or ``swap`` among its operands: the optimizer removed the wrong part,
+  giving a wrong result or a crash. E.g. ``0 7 sx A^ A ?`` returned 0 instead of ``sx``;
+  ``0 sx dup ?`` crashed. Such ternaries are no longer folded. Existed since the first Expr version.
 
 
 Optimizations
@@ -590,7 +594,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/10/05 10:00:00 $
+$Date: 2026/10/08 13:30:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
