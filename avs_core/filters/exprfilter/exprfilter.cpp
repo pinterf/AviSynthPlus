@@ -6521,6 +6521,17 @@ static bool isLoadOp(uint32_t op) {
     return false;
 }
 
+// true when ops[from..to) has a variable store, dup or swap
+// Used from constant folding (ternary part x?a:b )
+static bool hasStackOrStoreOps(const std::vector<ExprOp>& ops, size_t from, size_t to) {
+  for (size_t k = from; k < to; k++) {
+    const uint32_t op = ops[k].op;
+    if (op == opStoreVar || op == opStoreVarAndDrop1 || op == opDup || op == opSwap)
+      return true;
+  }
+  return false;
+}
+
 static void findBranches(std::vector<ExprOp>& ops, size_t pos, size_t* start1, size_t* start2, size_t* start3) {
   int operands = numOperands(ops[pos].op);
 
@@ -6761,7 +6772,17 @@ static void foldConstants(std::vector<ExprOp> &ops, IScriptEnvironment* env) {
               size_t start1, start2, start3;
               findBranches(ops, i, &start1, &start2, &start3);
               // start1/2/3: condition/true/false branch
-              if (ops[start2 - 1].op == opLoadConst) { // condition expression is a single constant
+
+              // Folded only when the condition is a single constant and the operand range
+              // (condition..ternary) has none of these:
+              // - variable store (A@: store the stack top into A, keep it; A^: store and pop):
+              //   Expr evaluates both branches, so a store in the erased branch must still
+              //   happen. A^ also removes the value it stores, so e.g. "sx A^" leaves nothing
+              //   on the stack: it is not an operand, belongs to neither branch, but
+              //   findBranches attaches it to a neighbor (in "0 7 sx A^ A ?" to the "7").
+              // - dup, swap: they read stack values below their own branch, findBranches
+              //   cannot split the range correctly.
+              if (ops[start2 - 1].op == opLoadConst && !hasStackOrStoreOps(ops, start1, i)) {
                 ops.erase(ops.begin() + i); // erase ternary op
                 if (ops[start1].e.fval > 0.0f) { // condition is constant 'true'
                   // start1 is start2 - 1
