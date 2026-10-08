@@ -91,17 +91,54 @@ union ExprUnion {
   constexpr ExprUnion(float _f) : fval(_f) {}
 } ;
 
+// Border (off-screen) handling of relative pixel loads x[dx,dy]:c / :m / :r / :k / :w
+enum ExprBorder {
+  borderClamp = 0,      // :c (default) repeat the edge pixel  a a a | a b c d (OpenCV BORDER_REPLICATE)
+  borderMirror = 1,     // :m mirror, edge pixel repeated      c b a | a b c d (OpenCV BORDER_REFLECT, akarin.Expr :m)
+  borderReflect101 = 2, // :r mirror, edge pixel not repeated  d c b | a b c d (OpenCV BORDER_REFLECT_101)
+  borderConstant = 3,   // :k constant filler (from stack)     k k k | a b c d (OpenCV BORDER_CONSTANT)
+  borderWrap = 4,       // :w wrap around (periodic)           f g h | a b c d (OpenCV BORDER_WRAP)
+};
+
+// scale_inputs conversion of a loaded pixel, the steps in this order, each one only when it
+// is not the identity (sub 0, mul 1, add 0):
+// value = ((pixel - sub) * mul + add) + add_uv
+// Normally these are separate opSub/opMul/opAdd operations after the load. For a :k relative
+// load the load op does them, before the filler is put in place of the off-screen pixels: the
+// filler is in the expression's domain and needs no conversion.
+// The step by step evaluation (instead of pixel * m + a) gives bit-identical results to the
+// separate operations.
+struct ExprLoadConv {
+  float sub = 0.0f;    // source offset (limited range, or chroma center)
+  float mul = 1.0f;    // range scaling
+  float add = 0.0f;    // target offset
+  float add_uv = 0.0f; // float chroma +0.5 shift ("floatUV")
+  bool active() const { return sub != 0.0f || mul != 1.0f || add != 0.0f || add_uv != 0.0f; }
+  float apply(float v) const {
+    if (sub != 0.0f) v = v - sub;
+    if (mul != 1.0f) v = v * mul;
+    if (add != 0.0f) v = v + add;
+    if (add_uv != 0.0f) v = v + add_uv;
+    return v;
+  }
+};
+
 struct ExprOp {
   ExprUnion e;
   uint32_t op;
   int dx, dy;
-  ExprOp(SOperation op, float val) : op(op), dx(0), dy(0) {
+  int bc; // ExprBorder, for relative loads
+  // borderConstant: the filler value for off-screen pixels, in the expression's domain (after the scale_inputs conversion)
+  float filler;
+  // borderConstant: scale_inputs conversion done by the load op itself (see ExprLoadConv)
+  ExprLoadConv conv;
+  ExprOp(SOperation op, float val) : op(op), dx(0), dy(0), bc(borderClamp), filler(0.0f) {
     e.fval = val;
   }
-  ExprOp(SOperation op, int32_t val = 0) : op(op), dx(0), dy(0) {
+  ExprOp(SOperation op, int32_t val = 0) : op(op), dx(0), dy(0), bc(borderClamp), filler(0.0f) {
     e.ival = val;
   }
-  ExprOp(SOperation op, int32_t val, int dx, int dy) : op(op), dx(dx), dy(dy) {
+  ExprOp(SOperation op, int32_t val, int dx, int dy, int bc = borderClamp) : op(op), dx(dx), dy(dy), bc(bc), filler(0.0f) {
     e.ival = val;
   }
 };

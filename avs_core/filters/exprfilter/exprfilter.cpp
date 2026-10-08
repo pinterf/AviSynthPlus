@@ -65,6 +65,13 @@
 * 20211127 lutx, lutxy (lut=1 and 2)
 * 20211128 allow f32 for 'scale_inputs' when "int", "intf", "all", "allf"
 * 20250309 tan as SIMD
+* 20261007 accurate tan as SIMD
+*          accurate fmod (%)
+*          AVX2 relative pixel support
+*          relative pixels: SSE2 is enough (was: SSSE3), refactored
+*          add relative pixel border modes x[dx,dy]:c (clamp, default), :m (mirror), :r (reflect101),
+*            :k (constant from stack), :w (wrap)
+*          fix: round/floor/ceil/trunc before a relative load or asin/acos/atan (crash/wrong result)
 *
 * Differences from masktools 2.2.15
 * ---------------------------------
@@ -1105,7 +1112,7 @@ cvtps2pd(aT1, aD); \
 mulpd(aT0, aT1); \
 cvtps2pd(aT1, aX); \
 subpd(aT1, aT0); \
-cvtpd2ps(aR, aT1); /* lanes 0,1 */ \
+cvtpd2ps(aR, aT1); /* elements 0,1 */ \
 movhlps(aQ, aQ); \
 movaps(aT2, aD); \
 movhlps(aT2, aT2); \
@@ -1116,7 +1123,7 @@ mulpd(aT0, aT1); \
 cvtps2pd(aT1, aX); \
 subpd(aT1, aT0); \
 cvtpd2ps(aT1, aT1); \
-movlhps(aR, aT1); /* lanes 2,3 */ \
+movlhps(aR, aT1); /* elements 2,3 */ \
 xorps(aT0, aT0); \
 movaps(aT1, aR); \
 cmpltps(aT1, aT0); \
@@ -1145,31 +1152,116 @@ vorps(x, x, aX); /* sign of x */ \
 vorps(x, x, aD); /* d == 0: NaN */ \
 }
 
+// Source index of position s (may be off-screen) in a row/column of n pixels, for border mode bc.
+// Any distance: mirror and wrap modes reflect or wrap as many times as needed (periodic,
+// period 2n or 2n-2 for mirror, n for wrap).
+static inline int borderIndex(int s, int n, int bc)
+{
+  if (bc == borderMirror) {
+    // boundary value is repeated d c b a | a b c d
+    const int period = 2 * n;
+    int m = s % period;
+    if (m < 0) m += period;
+    return m < n ? m : period - 1 - m;
+  }
+  if (bc == borderReflect101) {
+    //                                                4 3 2   1 2 3 4
+    // boundary value is single point of reflection e d c b | a b c d
+    if (n == 1) return 0;
+    const int period = 2 * n - 2;
+    int m = s % period;
+    if (m < 0) m += period;
+    return m < n ? m : period - m;
+  }
+  if (bc == borderWrap) {
+    // periodic: f g h | a b c d
+    int m = s % n;
+    if (m < 0) m += n;
+    return m;
+  }
+  return std::max(0, std::min(s, n - 1)); // borderClamp, borderConstant (n/a)
+}
+
 // Register types for the code generator functions below. They are not class members,
 // so they cannot use the evaluators' inherited Reg / XmmReg names.
 using JitReg = jitasm::Reg;
 using JitXmmReg = jitasm::XmmReg;
 
 
-// pshufd immediate: lane x gets source lane src_lane_of(x)
+// pshufd immediate: element x gets source element src_element_of(x)
 template<typename F>
-static constexpr uint8_t lanes_imm(F src_lane_of) {
-  return (uint8_t)(src_lane_of(0) | (src_lane_of(1) << 2) | (src_lane_of(2) << 4) | (src_lane_of(3) << 6));
+static constexpr uint8_t elements_imm(F src_element_of) {
+  return (uint8_t)(src_element_of(0) | (src_element_of(1) << 2) | (src_element_of(2) << 4) | (src_element_of(3) << 6));
 }
 
+// Element masks for emitPshufdWithFiller (bit i set: element i gets the filler)
+// first_elements(n): elements 0..n-1     n = 1, 2, 3, 4 -> 0001, 0011, 0111, 1111 (0x1, 0x3, 0x7, 0xF)
+// last_elements(n):  elements 4-n..3     n = 1, 2, 3, 4 -> 1000, 1100, 1110, 1111 (0x8, 0xC, 0xE, 0xF)
+static constexpr uint8_t first_elements(int n) { return (uint8_t)((1 << n) - 1); }
+static constexpr uint8_t last_elements(int n) { return (uint8_t)(0xF & ~((1 << (4 - n)) - 1)); }
+
+
+// borderConstant: scale_inputs conversion of the loaded pixels in r (and r2, when given),
+// before the filler is put in place of the off-screen ones. Same steps, same order as the
+// separate operations of other loads (see ExprLoadConv). No code when there is no conversion.
+template<bool VEX, class J>
+static AVS_FORCEINLINE void emitConvert4(J& j, JitXmmReg& r, JitXmmReg* r2, const ExprLoadConv* conv)
+{
+  if (conv == nullptr || !conv->active())
+    return;
+  enum { Sub, Mul, Add };
+  // one step: broadcast 'value', then sub/mul/add it to r (and r2)
+  auto step = [&](float value, int kind) {
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits)); // C++17 equivalent of C++20 std::bit_cast<uint32_t>(value)
+    jitasm::Reg32 t;
+    JitXmmReg c;
+    j.mov(t, (int32_t)bits);
+    if constexpr (VEX) {
+      j.vmovd(c, t);
+      j.vpshufd(c, c, 0);
+    }
+    else {
+      j.movd(c, t);
+      j.pshufd(c, c, 0);
+    }
+    for (JitXmmReg* x : { &r, r2 }) {
+      if (x == nullptr)
+        continue;
+      if constexpr (VEX) {
+        if (kind == Sub) j.vsubps(*x, *x, c);
+        else if (kind == Mul) j.vmulps(*x, *x, c);
+        else j.vaddps(*x, *x, c);
+      }
+      else {
+        if (kind == Sub) j.subps(*x, c);
+        else if (kind == Mul) j.mulps(*x, c);
+        else j.addps(*x, c);
+      }
+    }
+  };
+  // and now the real work, optimized to skip no-op steps
+  if (conv->sub != 0.0f) step(conv->sub, Sub);
+  if (conv->mul != 1.0f) step(conv->mul, Mul);
+  if (conv->add != 0.0f) step(conv->add, Add);
+  if (conv->add_uv != 0.0f) step(conv->add_uv, Add);
+}
 
 // Load 4 pixels from [base + offset] and convert them to 4 floats.
 // VEX: VEX-encoded instructions for the AVX2 evaluator; 'zero' for the SSE2 unpack based
 //      widening is not needed, direct vpmovzx* zero-extends directly.
+// conv: borderConstant only, the scale_inputs conversion (see emitConvert4), nullptr: none.
 template<bool VEX, class J>
-static AVS_FORCEINLINE void emitLoad4AsFloat(J& j, JitXmmReg& r, JitReg& base, int offset, int op, const JitXmmReg* zero)
+static AVS_FORCEINLINE void emitLoad4AsFloat(J& j, JitXmmReg& r, JitReg& base, int offset, int op, const JitXmmReg* zero, const ExprLoadConv* conv)
 {
   if constexpr (VEX) {
     if (op == opLoadRelSrc8) {
+      // 8->32 bits like _mm256_cvtepu8_epi32
       j.vpmovzxbd(r, j.dword_ptr[base + offset]);
       j.vcvtdq2ps(r, r);
     }
     else if (op == opLoadRelSrc16) {
+      // 16->32 bit like _mm256_cvtepu16_epi32
       j.vpmovzxwd(r, j.qword_ptr[base + offset]);
       j.vcvtdq2ps(r, r);
     }
@@ -1177,6 +1269,7 @@ static AVS_FORCEINLINE void emitLoad4AsFloat(J& j, JitXmmReg& r, JitReg& base, i
       j.vmovdqu(r, j.xmmword_ptr[base + offset]);
   }
   else {
+    // SSE2: widen with unpacks
     if (op == opLoadRelSrc8) {
       j.movd(r, j.dword_ptr[base + offset]);
       j.punpcklbw(r, *zero);
@@ -1191,6 +1284,7 @@ static AVS_FORCEINLINE void emitLoad4AsFloat(J& j, JitXmmReg& r, JitReg& base, i
     else // opLoadRelSrcF32
       j.movdqu(r, j.xmmword_ptr[base + offset]);
   }
+  emitConvert4<VEX>(j, r, nullptr, conv);
 }
 
 template<bool VEX, class J>
@@ -1202,22 +1296,227 @@ static AVS_FORCEINLINE void emitPshufd(J& j, JitXmmReg& r, uint8_t imm)
     j.pshufd(r, r, imm);
 }
 
-// Generates code (into JIT function j) that loads 4 pixels at x + dxh (x = current xcounter) as floats,
-// repeating the first/last pixel of the row where the position falls outside it.
-// - Result: pixel i of r = pixel clamp(xcounter + dxh + i, 0, planewidth - 1) of the row
-//   pointed by 'a' (a: pointer at xcounter, vertical dy offset already applied).
-// - Unstored pixels: when planewidth is not a multiple of 4, the last group extends past the
-//   row end (xcounter + i >= planewidth). Those output pixels are never stored, their values
-//   do not matter.
-// - Cases, at most one compare and branch:
-//   - dxh == 0: plain load. Pixels that are stored need no clamping.
-//   - dxh < 0: only the left edge can be crossed (stored pixels never need a pixel right of
-//     the row end). Edge: load pixels 0..3, then all = pixel 0, or a partial shift.
-//   - dxh > 0: only the right edge can be crossed. Edge: load pixels planewidth-4..planewidth-1,
-//     then all = pixel planewidth-1, or a partial shift.
-//   - planewidth < 4: only the group at xcounter == 0 is stored, one constant shuffle.
+// used from 'constant' and 'wrap' border modes
+template<bool VEX, class J>
+static AVS_FORCEINLINE void emitPshufdWithFiller(
+  J& j,
+  JitXmmReg& r,
+  uint8_t imm, // shuffle
+  uint8_t blend_mask, // bit i set: element i gets the filler: first_elements(n) or last_elements(n), n = 1..4 (VEX: vblendps immediate)
+  JitXmmReg& filler_value_r,
+  JitReg* constptr) // SSE2 only (element mask constants), nullptr for VEX
+{
+  if (blend_mask == first_elements(4)) {
+    // 4: all elements filler: nothing to shuffle or blend
+    if constexpr (VEX)
+      j.vmovaps(r, filler_value_r);
+    else
+      j.movaps(r, filler_value_r);
+    return;
+  }
+  // shuffle first
+  emitPshufd<VEX, J>(j, r, imm);
+
+  // overwrite with filler_value_r constant
+  if (blend_mask != 0)
+  {
+    if constexpr (VEX)
+    {
+      // VEX 32-bit blending (0 = r, 1 = filler_value_r)
+      j.vblendps(r, r, filler_value_r, blend_mask);
+    }
+    else
+    {
+      // SSE2 blend with the loadmask1000/1100/1110 mask constants
+      // Unfortunately blend exists only since sse 4.1
+      // SSE2: r = (filler & fillmask) | (r & ~fillmask)
+      auto element_mask = [&](int c) { return j.xmmword_ptr[*constptr + c * 16]; };
+
+      JitXmmReg t;
+      switch (blend_mask) {
+      case first_elements(1):
+      case first_elements(2):
+      case first_elements(3): {
+        // first 1,2,3 => mask1000/1100/1110
+        // prefix: the filler elements are the mask elements
+        const int fillmask = blend_mask == first_elements(1) ? loadmask1000 : blend_mask == first_elements(2) ? loadmask1100 : loadmask1110;
+        j.movaps(t, element_mask(fillmask));
+        j.andnps(t, r); // t = r & ~fillmask (andnps: dst = ~dst & src)
+        j.movaps(r, filler_value_r);
+        j.andps(r, element_mask(fillmask)); // r = filler & fillmask
+        j.orps(r, t);
+        break;
+      }
+      case last_elements(1):
+      case last_elements(2):
+      case last_elements(3): {
+        // last 1,2,3 => mask1110/1100/1000 (+inverted arguments)
+        // suffix: the filler elements are the complement of a prefix, keep the prefix of r
+        const int keepmask = blend_mask == last_elements(1) ? loadmask1110 : blend_mask == last_elements(2) ? loadmask1100 : loadmask1000;
+        j.movaps(t, element_mask(keepmask));
+        j.andnps(t, filler_value_r); // t = filler & ~keepmask
+        j.andps(r, element_mask(keepmask)); // r = r & keepmask
+        j.orps(r, t);
+        break;
+      }
+      default:
+        assert(false); // cannot occur
+      }
+    }
+  }
+}
+
+
+// Generates code that moves 'a' (pointer at xcounter in the current row of clip 'clip') to the
+// source row y + dy, handled by border mode bc.
+// Mirror and wrap modes: only a single reflection or wrap is handled, |dy| < planeheight
+// (checked when the JIT is chosen for the plane).
+template<class J>
+static void emitRowAdjust(J& j, JitReg& a, JitReg& regptrs, JitReg& SpatialY, int clip, int dy, int bc, int planeheight)
+{
+  if (dy == 0)
+    return;
+  JitReg rows; // signed row difference
+  if (bc == borderClamp || bc == borderConstant) {
+    // borderConstant: pointer clamped to a valid row, the caller replaces the result
+    // with the filler when the source row is off-screen (emitRowOffscreenCheck)
+    // repeat (clamp) mode
+    JitReg sy;
+    if (dy < 0) {
+      // Read from above: rows = -min(-dy, y)
+      j.mov(sy, SpatialY);
+      j.mov(rows, -dy);
+      j.cmp(rows, sy);
+      j.cmovg(rows, sy);
+      j.neg(rows);
+    }
+    else {
+      // Read from below: rows = min(dy, planeheight - 1 - y)
+      j.mov(sy, planeheight - 1);
+      j.sub(sy, SpatialY);
+      j.mov(rows, dy);
+      j.cmp(rows, sy);
+      j.cmovg(rows, sy);
+    }
+  }
+  else if (bc == borderWrap) {
+    // source row t = y + dy, wrapped once
+    JitReg t, alt;
+    j.mov(t, SpatialY);
+    j.add(t, dy);
+    // alt computed independently from SpatialY (not as a copy of t)
+    j.mov(alt, SpatialY);
+    if (dy < 0) {
+      j.add(alt, dy + planeheight); // t < 0: t + h
+      j.cmp(t, 0);
+      j.cmovl(t, alt);
+    }
+    else {
+      j.add(alt, dy - planeheight); // t >= h: t - h
+      j.cmp(t, planeheight);
+      j.cmovge(t, alt);
+    }
+    j.mov(rows, t);
+    j.sub(rows, SpatialY);
+  }
+  else {
+    // two types of mirror modes: borderMirror and borderReflect101
+    // source row t = y + dy, reflected once
+    JitReg t, alt;
+    j.mov(t, SpatialY);
+    j.add(t, dy);
+    if (dy < 0) {
+      j.mov(alt, bc == borderMirror ? -1 : 0); // t < 0: -1 - t (:m) or -t (:r)
+      j.sub(alt, t);
+      j.cmp(t, 0);
+      j.cmovl(t, alt);
+    }
+    else {
+      j.mov(alt, 2 * planeheight - (bc == borderMirror ? 1 : 2)); // t >= h: 2h-1-t (:m) or 2h-2-t (:r)
+      j.sub(alt, t);
+      j.cmp(t, planeheight);
+      j.cmovge(t, alt);
+    }
+    j.mov(rows, t);
+    j.sub(rows, SpatialY);
+  }
+#ifdef JITASM64
+  j.imul(rows, j.qword_ptr[regptrs + sizeof(void *) * (clip + RWPTR_START_OF_STRIDES)]); // rows * stride
+#else
+  j.imul(rows, j.dword_ptr[regptrs + sizeof(void *) * (clip + RWPTR_START_OF_STRIDES)]); // rows * stride
+#endif
+  j.add(a, rows);
+}
+
+// borderConstant: emits a jump to labelOnScreen when the source row y + dy is inside the plane.
+// The code following it (up to the label) is for an off-screen row: fill with the filler.
+template<class J>
+static void emitRowOffscreenCheck(J& j, JitReg& SpatialY, int dy, int planeheight, const std::string& labelOnScreen)
+{
+  if (dy < 0) {
+    j.cmp(SpatialY, -dy);
+    j.jge(labelOnScreen); // y + dy >= 0
+  }
+  else {
+    j.cmp(SpatialY, planeheight - 1 - dy);
+    j.jle(labelOnScreen); // y + dy <= planeheight - 1
+  }
+}
+
+// Generates code (into JIT function j) that loads 4 pixels at x + dxh (x = current xcounter) as floats.
+// Why four: 4 float pixels fill one 128 bit XMM register.
+// Where the position falls outside the row, border mode bc decides:
+// - repeat the first/last pixel (borderClamp, :c)
+// - mirror (borderMirror :m, borderReflect101 :r).
+// - constant (borderConstant :k): the filler value of filler_r (from the stack, see foldConstants).
+//   The loaded pixels get their scale_inputs conversion (conv) right after the load, the filler
+//   is already in the expression's domain: it is blended in after the conversion.
+// - wrap (borderWrap :w): the pixel from the other end of the row (periodic)
+// Result: pixel i of r = pixel borderIndex(xcounter + dxh + i, planewidth, bc) of the row
+// pointed by 'a' (a: pointer at xcounter, vertical dy offset already applied).
+// For :k: the filler when xcounter + dxh + i is outside 0..planewidth-1. An off-screen
+// source row (vertical) is not handled here: 'a' points to a clamped valid row, the caller
+// replaces the whole result with the filler (emitRowOffscreenCheck).
+//
+// Mirror and wrap modes reflect or wrap once: valid for -(planewidth-1) <= dx <= planewidth-3
+// (:m, :w) or planewidth-4 (:r). Other offsets cannot be handled by JIT, and handled by scalar C path.
+//
+// When planewidth is not a multiple of 4, the last group extends past the row end
+// (xcounter + i >= planewidth). Those output pixels are never stored, their values
+// do not matter.
+//
+// Cases:
+// - dxh == 0: simple load
+// - dxh < 0: left edge crossed
+//   Partial (group crosses the edge): load pixels 0..3, constant shuffle.
+//     constant: elements 0..s-1 get the filler (emitPshufdWithFiller, blend mask 1, 3, 7).
+//     wrap: elements 0..s-1 come from the row end: pixels planewidth-4..planewidth-1 are loaded
+//     as well, shuffled, and blended in (blend mask 1, 3, 7).
+//   Full (group entirely left of the row):
+//   - clamp: load pixels 0..3, all = pixel 0;
+//   - mirror: the needed pixels are a reversed run of 4 inside the row, load it, reverse.
+//   - constant: all = filler, no load.
+//   - wrap: a forward run of 4 from newx+planewidth, at a constant offset from 'a'
+//     (dxh+planewidth), no shuffle.
+// - dxh > 0: right edge crossed.
+//   Partial: load pixels planewidth-4..planewidth-1, constant shuffle.
+//     constant: elements 4-t..3 get the filler (blend mask 8, C, E).
+//     wrap: elements 4-t..3 come from the row start: pixels 0..3 are loaded as well, shuffled,
+//     and blended in (blend mask 8, C, E).
+//   Full:
+//   - clamp: same load, all = pixel planewidth-1
+//   - mirror: reversed run of 4, its start limited to >= 0 (only groups without
+//     stored pixels would start lower).
+//   - constant: all = filler, no load.
+//   - wrap: a forward run of 4 from newx-planewidth, at a constant offset from 'a'
+//     (dxh-planewidth), no shuffle. For groups without stored pixels the run may extend
+//     past the row end, not further than a normal load of the same group.
+// - planewidth < 4: only the group at xcounter == 0 is stored, one constant shuffle
+//   (any dx, any mode). constant: plus a blend of the off-screen elements; no load when
+//   all elements are off-screen.
+//
 // - Constant shuffles: xcounter is a multiple of 4, so the shift of a partial edge case is
-//   known at code generation time (pshufd immediate, see lanes_imm).
+//   known at code generation time (pshufd immediate, see elements_imm).
 // - Shuffles are done after conversion to float: one implementation for 8/16/32 bit,
 //   only emitLoad4AsFloat depends on the pixel type.
 // - Reads stay within [0, planewidth) of the row, except where a normal (non-relative) load of
@@ -1225,26 +1524,46 @@ static AVS_FORCEINLINE void emitPshufd(J& j, JitXmmReg& r, uint8_t imm)
 // - Used by the SSE2 (VEX=false) and AVX2 (VEX=true) evaluators; xcounter is a multiple of 4
 //   in both (8 or 16 in AVX2).
 template<bool VEX, class J>
-static void emitRelLoad4(J& j, JitXmmReg& r, JitReg& a, JitReg& regptrs, const JitXmmReg* zero, int op, int dxh, int planewidth)
+static void emitRelLoad4(J& j, JitXmmReg& r, JitReg& a, JitReg& regptrs, const JitXmmReg* zero, int op, int dxh, int planewidth, int bc,
+  JitXmmReg& filler_r, // borderConstant: the filler value in all 4 elements
+  const ExprLoadConv* conv, // borderConstant: scale_inputs conversion of the loaded pixels, done before the filler is blended in
+  JitReg* sse_helper_constptr) // SSE2 (VEX=false) only: constant table for emitPshufdWithFiller, nullptr for VEX
 {
   const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
   if (dxh == 0) {
-    // valid lanes need no clamping
-    emitLoad4AsFloat<VEX>(j, r, a, 0, op, zero);
+    // valid elements need no border handling
+    emitLoad4AsFloat<VEX>(j, r, a, 0, op, zero, conv);
     return;
   }
   if (planewidth < 4) {
-    // only the group at xcounter == 0 has valid lanes: everything is known at compile time
+    // only the group at xcounter == 0 has valid elements: everything is known at compile time
+    // :k mode: off-screen elements get the filler. Only stored elements (i < planewidth) matter, so only one
+    // side is checked: dxh < 0: a prefix of elements, dxh > 0: a suffix (contiguous blend mask)
+    uint8_t blendmask = 0;
+    if (bc == borderConstant) {
+      // dxh < 0: elements i + dxh < 0, the first -dxh elements; dxh > 0: elements i + dxh >= planewidth, the last 4-(planewidth-dxh)
+      blendmask = dxh < 0 ? first_elements(std::min(-dxh, 4)) : last_elements(std::max(0, std::min(4 - (planewidth - dxh), 4)));
+      if (blendmask == first_elements(4)) {
+        emitPshufdWithFiller<VEX>(j, r, 0, first_elements(4), filler_r, sse_helper_constptr); // all filler, no source pixel needed
+        return;
+      }
+    }
     JitReg rowp, xb;
     j.mov(xb, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
     j.shl(xb, shift);
     j.mov(rowp, a);
     j.sub(rowp, xb); // start of row
-    emitLoad4AsFloat<VEX>(j, r, rowp, 0, op, zero);
-    const int w1 = planewidth - 1;
-    emitPshufd<VEX>(j, r, lanes_imm([=](int i) { return std::max(0, std::min(i + dxh, w1)); }));
+    emitLoad4AsFloat<VEX>(j, r, rowp, 0, op, zero, conv);
+    if (bc != borderConstant) {
+      emitPshufd<VEX>(j, r, elements_imm([=](int i) { return borderIndex(i + dxh, planewidth, bc); }));
+    }
+    else {
+      emitPshufdWithFiller<VEX>(j, r, elements_imm([=](int i) { return std::max(0, std::min(i + dxh, 3)); }), blendmask, filler_r, sse_helper_constptr);
+    }
+
     return;
   }
+  // trivial cases are done
 
   std::string LabelEdge = "relEdge" + j.getLabelCount();
   std::string LabelPartial = "relPartial" + j.getLabelCount();
@@ -1253,7 +1572,7 @@ static void emitRelLoad4(J& j, JitXmmReg& r, JitReg& a, JitReg& regptrs, const J
   JitReg newx;
   j.mov(newx, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
   j.add(newx, dxh);
-  // dxh < 0: only the left edge needs clamping, valid lanes never reach the right edge.
+  // dxh < 0: only the left edge needs border handling, valid elements never reach the right edge.
   // dxh > 0: only the right edge.
   j.cmp(newx, dxh < 0 ? 0 : planewidth - 4);
   if (dxh < 0)
@@ -1261,43 +1580,160 @@ static void emitRelLoad4(J& j, JitXmmReg& r, JitReg& a, JitReg& regptrs, const J
   else
     j.jg(LabelEdge); // newx > planewidth - 4
 
-  emitLoad4AsFloat<VEX>(j, r, a, dxh << shift, op, zero); // normal case: no clamping
+  emitLoad4AsFloat<VEX>(j, r, a, dxh << shift, op, zero, conv); // normal case: no border handling
   j.jmp(LabelEnd);
 
   j.L(LabelEdge);
   JitReg rowp;
   j.mov(rowp, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
-  j.shl(rowp, shift);
+  j.shl(rowp, shift); // index to real ptr 1-2-4x uint8/uint16/float
   j.neg(rowp);
   j.add(rowp, a); // start of row
+  const uint8_t reverse = elements_imm([](int i) { return 3 - i; });
   if (dxh < 0) {
-    // load pixels 0..3
-    emitLoad4AsFloat<VEX>(j, r, rowp, 0, op, zero);
     const int s = (-dxh) & 3; // -newx for the partial case, -3 < newx < 0
     if (s != 0) {
       j.cmp(newx, -4);
       j.jg(LabelPartial);
     }
-    emitPshufd<VEX>(j, r, lanes_imm([](int) { return 0; })); // newx <= -4: all lanes pixel 0
+    // newx <= -4: all elements are left of the row start
+    if (bc == borderClamp) {
+      emitLoad4AsFloat<VEX>(j, r, rowp, 0, op, zero, conv);
+      emitPshufd<VEX>(j, r, elements_imm([](int) { return 0; })); // all elements pixel 0
+    }
+    else if (bc == borderConstant) {
+      // :k mode: all elements filler, no source pixel needed
+      emitPshufdWithFiller<VEX>(j, r, 0, first_elements(4) /* all elements */, filler_r, sse_helper_constptr);
+    }
+    else if (bc == borderWrap) {
+      // wrapped: pixels newx+i+w, a forward run of 4 inside the row (1 <= newx+w, newx+w+3 <= w-1).
+      // Relative to 'a' (xcounter) it is a constant offset: dxh + w
+      emitLoad4AsFloat<VEX>(j, r, a, (dxh + planewidth) << shift, op, zero, conv);
+    }
+    else {
+      // two kinds of mirror modes: borderMirror and borderReflect101
+      // mirrored: pixels -1-newx-i (:m) or -newx-i (:r), a reversed run of 4 inside the row.
+      // Its first pixel (of element 3) from the row start:
+      //   c - newx = c - dxh - X, c = -4 (:m), -3 (:r);
+      // relative to 'a' (= row start + X): c - dxh - 2X.
+      // Note: this JIT + x86 had problems (=crash) with too many active registers, so we try to
+      // lower the requirements by using only one register. (workaround until I figure out what's
+      // behind the problem)
+      // X is read from memory instead of being kept in a register. On x86 the earlier version
+      // with more registers crashed (wrap mode, float, dx a negative multiple of 4, dy != 0;
+      // x64 was O.K.), so the wrap and mirror full-edge cases were rewritten using this
+      // workaround.
+      // FIXME why original failed.
+      JitReg b;
+      j.mov(b, (bc == borderMirror ? -4 : -3) - dxh);
+      j.sub(b, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
+      j.sub(b, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
+      j.shl(b, shift); // index to real ptr 1-2-4x uint8/uint16/float
+      j.add(b, a);
+      emitLoad4AsFloat<VEX>(j, r, b, 0, op, zero, conv);
+      emitPshufd<VEX>(j, r, reverse);
+    }
     if (s != 0) {
       j.jmp(LabelEnd);
       j.L(LabelPartial);
-      emitPshufd<VEX>(j, r, lanes_imm([=](int i) { return std::max(i - s, 0); }));
+      // all needed pixels are within 0..3 (wrap: also within planewidth-4..planewidth-1)
+      emitLoad4AsFloat<VEX>(j, r, rowp, 0, op, zero, conv);
+      if (bc == borderWrap) {
+        // elements 0..s-1 wrap to the row end: pixels w-s+i, block w-4..w-1 index 4-s+i (blend mask 1, 3, 7);
+        // the others pixel i - s from the row start
+        JitXmmReg u;
+        emitLoad4AsFloat<VEX>(j, u, rowp, (planewidth - 4) << shift, op, zero, conv);
+        emitPshufd<VEX>(j, u, elements_imm([=](int i) { return i < s ? 4 - s + i : 3; }));
+        const uint8_t blendmask = first_elements(s);
+        emitPshufdWithFiller<VEX>(j, r, elements_imm([=](int i) { return std::max(i - s, 0); }), blendmask, u, sse_helper_constptr);
+      }
+      else if (bc != borderConstant)
+        emitPshufd<VEX>(j, r, elements_imm([=](int i) { return borderIndex(i - s, planewidth, bc); }));
+      else {
+        // elements 0..s-1 are left of the row start: filler (blend mask 1, 3, 7), the others pixel i - s
+        const uint8_t blendmask = first_elements(s);
+        emitPshufdWithFiller<VEX>(j, r, elements_imm([=](int i) { return std::max(i - s, 0); }), blendmask, filler_r, sse_helper_constptr);
+      }
     }
   }
   else {
-    // load pixels planewidth-4..planewidth-1
-    emitLoad4AsFloat<VEX>(j, r, rowp, (planewidth - 4) << shift, op, zero);
-    const int t = (dxh - planewidth) & 3; // newx - (planewidth - 4) for the partial case, 0 < t < 4
-    if (t == 1 || t == 2) {
+    const int t = (dxh - planewidth) & 3;
+    // newx - (planewidth - 4) for the partial case, 0 < t < 4
+
+    // clamp (edge repeat): with t == 3 only pixel 0 is inside the row, all 4 elements
+    // get pixel at (planewidth-1), the same as the full case, where
+    // no partial branch needed (t == 0 is the trivial no partial case)
+    //
+    //   loaded: the last 4 pixels of the row      P Q R S | (row end)
+    //   block index                               0 1 2 3 |
+    //                        clamp                                  constant (:k), k: filler
+    //   t   group starts at  needs        -> indexes                needs        -> indexes  blend mask
+    //   1        Q           Q R S + S       1 2 3 3                Q R S + k       1 2 3 k     8
+    //   2        R           R S + S S       2 3 3 3                R S + k k       2 3 k k     C
+    //   3        S           S + S S S       3 3 3 3 = full case    S + k k k       3 k k k     E
+    const bool hasPartial = bc == borderClamp ? (t == 1 || t == 2) : (t != 0);
+    if (hasPartial) {
       j.cmp(newx, planewidth);
       j.jl(LabelPartial);
     }
-    emitPshufd<VEX>(j, r, lanes_imm([](int) { return 3; })); // newx >= planewidth: all lanes pixel planewidth-1
-    if (t == 1 || t == 2) {
+    // newx >= planewidth: all elements are right of the row end
+    if (bc == borderClamp) {
+      emitLoad4AsFloat<VEX>(j, r, rowp, (planewidth - 4) << shift /* byte index */, op, zero, conv);
+      emitPshufd<VEX>(j, r, elements_imm([](int) { return 3; })); // all elements pixel planewidth-1
+    }
+    else if (bc == borderConstant) {
+      // :k mode: all elements filler, no source pixel needed
+      emitPshufdWithFiller<VEX>(j, r, 0, first_elements(4) /* all elements */, filler_r, sse_helper_constptr);
+    }
+    else if (bc == borderWrap) {
+      // wrapped: pixels newx-w+i, a forward run of 4 from newx-w (>= 0).
+      // Relative to 'a' (xcounter) it is a constant offset: dxh - w.
+      // For groups without stored pixels the run may extend past the row end,
+      // but not further than a normal load of the same pixel group would read.
+      emitLoad4AsFloat<VEX>(j, r, a, (dxh - planewidth) << shift, op, zero, conv);
+    }
+    else {
+      // w: planewidth
+      // mirrored: pixels 2w-1-newx-i (:m) or 2w-2-newx-i (:r), a reversed run of 4.
+      // Its start is negative only for groups without stored pixels: limited to 0.
+      // First pixel (of element 3) from the row start: c - newx = c - dxh - X, c = 2w-4 (:m), 2w-5 (:r),
+      // limited to >= 0, then made relative to 'a' (= row start + X) by subtracting X again.
+      // X read from memory (low register pressure, see the x86 note at the left edge mirror case).
+      JitReg b, z;
+      j.mov(b, 2 * planewidth - (bc == borderMirror ? 4 : 5) - dxh);
+      j.sub(b, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]); // b = source pixel of element 3 from the row start
+      j.mov(z, 0);
+      j.cmp(b, 0);
+      j.cmovl(b, z); // limited to 0
+      j.sub(b, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]); // relative to 'a'
+      j.shl(b, shift); // index to real ptr 1-2-4x uint8/uint16/float
+      j.add(b, a);
+      emitLoad4AsFloat<VEX>(j, r, b, 0, op, zero, conv);
+      emitPshufd<VEX>(j, r, reverse);
+    }
+
+    if (hasPartial) {
       j.jmp(LabelEnd);
       j.L(LabelPartial);
-      emitPshufd<VEX>(j, r, lanes_imm([=](int i) { return std::min(i + t, 3); }));
+      // all needed pixels are within planewidth-4..planewidth-1 (wrap: also within 0..3)
+      emitLoad4AsFloat<VEX>(j, r, rowp, (planewidth - 4) << shift, op, zero, conv);
+      if (bc == borderWrap) {
+        // elements 4-t..3 wrap to the row start: pixels t+i-4 (blend mask 8, C, E);
+        // the others block pixel t + i
+        JitXmmReg u;
+        emitLoad4AsFloat<VEX>(j, u, rowp, 0, op, zero, conv);
+        emitPshufd<VEX>(j, u, elements_imm([=](int i) { return i < 4 - t ? 0 : t + i - 4; }));
+        const uint8_t blendmask = last_elements(t);
+        emitPshufdWithFiller<VEX>(j, r, elements_imm([=](int i) { return std::min(t + i, 3); }), blendmask, u, sse_helper_constptr);
+      }
+      else if (bc != borderConstant) {
+        emitPshufd<VEX>(j, r, elements_imm([=](int i) { return borderIndex(planewidth - 4 + t + i, planewidth, bc) - (planewidth - 4); }));
+      }
+      else {
+        // elements 4-t..3 are right of the row end: filler (blend mask 8, C, E), the others block pixel t + i
+        const uint8_t blendmask = last_elements(t);
+        emitPshufdWithFiller<VEX>(j, r, elements_imm([=](int i) { return borderIndex(planewidth - 4 + t + i, planewidth, bc) - (planewidth - 4); }), blendmask, filler_r, sse_helper_constptr);
+      }
     }
   }
   j.L(LabelEnd);
@@ -1334,6 +1770,7 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
   // Load 8 pixels from [base + offset] and convert them to 2x4 floats
   AVS_FORCEINLINE void load8AsFloat(XmmReg& r1, XmmReg& r2, Reg& base, int offset, int op, XmmReg& zero)
   {
+    // widen by unpacks
     if (op == opLoadRelSrc8) {
       movq(r1, mmword_ptr[base + offset]);
       punpcklbw(r1, zero);
@@ -1357,38 +1794,62 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
     }
   }
 
-  AVS_FORCEINLINE void relLoad4(XmmReg& r, Reg& a, Reg& regptrs, XmmReg& zero, int op, int dxh)
+  // borderConstant: broadcast the filler value into all 4 elements
+  AVS_FORCEINLINE void loadFiller(XmmReg& r, float filler)
   {
-    emitRelLoad4<false>(*this, r, a, regptrs, &zero, op, dxh, planewidth);
+    uint32_t bits;
+    memcpy(&bits, &filler, sizeof(bits)); // C++17 equivalent of C++20 std::bit_cast<uint32_t>(filler)
+    Reg t;
+    mov(t, (int32_t)bits);
+#ifdef JITASM64
+    movq(r, t);
+#else
+    movd(r, t);
+#endif
+    pshufd(r, r, 0);
+  }
+
+  AVS_FORCEINLINE void relLoad4(XmmReg& r, Reg& a, Reg& regptrs, XmmReg& zero, int op, int dxh, int bc, XmmReg& filler_r, const ExprLoadConv* conv, Reg& constptr)
+  {
+    emitRelLoad4<false>(*this, r, a, regptrs, &zero, op, dxh, planewidth, bc, filler_r, conv, &constptr);
   }
 
   // Generates code that loads 8 pixels at x + dx (x = current xcounter, multiple of 8) as floats.
-  // Fast path: when no pixel of the group needs clamping, a single 8-pixel load.
+  // Fast path: when no pixel of the group needs border handling, a single 8-pixel load.
   // Otherwise (row edges, a few groups per row) two relLoad4, at dx and dx + 4: the second
   // half's stored pixels are a subset of what relLoad4 assumes as stored, so its rules hold.
-  AVS_FORCEINLINE void relLoad8(XmmReg& r1, XmmReg& r2, Reg& a, Reg& regptrs, XmmReg& zero, int op, int dx)
+  AVS_FORCEINLINE void relLoad8(XmmReg& r1, XmmReg& r2, Reg& a, Reg& regptrs, XmmReg& zero, int op, int dx, int bc, XmmReg& filler_r, const ExprLoadConv* conv, Reg& constptr)
   {
     const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
     if (dx == 0) {
-      load8AsFloat(r1, r2, a, 0, op, zero); // stored pixels need no clamping
+      load8AsFloat(r1, r2, a, 0, op, zero); // stored pixels need no border handling
+      emitConvert4<false>(*this, r1, &r2, conv);
       return;
     }
+    // trivial case is done
     std::string LabelEdge = "relEdge8_" + getLabelCount();
     std::string LabelEnd = "relEnd8_" + getLabelCount();
     Reg newx;
     mov(newx, ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
     add(newx, dx);
-    // dx < 0: only the left edge, dx > 0: only the right edge can be crossed (see relLoad4)
+    // dx < 0: only the left edge
+    // dx > 0: only the right edge can be crossed (similar to relLoad4)
     cmp(newx, dx < 0 ? 0 : planewidth - 8);
     if (dx < 0)
       jl(LabelEdge); // newx < 0
     else
       jg(LabelEdge); // newx > planewidth - 8
+
+    // direct load, no border handling needed
     load8AsFloat(r1, r2, a, dx << shift, op, zero);
+    emitConvert4<false>(*this, r1, &r2, conv);
     jmp(LabelEnd);
+
     L(LabelEdge);
-    relLoad4(r1, a, regptrs, zero, op, dx);
-    relLoad4(r2, a, regptrs, zero, op, dx + 4);
+    // with border handling
+    relLoad4(r1, a, regptrs, zero, op, dx, bc, filler_r, conv, constptr);
+    relLoad4(r2, a, regptrs, zero, op, dx + 4, bc, filler_r, conv, constptr);
+
     L(LabelEnd);
   }
 
@@ -1475,48 +1936,39 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
         // common part follows for single 4 pixels/cycle and dual 8 pixels/cycle
         Reg a;
         mov(a, ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_INPUTS)]); // current pixel group of current line
-                                                                                       // adjust read pointer vertically for nonzero dy, keep 0..height-1 limits
-        if (iter.dy < 0) {
-          // Read from above
-          Reg dy, sy;
-          mov(sy, SpatialY);
-          mov(dy, -iter.dy); // dy = -dy;
-          cmp(dy, sy);
-          cmovg(dy, sy); // mov if greater: if (dy > SpatialY) dy = SpatialY;
-#ifdef JITASM64
-          imul(dy, qword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
-#else
-          imul(dy, dword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
-#endif
-          sub(a, dy); // a -= dy * stride
-        }
-        else if (iter.dy > 0) {
-          // Read from bottom
-          Reg dy, sy;
-          mov(sy, planeheight - 1);
-          sub(sy, SpatialY);
-          mov(dy, iter.dy);
-          cmp(dy, sy);
-          cmovg(dy, sy); // mov if greater: if (dy > (planeheight - 1) - SpatialY) dy = SpatialY;
-#ifdef JITASM64
-          imul(dy, qword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
-#else
-          imul(dy, dword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
-#endif
-          add(a, dy); // a += dy * stride
-        }
-
-        // dy shift is done already, 'a' points to xcounter in the source row
+        emitRowAdjust(*this, a, regptrs, SpatialY, iter.e.ival, iter.dy, iter.bc, planeheight);
+        // 'a' points to xcounter in the source row
         if (processSingle) {
           // LoadRel8/16/32, single register mode 1x4 pixels
           XmmReg r1;
-          relLoad4(r1, a, regptrs, zero, iter.op, iter.dx);
+          XmmReg filler_r; // borderConstant: filler value in all elements
+          if (iter.bc == borderConstant)
+            loadFiller(filler_r, iter.filler);
+          relLoad4(r1, a, regptrs, zero, iter.op, iter.dx, iter.bc, filler_r, &iter.conv, constptr);
+          if (iter.bc == borderConstant && iter.dy != 0) {
+            std::string LabelOnScreen = "relRowOn" + getLabelCount();
+            emitRowOffscreenCheck(*this, SpatialY, iter.dy, planeheight, LabelOnScreen);
+            // this can be skipped by a conditional jump from the function above
+            movaps(r1, filler_r); // source row off-screen: all filler
+            L(LabelOnScreen);
+          }
           stack1.push_back(r1);
         }
         else {
           // LoadRel8/16/32, dual register mode 2x4 pixels
           XmmReg r1, r2;
-          relLoad8(r1, r2, a, regptrs, zero, iter.op, iter.dx);
+          XmmReg filler_r; // borderConstant: filler value in all elements
+          if (iter.bc == borderConstant)
+            loadFiller(filler_r, iter.filler);
+          relLoad8(r1, r2, a, regptrs, zero, iter.op, iter.dx, iter.bc, filler_r, &iter.conv, constptr);
+          if (iter.bc == borderConstant && iter.dy != 0) {
+            std::string LabelOnScreen = "relRowOn" + getLabelCount();
+            emitRowOffscreenCheck(*this, SpatialY, iter.dy, planeheight, LabelOnScreen);
+            // next two fills can be skipped by a conditional jump from the function above
+            movaps(r1, filler_r); // source row off-screen: all filler
+            movaps(r2, filler_r);
+            L(LabelOnScreen);
+          }
           stack.push_back(std::make_pair(r1, r2));
         }
       } // oploadRel8/16/32
@@ -2370,10 +2822,12 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
   AVS_FORCEINLINE void load8AsFloat(YmmReg& r, Reg& base, int offset, int op)
   {
     if (op == opLoadRelSrc8) {
+      // 8->32 bits like _mm256_cvtepu8_epi32
       vpmovzxbd(r, qword_ptr[base + offset]);
       vcvtdq2ps(r, r);
     }
     else if (op == opLoadRelSrc16) {
+      // 16->32 bit like _mm256_cvtepu16_epi32
       vpmovzxwd(r, xmmword_ptr[base + offset]);
       vcvtdq2ps(r, r);
     }
@@ -2381,16 +2835,63 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
       vmovdqu(r, ymmword_ptr[base + offset]);
   }
 
+  // borderConstant: scale_inputs conversion of the 8 loaded pixels in r (and r2, when given),
+  // see emitConvert4. No code when there is no conversion.
+  AVS_FORCEINLINE void convert8(YmmReg& r, YmmReg* r2, const ExprLoadConv* conv)
+  {
+    if (conv == nullptr || !conv->active())
+      return;
+    enum { Sub, Mul, Add };
+    auto step = [&](float value, int kind) {
+      uint32_t bits;
+      memcpy(&bits, &value, sizeof(bits)); // C++17 equivalent of C++20 std::bit_cast<uint32_t>(value)
+      Reg32 t;
+      XmmReg cx;
+      YmmReg c;
+      mov(t, (int32_t)bits);
+      vmovd(cx, t);
+      vbroadcastss(c, cx);
+      for (YmmReg* x : { &r, r2 }) {
+        if (x == nullptr)
+          continue;
+        if (kind == Sub) vsubps(*x, *x, c);
+        else if (kind == Mul) vmulps(*x, *x, c);
+        else vaddps(*x, *x, c);
+      }
+    };
+    if (conv->sub != 0.0f) step(conv->sub, Sub);
+    if (conv->mul != 1.0f) step(conv->mul, Mul);
+    if (conv->add != 0.0f) step(conv->add, Add);
+    if (conv->add_uv != 0.0f) step(conv->add_uv, Add);
+  }
+
+  // borderConstant: broadcast the filler value into all 4 elements (VEX)
+  AVS_FORCEINLINE void loadFiller(XmmReg& r, float filler)
+  {
+    uint32_t bits;
+    memcpy(&bits, &filler, sizeof(bits)); // C++17 equivalent of C++20 std::bit_cast<uint32_t>(filler)
+    Reg t;
+    mov(t, (int32_t)bits);
+#ifdef JITASM64
+    vmovq(r, t);
+#else
+    vmovd(r, t);
+#endif
+    vpshufd(r, r, 0);
+  }
+
   // Generates code that loads 8 pixels at x + dx (x = current xcounter, multiple of 8) as floats,
-  // repeating the first/last pixel of the row where the position falls outside it.
-  // Fast path: when no pixel of the group needs clamping, a single 8-pixel load.
+  // off-screen positions handled by border mode bc (see emitRelLoad4).
+  // Fast path: when no pixel of the group is off-screen, a single 8-pixel load.
   // Otherwise (row edges, a few groups per row) emitRelLoad4 (VEX) at dx and dx + 4, combined
   // into r: the second half's stored pixels are a subset of what emitRelLoad4 assumes as stored.
-  AVS_FORCEINLINE void relLoad8(YmmReg& r, Reg& a, Reg& regptrs, YmmReg& zero, int op, int dx)
+  // borderConstant: conv is the scale_inputs conversion of the loaded pixels (before the filler)
+  AVS_FORCEINLINE void relLoad8(YmmReg& r, Reg& a, Reg& regptrs, YmmReg& zero, int op, int dx, int bc, XmmReg& filler_r, const ExprLoadConv* conv)
   {
     const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
     if (dx == 0) {
-      load8AsFloat(r, a, 0, op); // stored pixels need no clamping
+      load8AsFloat(r, a, 0, op); // stored pixels need no border handling
+      convert8(r, nullptr, conv);
       return;
     }
     std::string LabelEdge = "relEdge8_" + getLabelCount();
@@ -2398,18 +2899,20 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
     Reg newx;
     mov(newx, ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
     add(newx, dx);
-    // dx < 0: only the left edge, dx > 0: only the right edge can be crossed (see emitRelLoad4)
+    // dx < 0: only the left edge
+    // dx > 0: only the right edge can be crossed (see emitRelLoad4)
     cmp(newx, dx < 0 ? 0 : planewidth - 8);
     if (dx < 0)
       jl(LabelEdge); // newx < 0
     else
       jg(LabelEdge); // newx > planewidth - 8
     load8AsFloat(r, a, dx << shift, op);
+    convert8(r, nullptr, conv);
     jmp(LabelEnd);
     L(LabelEdge);
     XmmReg lo, hi;
-    emitRelLoad4<true>(*this, lo, a, regptrs, nullptr, op, dx, planewidth);
-    emitRelLoad4<true>(*this, hi, a, regptrs, nullptr, op, dx + 4, planewidth);
+    emitRelLoad4<true>(*this, lo, a, regptrs, nullptr, op, dx, planewidth, bc, filler_r, conv, nullptr);
+    emitRelLoad4<true>(*this, hi, a, regptrs, nullptr, op, dx + 4, planewidth, bc, filler_r, conv, nullptr);
     vinsertf128(r, zero, lo, 0);
     vinsertf128(r, r, hi, 1);
     L(LabelEnd);
@@ -2417,14 +2920,16 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
 
   // Generates code that loads 16 pixels at x + dx (x = current xcounter, multiple of 16) as floats.
   // Fast path: a single check for the whole group; otherwise relLoad8 at dx and dx + 8.
-  AVS_FORCEINLINE void relLoad16(YmmReg& r1, YmmReg& r2, Reg& a, Reg& regptrs, YmmReg& zero, int op, int dx)
+  AVS_FORCEINLINE void relLoad16(YmmReg& r1, YmmReg& r2, Reg& a, Reg& regptrs, YmmReg& zero, int op, int dx, int bc, XmmReg& filler_r, const ExprLoadConv* conv)
   {
     const int shift = op == opLoadRelSrc8 ? 0 : op == opLoadRelSrc16 ? 1 : 2; // log2(bytes per pixel)
     if (dx == 0) {
-      load8AsFloat(r1, a, 0, op); // stored pixels need no clamping
+      load8AsFloat(r1, a, 0, op); // stored pixels need no border handling
       load8AsFloat(r2, a, 8 << shift, op);
+      convert8(r1, &r2, conv);
       return;
     }
+    // trivial case is done
     std::string LabelEdge = "relEdge16_" + getLabelCount();
     std::string LabelEnd = "relEnd16_" + getLabelCount();
     Reg newx;
@@ -2435,12 +2940,16 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
       jl(LabelEdge); // newx < 0
     else
       jg(LabelEdge); // newx > planewidth - 16
+    // no edge handling needed
     load8AsFloat(r1, a, dx << shift, op);
     load8AsFloat(r2, a, (dx + 8) << shift, op);
+    convert8(r1, &r2, conv);
     jmp(LabelEnd);
+
     L(LabelEdge);
-    relLoad8(r1, a, regptrs, zero, op, dx);
-    relLoad8(r2, a, regptrs, zero, op, dx + 8);
+    // edge handling needed
+    relLoad8(r1, a, regptrs, zero, op, dx, bc, filler_r, conv);
+    relLoad8(r2, a, regptrs, zero, op, dx + 8, bc, filler_r, conv);
     L(LabelEnd);
   }
 
@@ -2451,12 +2960,12 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
     std::list<YmmReg> stack1;
 
     // reason of masking: prevent loading 'junk', out of frame pixels, which can be NaN floats for example.
-    // If processingLoop works in dual lane mode (!processSingle), masking occurs only for the high lane,
-    // when there is no need for dual lanes (width mod 16 is <= 8 pixels), processSingle=true is used
+    // If processingLoop works in dual register mode (!processSingle), masking occurs only for the high register,
+    // when there is no need for dual registers (width mod 16 is <= 8 pixels), processSingle=true is used
     const bool maskIt = maskUnused && ((planewidth & 7) != 0);
     const int mask = ((1 << (planewidth & 7)) - 1);
 
-    // mask by zero when we have only 1-7 valid pixels in the lower (single-lane) or upper (dual-lane)
+    // mask by zero when we have only 1-7 valid pixels in the lower (single register) or upper (dual register)
     // 1: 2-1   = 1   // 00000001
     // 2: 4-1   = 3   // 00000011
     // 7: 128-1 = 127 // 01111111
@@ -2549,47 +3058,39 @@ struct ExprEvalAvx2 : public jitasm::function<void, ExprEvalAvx2, uint8_t *, con
         // either dx or dy is nonzero
         Reg a;
         mov(a, ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_INPUTS)]); // current pixel group of current line
-        // adjust read pointer vertically for nonzero dy, keep 0..height-1 limits
-        if (iter.dy < 0) {
-          // Read from above
-          Reg dy, sy;
-          mov(sy, SpatialY);
-          mov(dy, -iter.dy); // dy = -dy;
-          cmp(dy, sy);
-          cmovg(dy, sy); // if (dy > SpatialY) dy = SpatialY;
-#ifdef JITASM64
-          imul(dy, qword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
-#else
-          imul(dy, dword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
-#endif
-          sub(a, dy); // a -= dy * stride
-        }
-        else if (iter.dy > 0) {
-          // Read from bottom
-          Reg dy, sy;
-          mov(sy, planeheight - 1);
-          sub(sy, SpatialY);
-          mov(dy, iter.dy);
-          cmp(dy, sy);
-          cmovg(dy, sy); // if (dy > (planeheight - 1) - SpatialY) dy = (planeheight - 1) - SpatialY;
-#ifdef JITASM64
-          imul(dy, qword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
-#else
-          imul(dy, dword_ptr[regptrs + sizeof(void *) * (iter.e.ival + RWPTR_START_OF_STRIDES)]); // dy * stride
-#endif
-          add(a, dy); // a += dy * stride
-        }
-        // dy shift is done already, 'a' points to xcounter in the source row
+
+        // handles y shift and vertical border repeat/reflextions
+        emitRowAdjust(*this, a, regptrs, SpatialY, iter.e.ival, iter.dy, iter.bc, planeheight);
+        // 'a' now points to xcounter in the source row
         if (processSingle) {
           // 8 pixels
           YmmReg r1;
-          relLoad8(r1, a, regptrs, zero, iter.op, iter.dx);
+          XmmReg filler_r; // borderConstant: filler value in all elements
+          if (iter.bc == borderConstant)
+            loadFiller(filler_r, iter.filler);
+          relLoad8(r1, a, regptrs, zero, iter.op, iter.dx, iter.bc, filler_r, &iter.conv);
+          if (iter.bc == borderConstant && iter.dy != 0) {
+            std::string LabelOnScreen = "relRowOn" + getLabelCount();
+            emitRowOffscreenCheck(*this, SpatialY, iter.dy, planeheight, LabelOnScreen);
+            vbroadcastss(r1, filler_r); // source row off-screen: all filler
+            L(LabelOnScreen);
+          }
           stack1.push_back(r1);
         }
         else {
           // 16 pixels
           YmmReg r1, r2;
-          relLoad16(r1, r2, a, regptrs, zero, iter.op, iter.dx);
+          XmmReg filler_r; // borderConstant: filler value in all elements
+          if (iter.bc == borderConstant)
+            loadFiller(filler_r, iter.filler);
+          relLoad16(r1, r2, a, regptrs, zero, iter.op, iter.dx, iter.bc, filler_r, &iter.conv);
+          if (iter.bc == borderConstant && iter.dy != 0) {
+            std::string LabelOnScreen = "relRowOn" + getLabelCount();
+            emitRowOffscreenCheck(*this, SpatialY, iter.dy, planeheight, LabelOnScreen);
+            vbroadcastss(r1, filler_r); // source row off-screen: all filler
+            vbroadcastss(r2, filler_r);
+            L(LabelOnScreen);
+          }
           stack.push_back(std::make_pair(r1, r2));
         }
       }
@@ -3791,17 +4292,28 @@ public:
 
   // Load from source with relative offset
   template<typename T>
-  void loadRelSource(const T* src, int x, int y, int dx, int dy, int width, int height, int stride) {
+  void loadRelSource(const T* src, int x, int y, int dx, int dy, int bc, float filler, const ExprLoadConv& conv, int width, int height, int stride) {
     auto& current_stack = stack[stackIndex];
     for (int i = 0; i < VectorSize; ++i)
       current_stack[i] = stacktop[i];
-    // at the edges repeat, no mirror
+    // off-screen pixels: border mode bc (clamp, mirror, reflect101, constant, wrap)
+    // borderConstant: conv converts the loaded pixels (scale_inputs), the filler is used as is
     // stride is of byte pitch
-    int newY = std::max(0, std::min(y + dy, height - 1)) - y;
+    if (bc == borderConstant && (y + dy < 0 || y + dy >= height)) {
+      for (int i = 0; i < VectorSize; ++i)
+        stacktop[i] = filler;
+      stackIndex++;
+      return;
+    }
+    int newY = borderIndex(y + dy, height, bc) - y;
     const uint8_t* rowPtr = reinterpret_cast<const uint8_t*>(src) + static_cast<intptr_t>(newY) * stride;
     for (int i = 0; i < VectorSize; ++i) {
-      int newX = std::max(0, std::min(x + dx + i, width - 1));
-      stacktop[i] = static_cast<float>(reinterpret_cast<const T*>(rowPtr)[newX]);
+      if (bc == borderConstant && (x + dx + i < 0 || x + dx + i >= width)) {
+        stacktop[i] = filler;
+        continue;
+      }
+      int newX = borderIndex(x + dx + i, width, bc);
+      stacktop[i] = conv.apply(static_cast<float>(reinterpret_cast<const T*>(rowPtr)[newX]));
     }
     stackIndex++;
   }
@@ -4146,13 +4658,13 @@ public:
         loadSource<float>(reinterpret_cast<const float*>(srcp[vops_current->e.ival]), x);
         break;
       case opLoadRelSrc8:
-        loadRelSource<uint8_t>(reinterpret_cast<const uint8_t*>(srcp[vops_current->e.ival]), x, y, vops_current->dx, vops_current->dy, w, h, src_stride[vops_current->e.ival]);
+        loadRelSource<uint8_t>(reinterpret_cast<const uint8_t*>(srcp[vops_current->e.ival]), x, y, vops_current->dx, vops_current->dy, vops_current->bc, vops_current->filler, vops_current->conv, w, h, src_stride[vops_current->e.ival]);
         break;
       case opLoadRelSrc16:
-        loadRelSource<uint16_t>(reinterpret_cast<const uint16_t*>(srcp[vops_current->e.ival]), x, y, vops_current->dx, vops_current->dy, w, h, src_stride[vops_current->e.ival]);
+        loadRelSource<uint16_t>(reinterpret_cast<const uint16_t*>(srcp[vops_current->e.ival]), x, y, vops_current->dx, vops_current->dy, vops_current->bc, vops_current->filler, vops_current->conv, w, h, src_stride[vops_current->e.ival]);
         break;
       case opLoadRelSrcF32:
-        loadRelSource<float>(reinterpret_cast<const float*>(srcp[vops_current->e.ival]), x, y, vops_current->dx, vops_current->dy, w, h, src_stride[vops_current->e.ival]);
+        loadRelSource<float>(reinterpret_cast<const float*>(srcp[vops_current->e.ival]), x, y, vops_current->dx, vops_current->dy, vops_current->bc, vops_current->filler, vops_current->conv, w, h, src_stride[vops_current->e.ival]);
         break;
       case opLoadConst:
         push_and_broadcast(vops_current->e.fval);
@@ -4443,8 +4955,12 @@ void Exprfilter::processFrame(int plane, int w, int h, int pixels_per_iter, floa
               const int newx = x + vops[i].dx;
               const int newy = y + vops[i].dy;
               const int clipIndex = vops[i].e.ival;
-              const uint8_t* srcp2 = srcp_orig[clipIndex] + max(0, min(newy, h - 1)) * src_stride[clipIndex];
-              stacktop = srcp2[max(0, min(newx, w - 1))];
+              if (vops[i].bc == borderConstant && (newx < 0 || newx >= w || newy < 0 || newy >= h))
+                stacktop = vops[i].filler;
+              else {
+                const uint8_t* srcp2 = srcp_orig[clipIndex] + borderIndex(newy, h, vops[i].bc) * src_stride[clipIndex];
+                stacktop = vops[i].conv.apply(srcp2[borderIndex(newx, w, vops[i].bc)]); // conv: borderConstant only
+              }
             }
             ++si;
             break;
@@ -4454,8 +4970,12 @@ void Exprfilter::processFrame(int plane, int w, int h, int pixels_per_iter, floa
               const int newx = x + vops[i].dx;
               const int newy = y + vops[i].dy;
               const int clipIndex = vops[i].e.ival;
-              const uint16_t* srcp2 = reinterpret_cast<const uint16_t*>(srcp_orig[clipIndex] + max(0, min(newy, h - 1)) * src_stride[clipIndex]);
-              stacktop = srcp2[max(0, min(newx, w - 1))];
+              if (vops[i].bc == borderConstant && (newx < 0 || newx >= w || newy < 0 || newy >= h))
+                stacktop = vops[i].filler;
+              else {
+                const uint16_t* srcp2 = reinterpret_cast<const uint16_t*>(srcp_orig[clipIndex] + borderIndex(newy, h, vops[i].bc) * src_stride[clipIndex]);
+                stacktop = vops[i].conv.apply(srcp2[borderIndex(newx, w, vops[i].bc)]); // conv: borderConstant only
+              }
             }
             ++si;
             break;
@@ -4465,8 +4985,12 @@ void Exprfilter::processFrame(int plane, int w, int h, int pixels_per_iter, floa
               const int newx = x + vops[i].dx;
               const int newy = y + vops[i].dy;
               const int clipIndex = vops[i].e.ival;
-              const float* srcp2 = reinterpret_cast<const float*>(srcp_orig[clipIndex] + max(0, min(newy, h - 1)) * src_stride[clipIndex]);
-              stacktop = srcp2[max(0, min(newx, w - 1))];
+              if (vops[i].bc == borderConstant && (newx < 0 || newx >= w || newy < 0 || newy >= h))
+                stacktop = vops[i].filler;
+              else {
+                const float* srcp2 = reinterpret_cast<const float*>(srcp_orig[clipIndex] + borderIndex(newy, h, vops[i].bc) * src_stride[clipIndex]);
+                stacktop = vops[i].conv.apply(srcp2[borderIndex(newx, w, vops[i].bc)]); // conv: borderConstant only
+              }
             }
             ++si;
             break;
@@ -5025,7 +5549,7 @@ static SOperation getStoreOp(const VideoInfo *vi) {
 }
 
 #define LOAD_OP(op,v,req) do { if (stackSize < req) env->ThrowError("Expr: Not enough elements on stack to perform operation %s", tokens[i].c_str()); ops.push_back(ExprOp(op, (v))); maxStackSize = std::max(++stackSize, maxStackSize); } while(0)
-#define LOAD_REL_OP(op,v,req,dx,dy) do { if (stackSize < req) env->ThrowError("Expr: Not enough elements on stack to perform operation %s", tokens[i].c_str()); ops.push_back(ExprOp(op, (v), (dx), (dy))); maxStackSize = std::max(++stackSize, maxStackSize); } while(0)
+#define LOAD_REL_OP(op,v,req,dx,dy,bc) do { if (stackSize < req) env->ThrowError("Expr: Not enough elements on stack to perform operation %s", tokens[i].c_str()); ops.push_back(ExprOp(op, (v), (dx), (dy), (bc))); maxStackSize = std::max(++stackSize, maxStackSize); } while(0)
 #define GENERAL_OP(op, v, req, dec) do { if (stackSize < req) env->ThrowError("Expr: Not enough elements on stack to perform operation %s", tokens[i].c_str()); ops.push_back(ExprOp(op, (v))); stackSize-=(dec); } while(0)
 #define ONE_ARG_OP(op) GENERAL_OP(op, 0, 1, 0)
 #define VAR_STORE_OP(op,v) GENERAL_OP(op, v, 1, 0)
@@ -5310,8 +5834,17 @@ static size_t parseExpression(const std::string &expr, std::vector<ExprOp> &ops,
             // ending ']'
             if (numStream.get() != ']')
               env->ThrowError("Expr: Failed to convert '%s' to [x,y], closing ']' expected ", tokens[i].c_str());
-            if (numStream >> s)
-              env->ThrowError("Expr: Failed to convert '%s' to [x,y], invalid character after ']'", tokens[i].c_str());
+            // optional border mode suffix :c (clamp, default), :m (mirror), :r (reflect101), :k (constant filler from the stack), :w (wrap)
+            int bc = borderClamp;
+            if (numStream >> s) {
+              if (s == ":c") bc = borderClamp;
+              else if (s == ":m") bc = borderMirror;
+              else if (s == ":r") bc = borderReflect101;
+              else if (s == ":k") bc = borderConstant;
+              else if (s == ":w") bc = borderWrap;
+              else
+                env->ThrowError("Expr: Failed to convert '%s', after ']' only :c, :m, :r, :k or :w (border mode) is allowed", tokens[i].c_str());
+            }
 
             if (lutmode > 0)
               env->ThrowError("Expr: relative pixel addressing is forbidden in lut mode");
@@ -5320,7 +5853,16 @@ static size_t parseExpression(const std::string &expr, std::vector<ExprOp> &ops,
               env->ThrowError("Expr: dx must be between +/- (width-1) in '%s'", tokens[i].c_str());
             if (dy <= -vi_output->height || dy >= vi_output->height)
               env->ThrowError("Expr: dy must be between +/- (height-1) in '%s'", tokens[i].c_str());
-            LOAD_REL_OP(getLoadOp(vi[loadIndex], true), loadIndex, 0, dx, dy);
+            if (bc == borderConstant) {
+              // the filler is the stack top, must be a constant (checked after constant folding):
+              // pops it and pushes the loaded pixel: stack size unchanged
+              if (stackSize < 1)
+                env->ThrowError("Expr: '%s' needs a constant filler value on the stack", tokens[i].c_str());
+              ops.push_back(ExprOp(getLoadOp(vi[loadIndex], true), loadIndex, dx, dy, bc));
+              // stack size unchanged: maxStackSize was already updated when the filler was pushed
+            }
+            else
+              LOAD_REL_OP(getLoadOp(vi[loadIndex], true), loadIndex, 0, dx, dy, bc);
           }
           else {
             // not relative, single clip letter
@@ -5346,6 +5888,8 @@ static size_t parseExpression(const std::string &expr, std::vector<ExprOp> &ops,
           // are already loaded as float
           const int srcBitDepth = vi[loadIndex]->BitsPerComponent();
           const int dstBitDepth = autoScaleSourceBitDepth; // internal precision
+          const size_t loadOpIndex = ops.size() - 1; // the load op just added
+          ExprLoadConv conv; // the conversion steps after the load
 
           const bool use_chroma = chroma; // && !forceNonUV;
           const bool isfull = autoconv_full_scale;
@@ -5358,28 +5902,42 @@ static size_t parseExpression(const std::string &expr, std::vector<ExprOp> &ops,
               bits_conv_constants d;
               get_bits_conv_constants(d, use_chroma, isfull, isfull, srcBitDepth, dstBitDepth);
               // chroma is spec: signed. Limited:16-240 is really 128 +/-112. Full:1-255 is really 128+/-127
-
-              if (d.src_offset != 0) {
-                LOAD_OP(opLoadConst, (float)d.src_offset, 0);
-                TWO_ARG_OP(opSub);
-              }
-              if (d.mul_factor != 1.0f) {
-                LOAD_OP(opLoadConst, d.mul_factor, 0);
-                TWO_ARG_OP(opMul);
-              }
-              if (d.dst_offset != 0) {
-                LOAD_OP(opLoadConst, (float)d.dst_offset, 0);
-                TWO_ARG_OP(opAdd);
-              }
+              conv.sub = (float)d.src_offset;
+              conv.mul = d.mul_factor;
+              conv.add = (float)d.dst_offset;
             }
           }
 
           // "floatUV" - shifts -0.5 .. +0.5 chroma range to 0 .. 1.0 only when no other autoscaling is active
-          // the effect of this pre-shift is reversed at the storage phase
+          // the effect of this pre-shift is reversed at the storage phase (opSub at the end pixel exit)
           if ((!autoconv_conv_float || dstBitDepth == 32) && srcBitDepth == 32) {
-            if (chroma && shift_float) {
-              LOAD_OP(opLoadConst, 0.5f, 0);
-              TWO_ARG_OP(opAdd); // at the end pixel exit: opSub
+            if (chroma && shift_float)
+              conv.add_uv = 0.5f;
+          }
+
+          if (ops[loadOpIndex].bc == borderConstant) {
+            // :k relative load: the load op converts the loaded pixels itself, before putting
+            // the filler (given in the expression's domain, no conversion) in place of the
+            // off-screen ones.
+            ops[loadOpIndex].conv = conv;
+          }
+          else {
+            // separate operations after the load, steps in the order of ExprLoadConv::apply
+            if (conv.sub != 0.0f) {
+              LOAD_OP(opLoadConst, conv.sub, 0);
+              TWO_ARG_OP(opSub);
+            }
+            if (conv.mul != 1.0f) {
+              LOAD_OP(opLoadConst, conv.mul, 0);
+              TWO_ARG_OP(opMul);
+            }
+            if (conv.add != 0.0f) {
+              LOAD_OP(opLoadConst, conv.add, 0);
+              TWO_ARG_OP(opAdd);
+            }
+            if (conv.add_uv != 0.0f) {
+              LOAD_OP(opLoadConst, conv.add_uv, 0);
+              TWO_ARG_OP(opAdd);
             }
           }
         }
@@ -6084,9 +6642,25 @@ static void findBranches(std::vector<ExprOp>& ops, size_t pos, size_t* start1, s
 }
 
 
-static void foldConstants(std::vector<ExprOp> &ops) {
+static void foldConstants(std::vector<ExprOp> &ops, IScriptEnvironment* env) {
     for (size_t i = 0; i < ops.size(); i++) {
         switch (ops[i].op) {
+        case opLoadRelSrc8:
+        case opLoadRelSrc16:
+        case opLoadRelSrcF32:
+          // x[dx,dy]:k (constant border mode) takes the filler from the stack top, which
+          // must be constant by now.
+          // Store it in the op as is (expression's domain, the load op does the scale_inputs
+          // conversion of the pixels before putting the filler in), remove the constant:
+          // from here on the op is an ordinary load.
+          if (ops[i].bc == borderConstant) {
+            if (i == 0 || ops[i - 1].op != opLoadConst)
+              env->ThrowError("Expr: the filler value before x[dx,dy]:k must be a constant");
+            ops[i].filler = ops[i - 1].e.fval;
+            ops.erase(ops.begin() + i - 1);
+            i--;
+          }
+          break;
           // optimize pow
         case opPow:
           if (ops[i - 1].op == opLoadConst) {
@@ -6439,7 +7013,7 @@ Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector
       d.maxStackSize = std::max(parseExpression(expr[i], d.ops[i], d.frameprops[i], vi_array, &d.vi, getStoreOp(&d.vi), d.numInputs, planewidth, planeheight, chroma,
         autoconv_full_scale, autoconv_conv_int, autoconv_conv_float, clamp_float_i, shift_float, d.lutmode,
         env), d.maxStackSize);
-      foldConstants(d.ops[i]);
+      foldConstants(d.ops[i], env);
 
       // optimize constant store, change operation to "fill"
       if (d.plane[i] == poProcess && d.ops[i].size() == 2 && d.ops[i][0].op == opLoadConst) {
@@ -6511,6 +7085,20 @@ Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector
       d.planeOptSSE2[i] = optSSE2;
       for (size_t j = 0; j < d.ops[i].size(); j++) {
         const uint32_t op = d.ops[i][j].op;
+        // relative load with mirror or wrap border modes:
+        // the JIT code implements reflects or wraps only once.
+        // Offsets needing more will run in C.
+        if ((op == opLoadRelSrc8 || op == opLoadRelSrc16 || op == opLoadRelSrcF32) && (d.ops[i][j].bc == borderMirror || d.ops[i][j].bc == borderReflect101 || d.ops[i][j].bc == borderWrap)) {
+          const int dx = d.ops[i][j].dx;
+          const int dy = d.ops[i][j].dy;
+          const bool dx_ok = planewidth < 4 || // small planes: compile-time constant mapping, any dx
+            (dx >= -(planewidth - 1) && dx <= planewidth - (d.ops[i][j].bc == borderReflect101 ? 4 : 3));
+          const bool dy_ok = dy > -planeheight && dy < planeheight;
+          if (!dx_ok || !dy_ok) {
+            d.planeOptAvx2[i] = false;
+            d.planeOptSSE2[i] = false;
+          }
+        }
         // some trig.functions C only, except Sin and Cos and Atan2 and tan
         if (op == opAsin || op == opAcos || op == opAtan) {
           d.planeOptAvx2[i] = false;
