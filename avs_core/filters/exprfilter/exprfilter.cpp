@@ -1570,23 +1570,16 @@ static void emitRelLoad4(J& j, JitXmmReg& r, JitReg& a, JitReg& regptrs, const J
     else {
       // two kinds of mirror modes: borderMirror and borderReflect101
       // mirrored: pixels -1-newx-i (:m) or -newx-i (:r), a reversed run of 4 inside the row.
-      // Its first pixel (of element 3) from the row start:
-      //   c - newx = c - dxh - X, c = -4 (:m), -3 (:r);
-      // relative to 'a' (= row start + X): c - dxh - 2X.
-      // Note: this JIT + x86 had problems (=crash) with too many active registers, so we try to
-      // lower the requirements by using only one register. (workaround until I figure out what's
-      // behind the problem)
-      // X is read from memory instead of being kept in a register. On x86 the earlier version
-      // with more registers crashed (wrap mode, float, dx a negative multiple of 4, dy != 0;
-      // x64 was O.K.), so the wrap and mirror full-edge cases were rewritten using this
-      // workaround.
-      // FIXME why original failed.
+      // Its first pixel (of element 3) from the row start: c - newx, c = -4 (:m), -3 (:r).
+      // Note: on x86 this case crashed under register pressure (a jitasm register allocator bug,
+      // fixed 20261008 in jitasm.h GenerateInterBlockInstr); it was worked around by reading X
+      // from memory until then.
       JitReg b;
-      j.mov(b, (bc == borderMirror ? -4 : -3) - dxh);
-      j.sub(b, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
-      j.sub(b, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]);
+      j.mov(b, newx);
+      j.neg(b);
+      j.sub(b, bc == borderMirror ? 4 : 3);
       j.shl(b, shift); // index to real ptr 1-2-4x uint8/uint16/float
-      j.add(b, a);
+      j.add(b, rowp);
       emitLoad4AsFloat<VEX>(j, r, b, 0, op, zero, conv);
       emitPshufd<VEX>(j, r, reverse);
     }
@@ -1650,21 +1643,19 @@ static void emitRelLoad4(J& j, JitXmmReg& r, JitReg& a, JitReg& regptrs, const J
       emitLoad4AsFloat<VEX>(j, r, a, (dxh - planewidth) << shift, op, zero, conv);
     }
     else {
-      // w: planewidth
+      // w: planewidth. :m and :r are the mirror modes (borderMirror, borderReflect101)
       // mirrored: pixels 2w-1-newx-i (:m) or 2w-2-newx-i (:r), a reversed run of 4.
       // Its start is negative only for groups without stored pixels: limited to 0.
-      // First pixel (of element 3) from the row start: c - newx = c - dxh - X, c = 2w-4 (:m), 2w-5 (:r),
-      // limited to >= 0, then made relative to 'a' (= row start + X) by subtracting X again.
-      // X read from memory (low register pressure, see the x86 note at the left edge mirror case).
+      // First pixel (of element 3) from the row start:
+      // c - newx, where c = 2w-4 (:m), 2w-5 (:r), limited to >= 0.
       JitReg b, z;
-      j.mov(b, 2 * planewidth - (bc == borderMirror ? 4 : 5) - dxh);
-      j.sub(b, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]); // b = source pixel of element 3 from the row start
+      j.mov(b, 2 * planewidth - (bc == borderMirror ? 4 : 5));
+      j.sub(b, newx);
       j.mov(z, 0);
       j.cmp(b, 0);
       j.cmovl(b, z); // limited to 0
-      j.sub(b, j.ptr[regptrs + sizeof(void*) * (RWPTR_START_OF_XCOUNTER)]); // relative to 'a'
       j.shl(b, shift); // index to real ptr 1-2-4x uint8/uint16/float
-      j.add(b, a);
+      j.add(b, rowp);
       emitLoad4AsFloat<VEX>(j, r, b, 0, op, zero, conv);
       emitPshufd<VEX>(j, r, reverse);
     }
