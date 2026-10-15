@@ -7629,19 +7629,29 @@ namespace compiler
 	}
 
 	/// Generate inter-block instructions
-	inline void GenerateInterBlockInstr(const BasicBlock *first_block, const BasicBlock *second_block, Frontend& f, const VariableManager& var_manager)
+	/**
+	 * first_block_end: per register family, the interval in effect after the last instruction
+	 * of the first block; NULL if the family has no intervals there.
+	 * PF 20261008: original JITasm used first_block->lifetime[].intervals.back(). When a variable
+	 * dies at the last instruction, the allocator may reuse its register from the next offset
+	 * (== block size), e.g. to reload a spilled variable. That trailing interval is never entered:
+	 * RewriteInstructions emits transitions only before instructions, so the reload was missing,
+	 * but the edge moves assumed it was done. Hit blocks falling through into a merge label
+	 * (no jump at the end): wrong values or crash.
+	 */
+	inline void GenerateInterBlockInstr(const Lifetime::Interval* const (&first_block_end)[3], const BasicBlock *second_block, Frontend& f, const VariableManager& var_manager)
 	{
-		if (!first_block->lifetime[0].intervals.empty() && !second_block->lifetime[0].intervals.empty()) {
+		if (first_block_end[0] && !second_block->lifetime[0].intervals.empty()) {
 			JITASM_TRACE("---- General purpose register ----\n");
-			GenerateInterIntervalInstr(first_block->lifetime[0].intervals.back(), second_block->lifetime[0].intervals.front(), var_manager.GetAttributes(0), GpRegOperator(&f, &var_manager));
+			GenerateInterIntervalInstr(*first_block_end[0], second_block->lifetime[0].intervals.front(), var_manager.GetAttributes(0), GpRegOperator(&f, &var_manager));
 		}
-		if (!first_block->lifetime[1].intervals.empty() && !second_block->lifetime[1].intervals.empty()) {
+		if (first_block_end[1] && !second_block->lifetime[1].intervals.empty()) {
 			JITASM_TRACE("---- MMX register ----\n");
-			GenerateInterIntervalInstr(first_block->lifetime[1].intervals.back(), second_block->lifetime[1].intervals.front(), var_manager.GetAttributes(1), MmxRegOperator(&f, &var_manager));
+			GenerateInterIntervalInstr(*first_block_end[1], second_block->lifetime[1].intervals.front(), var_manager.GetAttributes(1), MmxRegOperator(&f, &var_manager));
 		}
-		if (!first_block->lifetime[2].intervals.empty() && !second_block->lifetime[2].intervals.empty()) {
+		if (first_block_end[2] && !second_block->lifetime[2].intervals.empty()) {
 			JITASM_TRACE("---- XMM/YMM register ----\n");
-			GenerateInterIntervalInstr(first_block->lifetime[2].intervals.back(), second_block->lifetime[2].intervals.front(), var_manager.GetAttributes(2), XmmRegOperator(&f, &var_manager));
+			GenerateInterIntervalInstr(*first_block_end[2], second_block->lifetime[2].intervals.front(), var_manager.GetAttributes(2), XmmRegOperator(&f, &var_manager));
 		}
 	}
 
@@ -7909,6 +7919,13 @@ namespace compiler
 				}
 			}
 
+			// The intervals in effect at the end of the block (after its last instruction). A trailing
+			// interval starting at offset == block size is never entered, see GenerateInterBlockInstr.
+			const Lifetime::Interval* block_end[3];
+			for (size_t reg_family = 0; reg_family < 3; ++reg_family) {
+				block_end[reg_family] = block->lifetime[reg_family].intervals.empty() ? NULL : &*interval_range[reg_family].first;
+			}
+
 			// Generate inter-block instructions
 			JITASM_ASSERT(!(!block->successor[0] && block->successor[1]));
 			if (block->successor[0] && !block->successor[1]) {
@@ -7922,7 +7939,7 @@ namespace compiler
 				}
 
 				JITASM_TRACE("==== Edge to Block%d\n", block->successor[0]->depth);
-				GenerateInterBlockInstr(block, block->successor[0], f, var_manager);
+				GenerateInterBlockInstr(block_end, block->successor[0], f, var_manager);
 
 				// Add last instruction if it is jump
 				if (Frontend::IsJump(jump_instr.GetID())) {
@@ -7938,12 +7955,12 @@ namespace compiler
 				Frontend::InstrList temp_instrs;
 				temp_instrs.swap(f.instrs_);
 				JITASM_TRACE("==== Edge to Block%d\n", block->successor[1]->depth);
-				GenerateInterBlockInstr(block, block->successor[1], f, var_manager);
+				GenerateInterBlockInstr(block_end, block->successor[1], f, var_manager);
 				temp_instrs.swap(f.instrs_);
 
 				// Insert inter-block instructions between current block and successor 0
 				JITASM_TRACE("==== Edge to Block%d\n", block->successor[0]->depth);
-				GenerateInterBlockInstr(block, block->successor[0], f, var_manager);
+				GenerateInterBlockInstr(block_end, block->successor[0], f, var_manager);
 
 				if (!temp_instrs.empty()) {
 					// Insert inter-block instructions between current block and successor 1 and change jump flow
