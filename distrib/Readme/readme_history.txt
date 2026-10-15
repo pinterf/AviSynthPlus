@@ -9,7 +9,7 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20261008 3.7.5.rXXXX (pre 3.7.6)
+20261015 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
 - Expr: relative pixel load border modes, as an optional suffix after x[dx,dy]:
   :c - clamp, the edge pixel is cloned (default, same as no suffix)      a a a | a b c d
@@ -32,6 +32,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   (1080p, 8/16/32 bit). The row edge handling is shared with the SSE2 path.
 - Expr: relative pixel load (e.g. x[-1,0]) in the SSE2 JIT no longer requires SSSE3; CPUs without
   SSSE3 used to run the whole expression in C. Hugely refactored ans simplified edge handling.
+- Fix: Expr: wrong results or crash (mostly x86) in the SSE2/AVX2 JIT under certain conditions: relative
+  pixel loads x[dx,dy] near the row edges while many values are held on the stack (high register
+  pressure). A bug in the JIT code generator's register handling, existed in earlier versions as well.
 - Fix: Expr: a ternary with a constant condition (e.g. "0 a b ?") and a variable store (A@, A^), dup
   or swap among its operands: the optimizer removed the wrong part, giving a wrong result or a crash.
   E.g. "0 7 sx A^ A ?" returned 0 instead of sx; "0 sx dup ?" crashed. Such ternaries are no longer

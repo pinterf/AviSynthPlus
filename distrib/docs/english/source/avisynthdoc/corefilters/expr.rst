@@ -721,6 +721,10 @@ Changelog
 |                 || Fix: constant condition ternary with a variable store   |
 |                 |  (A@, A^), dup or swap among its operands: wrong result  |
 |                 |  or crash (e.g. "0 7 sx A^ A ?", "0 sx dup ?").          |
+|                 || Fix: relative pixel loads near the row edges with many  |
+|                 |  values on the stack: wrong results or crash, mostly     |
+|                 |  x86 (JIT register handling bug, also in earlier         |
+|                 |  versions).                                              |
 |                 || Relative pixel load (x[dx,dy]): new AVX2 JIT version,   |
 |                 |  ~2x faster on AVX2 CPUs; SSE2 JIT no longer requires    |
 |                 |  SSSE3, slightly quicker.                                |
@@ -780,7 +784,7 @@ Changelog
 | AviSynth+ r2542 |  Initial release                                         |
 +-----------------+----------------------------------------------------------+
 
-$Date: 2026/10/08 13:30:00 $
+$Date: 2026/10/15 08:40:00 $
 
 .. _mathematical function:
     https://en.wikipedia.org/wiki/Function_(mathematics)

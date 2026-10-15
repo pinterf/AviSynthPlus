@@ -473,6 +473,9 @@ Bugfixes
   (``A@``, ``A^``), ``dup`` or ``swap`` among its operands: the optimizer removed the wrong part,
   giving a wrong result or a crash. E.g. ``0 7 sx A^ A ?`` returned 0 instead of ``sx``;
   ``0 sx dup ?`` crashed. Such ternaries are no longer folded. Existed since the first Expr version.
+- Fix: "Expr" wrong results or crash (mostly x86) in the SSE2/AVX2 JIT under certain conditions: relative
+  pixel loads (``x[dx,dy]``) near the row edges with many values held on the stack (high register pressure).
+  A bug in the JIT code generator's register handling, existed in earlier versions as well.
 
 
 Optimizations
@@ -594,7 +597,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/10/08 13:30:00 $
+$Date: 2026/10/15 08:40:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
