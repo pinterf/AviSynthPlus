@@ -95,6 +95,36 @@
 #endif
 #endif
 
+// Source index of position s (may be off-screen) in a row/column of n pixels, for border mode bc.
+// Any distance: mirror and wrap modes reflect or wrap as many times as needed (periodic,
+// period 2n or 2n-2 for mirror, n for wrap).
+static inline int borderIndex(int s, int n, int bc)
+{
+  if (bc == borderMirror) {
+    // boundary value is repeated d c b a | a b c d
+    const int period = 2 * n;
+    int m = s % period;
+    if (m < 0) m += period;
+    return m < n ? m : period - 1 - m;
+  }
+  if (bc == borderReflect101) {
+    //                                                4 3 2   1 2 3 4
+    // boundary value is single point of reflection e d c b | a b c d
+    if (n == 1) return 0;
+    const int period = 2 * n - 2;
+    int m = s % period;
+    if (m < 0) m += period;
+    return m < n ? m : period - m;
+  }
+  if (bc == borderWrap) {
+    // periodic: f g h | a b c d
+    int m = s % n;
+    if (m < 0) m += n;
+    return m;
+  }
+  return std::max(0, std::min(s, n - 1)); // borderClamp, borderConstant (n/a)
+}
+
 #ifdef VS_TARGET_CPU_X86
 
 //#define TEST_AVX2_CODEGEN_IN_AVX
@@ -1107,36 +1137,6 @@ vcmpps(aD, aD, aZ, _CMP_EQ_OQ); /* d == 0 */ \
 vandps(x, x, CPTR_AVX(elsignmask)); \
 vorps(x, x, aX); /* sign of x */ \
 vorps(x, x, aD); /* d == 0: NaN */ \
-}
-
-// Source index of position s (may be off-screen) in a row/column of n pixels, for border mode bc.
-// Any distance: mirror and wrap modes reflect or wrap as many times as needed (periodic,
-// period 2n or 2n-2 for mirror, n for wrap).
-static inline int borderIndex(int s, int n, int bc)
-{
-  if (bc == borderMirror) {
-    // boundary value is repeated d c b a | a b c d
-    const int period = 2 * n;
-    int m = s % period;
-    if (m < 0) m += period;
-    return m < n ? m : period - 1 - m;
-  }
-  if (bc == borderReflect101) {
-    //                                                4 3 2   1 2 3 4
-    // boundary value is single point of reflection e d c b | a b c d
-    if (n == 1) return 0;
-    const int period = 2 * n - 2;
-    int m = s % period;
-    if (m < 0) m += period;
-    return m < n ? m : period - m;
-  }
-  if (bc == borderWrap) {
-    // periodic: f g h | a b c d
-    int m = s % n;
-    if (m < 0) m += n;
-    return m;
-  }
-  return std::max(0, std::min(s, n - 1)); // borderClamp, borderConstant (n/a)
 }
 
 // Register types for the code generator functions below. They are not class members,
