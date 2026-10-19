@@ -523,6 +523,10 @@ What's new in the API V14
 
           * ``avs_create_map``, ``avs_free_map``
 
+        - Text message onto a frame (like C++ ``ApplyMessageEx`` with utf8=true, always UTF-8 encoded):
+
+          * ``avs_apply_message``
+
         - ``AVS_CS_RGBP8``, ``AVS_CS_RGBAP8`` aliases (like C++ ``CS_RGBP8``, ``CS_RGBAP8``)
 
 

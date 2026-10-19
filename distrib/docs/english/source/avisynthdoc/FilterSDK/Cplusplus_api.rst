@@ -1237,6 +1237,9 @@ ApplyMessage writes text on a frame. For example:
 
 With ApplyMessageEx you can use UTF-8 encoded strings on Windows ANSI code pages. On Posix, or on Windows set to "utf8 (beta)" everything is UTF-8 already.
 
+C interface (v14): ``avs_apply_message``. Its message is always UTF-8 encoded, as there is no need
+for the C interface to carry over the legacy code page handling.
+
 
 .. _cplusplus_getavslinkage:
 

@@ -146,6 +146,7 @@
 //              Add AVS_CS_RGBP8 and AVS_CS_RGBAP8 aliases (like C++ CS_RGBP8, CS_RGBAP8)
 //              Add AVS_VALUE_TYPE_xxx constants for AVS_Value type (like C++ AvsValueType), plus C-only AVS_VALUE_TYPE_ERROR
 //              New avs_create_map, avs_free_map: standalone property map (like C++ createMap, freeMap)
+//              New avs_apply_message: write a text message onto a frame (like C++ ApplyMessage)
 
 // Notes.
 // Choose either method:
@@ -1506,6 +1507,14 @@ AVSC_INLINE AVS_VideoFrame * avs_new_frame(AVS_ScriptEnvironment * env,
 
 AVSC_API(int, avs_make_writable)(AVS_ScriptEnvironment *, AVS_VideoFrame * * pvf);
 
+// v14: writes a text message onto the frame (like C++ ApplyMessage), e.g. an error message.
+// The frame must be writable (avs_make_writable). size: font size in GDI units (*8),
+// colors: 0xRRGGBB (converted for YUV formats). bgcolor is not used.
+// The message must be UTF-8 encoded on every platform, unlike the C++ ApplyMessage which expects
+// the system code page on Windows (for that use ApplyMessageEx with utf8=true).
+AVSC_API(void, avs_apply_message)(AVS_ScriptEnvironment *, AVS_VideoFrame * * pvf, const AVS_VideoInfo * vi,
+                                  const char * message, int size, int textcolor, int halocolor, int bgcolor);
+
 // V9
 AVSC_API(int, avs_make_property_writable)(AVS_ScriptEnvironment*, AVS_VideoFrame** pvf);
 
@@ -1886,6 +1895,8 @@ struct AVS_Library {
   // standalone property map
   AVSC_DECLARE_FUNC(avs_create_map);
   AVSC_DECLARE_FUNC(avs_free_map);
+  // text message onto a frame
+  AVSC_DECLARE_FUNC(avs_apply_message);
 };
 
 #undef AVSC_DECLARE_FUNC
@@ -2199,6 +2210,8 @@ avs_bits_per_component    constant 8 (8 bits/component)
   // standalone property map
   AVSC_LOAD_FUNC_OPT(avs_create_map);
   AVSC_LOAD_FUNC_OPT(avs_free_map);
+  // text message onto a frame
+  AVSC_LOAD_FUNC_OPT(avs_apply_message);
 
 #undef __AVSC_STRINGIFY
 #undef AVSC_STRINGIFY

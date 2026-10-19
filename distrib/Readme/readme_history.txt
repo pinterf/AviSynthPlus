@@ -41,6 +41,7 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
     or on other errors (avs_get_error tells the reason).
   - avs_create_map, avs_free_map: standalone property map, not attached to a frame (like C++ createMap, freeMap).
     Use it with the avs_prop_xxx functions; free every created map with avs_free_map.
+  - avs_apply_message: write a UTF-8 text message onto a writable frame, e.g. an error (like C++ ApplyMessageEx with utf8=true).
   - AVS_CS_RGBP8, AVS_CS_RGBAP8 aliases (like C++ CS_RGBP8, CS_RGBAP8).
   - AVS_VALUE_TYPE_xxx constants (like C++ AvsValueType), plus the C-only AVS_VALUE_TYPE_ERROR.
   Example:

@@ -1557,6 +1557,21 @@ int AVSC_CC avs_make_writable(AVS_ScriptEnvironment * p, AVS_VideoFrame * *pvf)
   return -1;
 }
 
+// v14
+extern "C"
+void AVSC_CC avs_apply_message(AVS_ScriptEnvironment* p, AVS_VideoFrame** pvf, const AVS_VideoInfo* vi,
+  const char* message, int size, int textcolor, int halocolor, int bgcolor)
+{
+  p->error = 0;
+  try {
+    // unlike the C++ ApplyMessage, the message is always UTF-8 encoded: no system code page
+    p->env->ApplyMessageEx((PVideoFrame*)(pvf), *(const VideoInfo*)vi, message, size, textcolor, halocolor, bgcolor, true /* utf8 */);
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+  }
+}
+
 // Since V9
 extern "C"
 int AVSC_CC avs_make_property_writable(AVS_ScriptEnvironment * p, AVS_VideoFrame * *pvf)

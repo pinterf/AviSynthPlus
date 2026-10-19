@@ -441,6 +441,8 @@ Quick list
 +-------------------------------------+-----------------------+-------+
 | avs_free_map                        | AVS_Map               | 14    |
 +-------------------------------------+-----------------------+-------+
+| avs_apply_message                   | AVS_ScriptEnvironment | 14    |
++-------------------------------------+-----------------------+-------+
 
 
 Reference
@@ -800,6 +802,32 @@ avs_make_writable
 -----------------
 
 See also: :ref:`cplusplus_makewritable`
+
+.. _c_avs_apply_message:
+
+avs_apply_message
+-----------------
+
+::
+
+    void avs_apply_message(AVS_ScriptEnvironment *, AVS_VideoFrame * * pvf, const AVS_VideoInfo * vi,
+                           const char * message, int size, int textcolor, int halocolor, int bgcolor);
+
+v14. Writes a text message onto the frame (C++ ``ApplyMessage``), e.g. to show an error on the output.
+The frame must be writable: call ``avs_make_writable`` first. ``size`` is the font size in GDI units
+(pixel size * 8), colors are ``0xRRGGBB`` (converted for YUV formats), ``bgcolor`` is not used.
+The message must be UTF-8 encoded on every platform. Unlike the C++ ``ApplyMessage``, the system code
+page is never assumed, so the result does not depend on the manifest or the code page of the host process.
+
+::
+
+    // in a C filter's get_frame callback: AVS_VideoFrame* AVSC_CC get_frame(AVS_FilterInfo* fi, int n)
+    AVS_VideoFrame* frame = avs_get_frame(fi->child, n);
+    avs_make_writable(fi->env, &frame);
+    avs_apply_message(fi->env, &frame, &fi->vi, "MyFilter: something went wrong", fi->vi.width / 4, 0xF0F080, 0, 0);
+    return frame;
+
+See also: :ref:`ApplyMessage<cplusplus_applymessage>`
 
 .. _c_avs_new_c_filter:
 

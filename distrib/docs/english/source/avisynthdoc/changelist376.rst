@@ -243,6 +243,7 @@ Build environment, Interface
   * ``avs_invoke_try``, ``avs_invoke2``, ``avs_invoke2_try`` (like C++ ``InvokeTry``, ``Invoke2``, ``Invoke2Try``)
   * ``avs_val_get_type`` and ``AVS_VALUE_TYPE_xxx`` constants (like C++ ``AVSValue::GetType``, ``AvsValueType``)
   * ``avs_create_map``, ``avs_free_map``: standalone property map (like C++ ``createMap``, ``freeMap``)
+  * ``avs_apply_message``: write a UTF-8 text message onto a frame (like C++ ``ApplyMessageEx`` with utf8=true)
   * ``AVS_CS_RGBP8``, ``AVS_CS_RGBAP8`` aliases
 
   See :ref:`API v14 changes<api_v14_whats_new>` for more details.
