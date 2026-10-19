@@ -38,6 +38,7 @@
 #include "conditional_reader.h"
 #include <cmath>
 #include <cinttypes>
+#include <cfloat>
 
 #ifdef AVS_WINDOWS
     #include <avs/win.h>
@@ -362,16 +363,15 @@ int __stdcall ConditionalFilter::SetCacheHints(int cachehints, int frame_range)
 // Float compare operands. When either side is a 32 bit float (e.g. Floatf(), the min/max pixel
 // of a float clip, a plugin returning a 32 bit float), both are rounded to float, else a float result
 // would compare less or greater than the same value written as a (double) literal,
-// e.g. 2.6f vs 2.6. Otherwise (double, int, long) the compare is done in double.
+// e.g. 2.6f vs 2.6. Values out of the float range (and NaN) are not rounded, they would become inf.
+// Otherwise (double, int, long) the compare is done in double. Same rule as the script operators.
 static void GetCompareFloats(const AVSValue& e1_result, const AVSValue& e2_result, double& f1, double& f2)
 {
-  if (e1_result.IsFloatfStrict() || e2_result.IsFloatfStrict()) {
-    f1 = (float)e1_result.AsFloat();
-    f2 = (float)e2_result.AsFloat();
-  }
-  else {
-    f1 = e1_result.AsFloat();
-    f2 = e2_result.AsFloat();
+  f1 = e1_result.AsFloat();
+  f2 = e2_result.AsFloat();
+  if ((e1_result.IsFloatfStrict() || e2_result.IsFloatfStrict()) && std::fabs(f1) <= FLT_MAX && std::fabs(f2) <= FLT_MAX) {
+    f1 = (float)f1;
+    f2 = (float)f2;
   }
 }
 

@@ -477,6 +477,11 @@ Bugfixes
   ``*Difference*`` functions) and ``PlaneMinMaxStats`` returned 32 bit float, so e.g. ``AverageLuma() < 2.6``
   was true for an average of exactly 2.6 (script constants are 64 bit double). Now these computed results
   are 64 bit double; the min and max of a 32 bit float clip stay 32 bit float pixel values. Existed since 3.7.4.
+- Fix: script comparison operators (``==``, ``!=``, ``<``, ``>``, ``<=``, ``>=``) of a 32 bit float and a
+  64 bit double compared in double, e.g. ``Floatf(2.6) == 2.6`` was false and ``Floatf(2.6) < 2.6`` was true;
+  for values rounded up in float, ``Floatf(0.1) > 0.1`` was true.
+  Now when either side is a 32 bit float (e.g. a plugin returning a 32 bit float), both are compared in
+  32 bit float precision, like before 3.7.4. Existed since 3.7.4.
 - Fix: ``ConditionalFilter`` compared integers truncated to 32 bit (e.g. ``4294967297 == 1`` was true) and
   floats rounded to 32 bit float (e.g. ``16777217.0 == 16777216.0`` was true). Now integers are compared
   in 64 bit and floats in double precision; when either side is a 32 bit float, both sides are

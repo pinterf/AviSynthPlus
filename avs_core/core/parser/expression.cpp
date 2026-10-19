@@ -44,6 +44,8 @@
 #include <avs/posix.h>
 #endif
 #include <cassert>
+#include <cfloat>
+#include <cmath>
 #include <vector>
 
 
@@ -320,6 +322,22 @@ AVSValue ExpAnd::Evaluate(IScriptEnvironment* env)
 }
 
 
+// Float compare operands for == and <.
+// When either side is a 32 bit float, both are rounded to float, so that e.g. 2.6f (a plugin result)
+// equals the 64 bit double script constant 2.6 and 2.6f < 2.6 is not true. Rounding never reverses
+// the order, it only can make two close values equal.
+// Values out of the float range (and NaN) are not rounded, they would become inf: compared in double.
+// Otherwise (double, int, long) the compare is done in double.
+static void GetCompareFloats(const AVSValue& x, const AVSValue& y, double& fx, double& fy)
+{
+  fx = x.AsFloat();
+  fy = y.AsFloat();
+  if ((x.IsFloatfStrict() || y.IsFloatfStrict()) && std::fabs(fx) <= FLT_MAX && std::fabs(fy) <= FLT_MAX) {
+    fx = (float)fx;
+    fy = (float)fy;
+  }
+}
+
 AVSValue ExpEqual::Evaluate(IScriptEnvironment* env)
 {
   AVSValue x = a->Evaluate(env);
@@ -330,11 +348,10 @@ AVSValue ExpEqual::Evaluate(IScriptEnvironment* env)
   else if (x.IsInt() && y.IsInt()) { // true for any 32/64 bit data
     return x.AsLong() == y.AsLong(); // work with 64 bits
   }
-  else if (x.IsFloatfStrict() && y.IsFloatfStrict()) {
-    return x.AsFloatf() == y.AsFloatf();
-  }
   else if (x.IsFloat() && y.IsFloat()) {
-    return x.AsFloat() == y.AsFloat(); // AsFloat returns double
+    double fx, fy;
+    GetCompareFloats(x, y, fx, fy);
+    return fx == fy;
   }
   else if (x.IsClip() && y.IsClip()) {
     return x.AsClip() == y.AsClip();
@@ -359,11 +376,10 @@ AVSValue ExpLess::Evaluate(IScriptEnvironment* env)
   if (x.IsInt() && y.IsInt()) { // true for any 32/64 bit data
     return x.AsLong() < y.AsLong(); // work with 64 bits
   }
-  else if (x.IsFloatfStrict() && y.IsFloatfStrict()) {
-    return x.AsFloatf() < y.AsFloatf();
-  }
   else if (x.IsFloat() && y.IsFloat()) {
-    return x.AsFloat() < y.AsFloat();
+    double fx, fy;
+    GetCompareFloats(x, y, fx, fy);
+    return fx < fy;
   }
   else if (x.IsString() && y.IsString()) {
     return _stricmp(x.AsString(),y.AsString()) < 0 ? true : false;

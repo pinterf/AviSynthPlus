@@ -446,6 +446,12 @@ Otherwise the result is stored into 64-bit long ``l``.
 When both operands are 32-bit float, arithmetic is done in 32-bits and the result is a 32-bit float.
 Otherwise the calculation is done in 64-bit double ``d`` precision.
 
+Comparisons (``==``, ``!=``, ``<``, ``>``, ``<=``, ``>=``) of two integers are done in 64-bit precision.
+When either operand is a 32-bit float, the comparison is done in 32-bit float precision: the 64-bit
+value is rounded to float first, so e.g. ``Floatf(2.6) == 2.6`` is true and ``Floatf(2.6) < 2.6``
+is false (since 3.7.6). Values outside the 32-bit float range are not rounded (they would become infinity).
+Otherwise the comparison is done in 64-bit double precision.
+
 | For string type:
 | ``+`` add
 | ``>=`` greater or equal than (case-insensitive)
