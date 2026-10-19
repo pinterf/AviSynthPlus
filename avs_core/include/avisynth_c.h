@@ -139,6 +139,10 @@
 //              New avs_is_440, avs_is_ya, avs_is_410, avs_is_411
 // 202610xx V13.1 AVS_CACHE_USER_FORWARD_BEGIN..AVS_CACHE_USER_FORWARD_END cache hint range: passed upstream through
 //              the core's cache/MT guard/Prefetch/OnCPU/OnCUDA wrappers (#521)
+// 20261018 V14 Bring to the level of C++ interface:
+//              function type support: avs_val_is_function, avs_invoke3, avs_invoke3_try
+//              New avs_val_get_type, returns AVS_VALUE_TYPE_xxx (like C++ AVSValue::GetType)
+//              New avs_invoke_try, avs_invoke2, avs_invoke2_try (like C++ InvokeTry, Invoke2, Invoke2Try)
 //              Add AVS_CS_RGBP8 and AVS_CS_RGBAP8 aliases (like C++ CS_RGBP8, CS_RGBAP8)
 //              Add AVS_VALUE_TYPE_xxx constants for AVS_Value type (like C++ AvsValueType), plus C-only AVS_VALUE_TYPE_ERROR
 
@@ -171,11 +175,11 @@
 // Constants
 //
 
-#ifndef __AVISYNTH_13_H__
+#ifndef __AVISYNTH_14_H__
 enum {
   AVISYNTH_INTERFACE_CLASSIC_VERSION = 6,
-  AVISYNTH_INTERFACE_VERSION = 13,
-  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1 // reset to zero whenever the normal interface version bumps
+  AVISYNTH_INTERFACE_VERSION = 14,
+  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 0 // reset to zero whenever the normal interface version bumps
 };
 #endif
 
@@ -1040,7 +1044,7 @@ enum {
   AVS_VALUE_TYPE_DOUBLE = 'd',    // 64 bit floating point
   AVS_VALUE_TYPE_STRING = 's',    // string (const char *)
   AVS_VALUE_TYPE_CLIP = 'c',      // clip
-  AVS_VALUE_TYPE_FUNCTION = 'n',  // function, not supported on C interface
+  AVS_VALUE_TYPE_FUNCTION = 'n',  // function, call it with avs_invoke3 (v14)
   AVS_VALUE_TYPE_ARRAY = 'a',     // array of AVS_Value
   AVS_VALUE_TYPE_ERROR = 'e'      // error message string, C interface only
 };
@@ -1058,7 +1062,7 @@ struct AVS_Value {
     float floating_pt;
     const char * string;
     const AVS_Value * array;
-    void * function; // not supported on C interface
+    void * function; // do not use directly, call it with avs_invoke3 (v14)
 #if UINTPTR_MAX >= 0xffffffffffffffff
     // if ever, only x64 will support. It breaks struct size on 32 bit
     int64_t longlong; // 8 bytes
@@ -1098,6 +1102,7 @@ AVSC_API(AVS_Clip *, avs_take_clip)(AVS_Value, AVS_ScriptEnvironment *);
 /****************************************************************************
 * AVS_Value type testers avs_is_xxxx ("baked" inline code) - NOT through API
 ****************************************************************************/
+// char constants also in AVS_VALUE_TYPE_xxxx enum
 AVSC_INLINE int avs_defined(AVS_Value v) { return v.type != 'v'; }
 AVSC_INLINE int avs_is_clip(AVS_Value v) { return v.type == 'c'; }
 AVSC_INLINE int avs_is_bool(AVS_Value v) { return v.type == 'b'; }
@@ -1112,6 +1117,8 @@ AVSC_INLINE int avs_is_floatf_strict(AVS_Value v) { return v.type == 'f'; }
 AVSC_INLINE int avs_is_string(AVS_Value v) { return v.type == 's'; }
 AVSC_INLINE int avs_is_array(AVS_Value v) { return v.type == 'a'; }
 AVSC_INLINE int avs_is_error(AVS_Value v) { return v.type == 'e'; }
+// Intentionally no inline for function type, use the API
+//AVSC_INLINE int avs_is_function(AVS_Value v) { return v.type == 'n'; }
 
 /****************************************************************************
 * AVS_Value type testers avs_val_is_xxxx (API)
@@ -1130,6 +1137,10 @@ AVSC_API(int, avs_val_is_floatf_strict)(AVS_Value v);
 AVSC_API(int, avs_val_is_string)(AVS_Value v);
 AVSC_API(int, avs_val_is_array)(AVS_Value v);
 AVSC_API(int, avs_val_is_error)(AVS_Value v);
+// v14: function type PFunction in c++ API
+AVSC_API(int, avs_val_is_function)(AVS_Value v); // v14
+// v14: returns the type as one of the AVS_VALUE_TYPE_xxx constants, like C++ AVSValue::GetType
+AVSC_API(int, avs_val_get_type)(AVS_Value v);
 
 /***********************************************************
 * AVS_Value getters ("baked" inline code) - NOT through API
@@ -1183,6 +1194,8 @@ AVSC_API(const char*, avs_get_as_string)(AVS_Value v);
 AVSC_API(double, avs_get_as_float)(AVS_Value v);
 AVSC_API(const char*, avs_get_as_error)(AVS_Value v);
 AVSC_API(const AVS_Value*, avs_get_as_array)(AVS_Value v);
+// v14: no getter for function type. The AVS_Value itself is the function handle,
+// pass it to avs_invoke3; copy with avs_copy_value, release with avs_release_value.
 
 /***********************************************************
 * AVS_Value array access - using API v11
@@ -1212,6 +1225,7 @@ AVSC_API(void, avs_set_to_double)(AVS_Value*, double d); // requires avs_release
 AVSC_API(void, avs_set_to_long)(AVS_Value*, int64_t l); // requires avs_release_value, especially on 32 bit proc
 AVSC_API(void, avs_set_to_array)(AVS_Value*, AVS_Value* src, int size); // requires avs_release_value, multi-nested deep copied arrays
 AVSC_API(void, avs_set_to_void)(AVS_Value*); // void
+// v14: no setter for function type, use avs_copy_value on an existing function value
 /***********************************************************
 * AVS_Value setters ("baked" inline code) - NOT through API
 ***********************************************************/
@@ -1230,8 +1244,14 @@ AVSC_INLINE AVS_Value avs_new_value_float(float v0)
         { AVS_Value v; v.type = 'f'; v.d.floating_pt = v0; return v;}
 AVSC_INLINE AVS_Value avs_new_value_error(const char * v0)
         { AVS_Value v; v.type = 'e'; v.d.string = v0; return v; }
+// Lightweight wrapper, allocates nothing: it only points to the caller's array of 'size' elements.
+// Do not call avs_release_value on it (would free the caller's array), elements are not copied
+// or reference counted, the array must outlive the use of the returned value.
+// Typical use: assembling 'args' for avs_invoke/avs_invoke2/avs_invoke3, the core copies it for the call.
+// See also the allocating variant avs_set_to_array (deep copy, must be released with avs_release_value).
 AVSC_INLINE AVS_Value avs_new_value_array(AVS_Value * v0, int size)
         { AVS_Value v; v.type = 'a'; v.d.array = v0; v.array_size = (short)size; return v; }
+// v14: intentionally no inline for function type, see avs_copy_value
 /***********************************************************
 * AVS_Value setters - inline wrappers using API
 ***********************************************************/
@@ -1420,6 +1440,36 @@ AVSC_API(int, avs_function_exists)(AVS_ScriptEnvironment *, const char * name);
 AVSC_API(AVS_Value, avs_invoke)(AVS_ScriptEnvironment *, const char * name,
                                AVS_Value args, const char** arg_names);
 // The returned value must be be released with avs_release_value
+
+// v14: no-throw variant of avs_invoke.
+// Returns 1 on success, the result in *result must be released with avs_release_value.
+// Returns 0 if no function with this name accepts the given arguments, *result is untouched.
+// Other errors (error inside the called function) also return 0, avs_get_error tells the reason.
+AVSC_API(int, avs_invoke_try)(AVS_ScriptEnvironment *, AVS_Value* result, const char * name,
+                              AVS_Value args, const char** arg_names);
+
+// v14: avs_invoke with implicit 'last' value, use avs_void if none.
+// The returned value must be be released with avs_release_value.
+AVSC_API(AVS_Value, avs_invoke2)(AVS_ScriptEnvironment *, AVS_Value implicit_last, const char * name,
+                                 AVS_Value args, const char** arg_names);
+// v14: no-throw variant of avs_invoke2, return value and *result as in avs_invoke_try.
+AVSC_API(int, avs_invoke2_try)(AVS_ScriptEnvironment *, AVS_Value* result, AVS_Value implicit_last,
+                               const char * name, AVS_Value args, const char** arg_names);
+
+// v14: call a function value (avs_val_is_function), e.g. a script function passed
+// as an 'n' type parameter to the plugin.
+// implicit_last: value for the implicit 'last' clip, use avs_void if none.
+// The returned value must be be released with avs_release_value.
+// On error it returns an error value and avs_get_error tells the reason.
+AVSC_API(AVS_Value, avs_invoke3)(AVS_ScriptEnvironment *, AVS_Value implicit_last, AVS_Value func,
+                                 AVS_Value args, const char** arg_names);
+// v14: no-throw variant of avs_invoke3.
+// Returns 1 on success, the result in *result must be released with avs_release_value.
+// Returns 0 if the function cannot be called with the given arguments, *result is untouched.
+// Other errors (not a function value, error inside the called function) also return 0,
+// avs_get_error tells the reason.
+AVSC_API(int, avs_invoke3_try)(AVS_ScriptEnvironment *, AVS_Value* result, AVS_Value implicit_last,
+                               AVS_Value func, AVS_Value args, const char** arg_names);
 
 AVSC_API(AVS_Value, avs_get_var)(AVS_ScriptEnvironment *, const char* name);
 // The returned value must be be released with avs_release_value
@@ -1815,6 +1865,17 @@ struct AVS_Library {
   AVSC_DECLARE_FUNC(avs_is_ya);
   AVSC_DECLARE_FUNC(avs_is_410);
   AVSC_DECLARE_FUNC(avs_is_411);
+  // V14
+  // API AVS_Value type checkers
+  AVSC_DECLARE_FUNC(avs_val_is_function);
+  AVSC_DECLARE_FUNC(avs_val_get_type);
+  // invoke variants
+  AVSC_DECLARE_FUNC(avs_invoke_try);
+  AVSC_DECLARE_FUNC(avs_invoke2);
+  AVSC_DECLARE_FUNC(avs_invoke2_try);
+  // calling function values
+  AVSC_DECLARE_FUNC(avs_invoke3);
+  AVSC_DECLARE_FUNC(avs_invoke3_try);
 };
 
 #undef AVSC_DECLARE_FUNC
@@ -2113,6 +2174,18 @@ avs_bits_per_component    constant 8 (8 bits/component)
   AVSC_LOAD_FUNC_OPT(avs_is_ya);
   AVSC_LOAD_FUNC_OPT(avs_is_410);
   AVSC_LOAD_FUNC_OPT(avs_is_411);
+
+  // V14
+  // API AVS_Value type checkers
+  AVSC_LOAD_FUNC_OPT(avs_val_is_function); // v14
+  AVSC_LOAD_FUNC_OPT(avs_val_get_type);
+  // invoke variants
+  AVSC_LOAD_FUNC_OPT(avs_invoke_try);
+  AVSC_LOAD_FUNC_OPT(avs_invoke2);
+  AVSC_LOAD_FUNC_OPT(avs_invoke2_try);
+  // calling function values
+  AVSC_LOAD_FUNC_OPT(avs_invoke3);
+  AVSC_LOAD_FUNC_OPT(avs_invoke3_try);
 
 #undef __AVSC_STRINGIFY
 #undef AVSC_STRINGIFY

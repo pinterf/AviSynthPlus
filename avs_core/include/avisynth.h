@@ -62,9 +62,10 @@
 // 202608xx  V13 New pixel formats: YUV(A) 4:4:0, 4:1:1, 4:1:0 at all bit depths, YA (Y plus alpha)
 //               CS_GENERIC_YUV440/411/410, CS_GENERIC_YA and CS_xxx constants
 //               New VideoInfo::Is440, IsYA, Is410, Is411
-// 202610xx  V13.1 CACHE_USER_FORWARD_BEGIN..CACHE_USER_FORWARD_END CachePolicyHint range: passed upstream through
+// 20261018  V13.1 CACHE_USER_FORWARD_BEGIN..CACHE_USER_FORWARD_END CachePolicyHint range: passed upstream through
 //               the core's cache/MT guard/Prefetch/OnCPU/OnCUDA wrappers (#521)
 //               CS_xxx_CHROMA_PLACEMENT (AvsChromaPlacement) marked deprecated: never implemented, use _ChromaLocation
+// 20261019  V14 No C++ API change; interface version follows the C API V14 additions (see avisynth_c.h)
 
 // http://avisynth.nl
 
@@ -101,8 +102,8 @@
 // graphical user interfaces.
 
 
-#ifndef __AVISYNTH_13_H__
-#define __AVISYNTH_13_H__
+#ifndef __AVISYNTH_14_H__
+#define __AVISYNTH_14_H__
 
 #include "avs/config.h"
 #include "avs/capi.h"
@@ -135,8 +136,8 @@ enum AvsVersion {
   AVISYNTH_CLASSIC_INTERFACE_VERSION_25 = 3,
   AVISYNTH_CLASSIC_INTERFACE_VERSION_26BETA = 5,
   AVISYNTH_CLASSIC_INTERFACE_VERSION = 6,
-  AVISYNTH_INTERFACE_VERSION = 13,
-  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1 // reset to zero whenever the normal interface version bumps
+  AVISYNTH_INTERFACE_VERSION = 14,
+  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 0 // reset to zero whenever the normal interface version bumps
 };
 
 /* Compiler-specific crap */
@@ -2147,4 +2148,4 @@ AVSC_API(IScriptEnvironment2*, CreateScriptEnvironment2)(int version = AVISYNTH_
 
 #pragma pack(pop)
 
-#endif //__AVISYNTH_13_H__
+#endif //__AVISYNTH_14_H__

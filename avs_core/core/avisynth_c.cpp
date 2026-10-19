@@ -1002,6 +1002,12 @@ extern "C"
 int AVSC_CC avs_val_is_array(AVS_Value v) { return ((const AVSValue*)(&v))->IsArray() ? 1 : 0; }
 extern "C"
 int AVSC_CC avs_val_is_error(AVS_Value v) { return v.type == 'e' ? 1 : 0; }
+// v14
+extern "C"
+int AVSC_CC avs_val_is_function(AVS_Value v) { return ((const AVSValue*)(&v))->IsFunction() ? 1 : 0; }
+// v14, the C-only 'e'rror type is passed through as is
+extern "C"
+int AVSC_CC avs_val_get_type(AVS_Value v) { return (int)((const AVSValue*)(&v))->GetType(); }
 
 
 // v11 API AVS_Value setters
@@ -1043,7 +1049,7 @@ void AVSC_CC avs_copy_value(AVS_Value * dest, AVS_Value src)
 // Releases/free resources contained in an AVS_Value
 // Such types are: 
 // - clip
-// - function (not supported on C interface)
+// - function
 // - double and long on 32 bit architects
 // - Avisynth+ arrays
 // Since AVS_Value is just a struct passed by value, nothing else happens.
@@ -1314,6 +1320,113 @@ AVS_Value AVSC_CC avs_invoke(AVS_ScriptEnvironment* p, const char* name, AVS_Val
   if (p->error)
     v = avs_new_value_error(p->error);
   return v;
+}
+
+// v14: no-throw variant of avs_invoke
+extern "C"
+int AVSC_CC avs_invoke_try(AVS_ScriptEnvironment* p, AVS_Value* result, const char* name, AVS_Value args, const char** arg_names)
+{
+  p->error = 0;
+  try {
+    AVSValue v0;
+    if (!p->env->InvokeTry(&v0, name, *(AVSValue*)&args, arg_names))
+      return 0;
+    new ((AVSValue*)result) AVSValue(v0);
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+    return 0;
+  }
+  return 1;
+}
+
+// v14: avs_invoke with implicit last
+extern "C"
+AVS_Value AVSC_CC avs_invoke2(AVS_ScriptEnvironment* p, AVS_Value implicit_last, const char* name, AVS_Value args, const char** arg_names)
+{
+  AVS_Value v = { 0,0 };
+  p->error = 0;
+  try {
+    AVSValue v0 = p->env->Invoke2(*(const AVSValue*)&implicit_last, name, *(AVSValue*)&args, arg_names);
+    new ((AVSValue*)&v) AVSValue(v0);
+  }
+  catch (const IScriptEnvironment::NotFound&) {
+    p->error = "Function Not Found";
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+  }
+  if (p->error)
+    v = avs_new_value_error(p->error);
+  return v;
+}
+
+// v14: no-throw variant of avs_invoke2
+extern "C"
+int AVSC_CC avs_invoke2_try(AVS_ScriptEnvironment* p, AVS_Value* result, AVS_Value implicit_last, const char* name, AVS_Value args, const char** arg_names)
+{
+  p->error = 0;
+  try {
+    AVSValue v0;
+    if (!p->env->Invoke2Try(&v0, *(const AVSValue*)&implicit_last, name, *(AVSValue*)&args, arg_names))
+      return 0;
+    new ((AVSValue*)result) AVSValue(v0);
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+    return 0;
+  }
+  return 1;
+}
+
+// v14: call a function value ('n' type)
+extern "C"
+AVS_Value AVSC_CC avs_invoke3(AVS_ScriptEnvironment* p, AVS_Value implicit_last, AVS_Value func, AVS_Value args, const char** arg_names)
+{
+  AVS_Value v = { 0,0 };
+  p->error = 0;
+  const AVSValue& fv = *(const AVSValue*)&func;
+  if (!fv.IsFunction()) {
+    p->error = "avs_invoke3: not a function value";
+  }
+  else {
+    try {
+      AVSValue v0 = p->env->Invoke3(*(const AVSValue*)&implicit_last, fv.AsFunction(), *(AVSValue*)&args, arg_names);
+      new ((AVSValue*)&v) AVSValue(v0);
+    }
+    catch (const IScriptEnvironment::NotFound&) {
+      p->error = "avs_invoke3: function cannot be called with these arguments";
+    }
+    catch (const AvisynthError& err) {
+      p->error = err.msg;
+    }
+  }
+  if (p->error)
+    v = avs_new_value_error(p->error);
+  return v;
+}
+
+// v14: no-throw variant of avs_invoke3
+extern "C"
+int AVSC_CC avs_invoke3_try(AVS_ScriptEnvironment* p, AVS_Value* result, AVS_Value implicit_last, AVS_Value func, AVS_Value args, const char** arg_names)
+{
+  p->error = 0;
+  const AVSValue& fv = *(const AVSValue*)&func;
+  if (!fv.IsFunction()) {
+    p->error = "avs_invoke3_try: not a function value";
+    return 0;
+  }
+  try {
+    AVSValue v0;
+    if (!p->env->Invoke3Try(&v0, *(const AVSValue*)&implicit_last, fv.AsFunction(), *(AVSValue*)&args, arg_names))
+      return 0;
+    new ((AVSValue*)result) AVSValue(v0);
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+    return 0;
+  }
+  return 1;
 }
 
 extern "C"

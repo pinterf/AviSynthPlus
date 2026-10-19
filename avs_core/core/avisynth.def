@@ -173,3 +173,11 @@ EXPORTS
   avs_is_ya = _avs_is_ya@4
   avs_is_410 = _avs_is_410@4
   avs_is_411 = _avs_is_411@4
+
+  avs_val_is_function = _avs_val_is_function@8
+  avs_invoke3 = _avs_invoke3@32
+  avs_invoke3_try = _avs_invoke3_try@36
+  avs_val_get_type = _avs_val_get_type@8
+  avs_invoke_try = _avs_invoke_try@24
+  avs_invoke2 = _avs_invoke2@28
+  avs_invoke2_try = _avs_invoke2_try@32
