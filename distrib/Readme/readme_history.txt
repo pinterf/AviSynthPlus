@@ -11,6 +11,11 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261019 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: propGetXXX (C++ and C API) with a NULL error parameter terminated the process on a failed read
+  (missing key, wrong type, index): the AvisynthError was thrown inside a noexcept function.
+  Now it throws AvisynthError (C API: returns 0/NULL, the reason is in avs_get_error).
+  propGetClip and propGetFrame behave the same way. VapourSynth API4 dies with a fatal error here.
+  Existed since 3.6.0.
 - Fix: C API avs_prop_get_clip crashed on the first use of the returned clip (returned a raw clip
   pointer instead of an AVS_Clip). Existed since 3.6.0.
 - Fix: propGetClip, propGetFrame (C++ and C API) did not report errors (missing key, wrong type, index),

@@ -885,15 +885,15 @@ public:
   int propNumElements(const AVSMap* map, const char* key) AVS_NOEXCEPT;
   char propGetType(const AVSMap* map, const char* key) AVS_NOEXCEPT;
   int propDeleteKey(AVSMap* map, const char* key) AVS_NOEXCEPT;
-  int64_t propGetInt(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
+  int64_t propGetInt(const AVSMap* map, const char* key, int index, int* error); // not noexcept: a failed read with NULL error throws
   int propGetIntSaturated(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
-  double propGetFloat(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
+  double propGetFloat(const AVSMap* map, const char* key, int index, int* error); // not noexcept: a failed read with NULL error throws
   float propGetFloatSaturated(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
-  const char* propGetData(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
-  int propGetDataSize(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
-  int propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
-  PClip propGetClip(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
-  const PVideoFrame propGetFrame(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
+  const char* propGetData(const AVSMap* map, const char* key, int index, int* error); // not noexcept: a failed read with NULL error throws
+  int propGetDataSize(const AVSMap* map, const char* key, int index, int* error); // not noexcept: a failed read with NULL error throws
+  int propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error); // not noexcept: a failed read with NULL error throws
+  PClip propGetClip(const AVSMap* map, const char* key, int index, int* error); // not noexcept: a failed read with NULL error throws
+  const PVideoFrame propGetFrame(const AVSMap* map, const char* key, int index, int* error); // not noexcept: a failed read with NULL error throws
   int propSetInt(AVSMap* map, const char* key, int64_t i, int append) AVS_NOEXCEPT;
   int propSetFloat(AVSMap* map, const char* key, double d, int append) AVS_NOEXCEPT;
   int propSetData(AVSMap* map, const char* key, const char* d, int length, int append) AVS_NOEXCEPT;
@@ -901,8 +901,8 @@ public:
   int propSetClip(AVSMap* map, const char* key, PClip& clip, int append) AVS_NOEXCEPT;
   int propSetFrame(AVSMap* map, const char* key, const PVideoFrame& frame, int append) AVS_NOEXCEPT;
 
-  const int64_t* propGetIntArray(const AVSMap* map, const char* key, int* error) AVS_NOEXCEPT;
-  const double* propGetFloatArray(const AVSMap* map, const char* key, int* error) AVS_NOEXCEPT;
+  const int64_t* propGetIntArray(const AVSMap* map, const char* key, int* error); // not noexcept: a failed read with NULL error throws
+  const double* propGetFloatArray(const AVSMap* map, const char* key, int* error); // not noexcept: a failed read with NULL error throws
   int propSetIntArray(AVSMap* map, const char* key, const int64_t* i, int size) AVS_NOEXCEPT;
   int propSetFloatArray(AVSMap* map, const char* key, const double* d, int size) AVS_NOEXCEPT;
 
@@ -6029,7 +6029,10 @@ int ScriptEnvironment::propDeleteKey(AVSMap* map, const char* key) AVS_NOEXCEPT 
   return map->erase(key);
 }
 
-static VSArrayBase* propGetShared(const AVSMap* map, const char* key, int index, int* error, AVSPropertyType propType, ScriptEnvironment *env) noexcept {
+// Failed read: reports through *error; with NULL error it throws AvisynthError (VapourSynth: fatal error).
+// Not noexcept, nor are the propGetXXX callers passing the caller's error, so the exception reaches
+// the plugin (C API: avs_get_error) instead of std::terminate.
+static VSArrayBase* propGetShared(const AVSMap* map, const char* key, int index, int* error, AVSPropertyType propType, ScriptEnvironment *env) {
   assert(map && key && index >= 0);
 
   if (error)
@@ -6072,7 +6075,7 @@ static VSArrayBase* propGetShared(const AVSMap* map, const char* key, int index,
   return arr;
 }
 
-int64_t ScriptEnvironment::propGetInt(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+int64_t ScriptEnvironment::propGetInt(const AVSMap* map, const char* key, int index, int* error) {
   VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_INT, this); //  ptInt
   if (arr)
     return reinterpret_cast<const VSIntArray*>(arr)->at(index);
@@ -6100,7 +6103,7 @@ int ScriptEnvironment::propGetIntSaturated(const AVSMap* map, const char* key, i
   return static_cast<int>(value);
 }
 
-double ScriptEnvironment::propGetFloat(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+double ScriptEnvironment::propGetFloat(const AVSMap* map, const char* key, int index, int* error) {
   VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_FLOAT, this); // ptFloat
   if (arr)
     return reinterpret_cast<const VSFloatArray*>(arr)->at(index);
@@ -6131,7 +6134,7 @@ float ScriptEnvironment::propGetFloatSaturated(const AVSMap* map, const char* ke
   return static_cast<float>(value);
 }
 
-const char* ScriptEnvironment::propGetData(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+const char* ScriptEnvironment::propGetData(const AVSMap* map, const char* key, int index, int* error) {
   VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_DATA, this); // ptData
   if (arr)
     return reinterpret_cast<const VSDataArray*>(arr)->at(index).data.c_str();
@@ -6139,7 +6142,7 @@ const char* ScriptEnvironment::propGetData(const AVSMap* map, const char* key, i
     return nullptr;
 }
 
-int ScriptEnvironment::propGetDataSize(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+int ScriptEnvironment::propGetDataSize(const AVSMap* map, const char* key, int index, int* error) {
   VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_DATA, this); // ptData
   if (arr)
     return static_cast<int>(reinterpret_cast<const VSDataArray*>(arr)->at(index).data.size());
@@ -6147,7 +6150,7 @@ int ScriptEnvironment::propGetDataSize(const AVSMap* map, const char* key, int i
     return -1;
 }
 
-int ScriptEnvironment::propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+int ScriptEnvironment::propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error) {
   VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_DATA, this); // ptData
   if (arr)
     return reinterpret_cast<const VSDataArray*>(arr)->at(index).typeHint;
@@ -6155,10 +6158,9 @@ int ScriptEnvironment::propGetDataTypeHint(const AVSMap* map, const char* key, i
     return AVSPropDataTypeHint::PROPDATATYPEHINT_UNKNOWN; // dtUnknown;
 }
 
-PClip ScriptEnvironment::propGetClip(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
-  int dummyError;
-  // report the error if the caller asks for it; NULL error: no throw (noexcept), empty result as before
-  VSArrayBase* arr = propGetShared(map, key, index, error ? error : &dummyError, AVSPropertyType::PROPERTYTYPE_CLIP, this); // ptVideoNode
+PClip ScriptEnvironment::propGetClip(const AVSMap* map, const char* key, int index, int* error) {
+  // single lookup: no VapourSynth-like dummy error, AVS has no separate audio node
+  VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_CLIP, this); // ptVideoNode
   if (arr) {
     // PClip itself is reference counted
     PClip ref = reinterpret_cast<VSVideoNodeArray*>(arr)->at(index);
@@ -6170,11 +6172,10 @@ PClip ScriptEnvironment::propGetClip(const AVSMap* map, const char* key, int ind
   }
 }
 
-const PVideoFrame ScriptEnvironment::propGetFrame(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+const PVideoFrame ScriptEnvironment::propGetFrame(const AVSMap* map, const char* key, int index, int* error) {
   // PVideoFrame itself is reference counted
-  int dummyError;
-  // report the error if the caller asks for it; NULL error: no throw (noexcept), empty result as before
-  VSArrayBase* arr = propGetShared(map, key, index, error ? error : &dummyError, AVSPropertyType::PROPERTYTYPE_FRAME, this); //  ptVideoFrame
+  // single lookup: no VapourSynth-like dummy error, AVS has no separate audio frame
+  VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_FRAME, this); //  ptVideoFrame
   if (arr) {
     PVideoFrame ref = reinterpret_cast<VSVideoFrameArray*>(arr)->at(index);
     return ref;
@@ -6319,7 +6320,7 @@ int ScriptEnvironment::propSetFrame(AVSMap* map, const char* key, const PVideoFr
   return !propSetShared<PVideoFrame, AVSPropertyType::PROPERTYTYPE_FRAME>(map, key, frame, append, this); // ptVideoFrame
 }
 
-const int64_t* ScriptEnvironment::propGetIntArray(const AVSMap* map, const char* key, int* error) AVS_NOEXCEPT {
+const int64_t* ScriptEnvironment::propGetIntArray(const AVSMap* map, const char* key, int* error) {
   const VSArrayBase* arr = propGetShared(map, key, 0, error, AVSPropertyType::PROPERTYTYPE_INT, this);
   if (arr) {
     return reinterpret_cast<const VSIntArray*>(arr)->getDataPointer();
@@ -6329,7 +6330,7 @@ const int64_t* ScriptEnvironment::propGetIntArray(const AVSMap* map, const char*
   }
 }
 
-const double* ScriptEnvironment::propGetFloatArray(const AVSMap* map, const char* key, int* error) AVS_NOEXCEPT {
+const double* ScriptEnvironment::propGetFloatArray(const AVSMap* map, const char* key, int* error) {
   const VSArrayBase* arr = propGetShared(map, key, 0, error, AVSPropertyType::PROPERTYTYPE_FLOAT, this);
   if (arr) {
     return reinterpret_cast<const VSFloatArray*>(arr)->getDataPointer();

@@ -1382,6 +1382,13 @@ propGetInt, v8
 
 get property value as integer (int64).
 You can pass nullptr to error, but if given, the following error codes are set (0 = O.K.)
+
+With ``error`` = nullptr a failed read (missing key, wrong type, index out of range, map with error set)
+throws ``AvisynthError``, so pass nullptr only for properties known to exist.
+(VapourSynth API4 dies with a fatal error in this case.) The same applies to all ``propGetXXX``
+functions taking an ``error`` parameter, except the ``Saturated`` ones, which never throw.
+Before 3.7.6 the throw happened inside a ``noexcept`` function and terminated the process;
+``propGetClip`` and ``propGetFrame`` (3.7.4 and 3.7.5) neither threw nor set ``*error``.
 Though AVSValue in Avisynth does not support int64_t (as of December 2021), you can freely
 use int64_t frame property values in plugins. Internally there is no special 32 bit integer
 version, only 64 bit integer exists.

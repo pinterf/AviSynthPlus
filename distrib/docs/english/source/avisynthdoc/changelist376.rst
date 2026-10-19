@@ -472,6 +472,9 @@ Bugfixes
 - Fix #495 (debug builds only): ``VideoFrame::CheckMemory()`` ignored the allocation margin and
   reported a buffer overrun for every frame.
 - Fix #495 POSIX debug builds failed to compile (now forwards the error to ``stderr``).
+- Fix: ``propGetXXX`` (C++ and C API) with a NULL ``error`` parameter terminated the process on a failed
+  read (missing key, wrong type, index): now it throws ``AvisynthError`` (C API: returns, the reason is
+  in ``avs_get_error``). ``propGetClip`` and ``propGetFrame`` behave the same way. Existed since 3.6.0.
 - Fix: C API ``avs_prop_get_clip`` crashed on the first use of the returned clip
   (returned a raw clip pointer instead of an ``AVS_Clip``). Existed since 3.6.0.
 - Fix: ``propGetClip``, ``propGetFrame`` (C++ and C API) did not report errors (missing key, wrong type,

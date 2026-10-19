@@ -1302,6 +1302,13 @@ avs_prop_get_type
 avs_prop_get_int
 ----------------
 
+``error`` receives one of the ``AVS_GETPROPERROR_xxx`` codes (0: success). It can be NULL, but then
+a failed read (missing key, wrong type, index out of range) returns 0/NULL and sets the message
+for ``avs_get_error``; pass NULL only for properties known to exist. The same applies to all
+``avs_prop_get_xxx`` functions with an ``error`` parameter (the ``_saturated`` ones never set it).
+Before 3.7.6 a failed read with NULL ``error`` terminated the process.
+See also :ref:`propGetInt<cplusplus_propgetint>`.
+
 .. _c_avs_prop_get_float:
 
 avs_prop_get_float
