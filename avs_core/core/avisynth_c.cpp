@@ -576,8 +576,12 @@ AVS_Clip* AVSC_CC avs_prop_get_clip(AVS_ScriptEnvironment* p, const AVS_Map* map
   p->error = 0;
   try {
     PClip c0 = p->env->propGetClip((const AVSMap*)map, key, index, error);
-    AVS_Clip* c;
-    new((PClip*)&c) PClip(c0);
+    if (!c0)
+      return nullptr;
+    // AVS_Clip is a wrapper struct, not a PClip: create it like avs_take_clip does
+    AVS_Clip* c = new AVS_Clip;
+    c->env = p->env;
+    c->clip = c0;
     return c;
   }
   catch (const AvisynthError& err) {

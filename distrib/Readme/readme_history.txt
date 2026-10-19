@@ -11,6 +11,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261019 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: C API avs_prop_get_clip crashed on the first use of the returned clip (returned a raw clip
+  pointer instead of an AVS_Clip). Existed since 3.6.0.
 - Hardening: C API avs_set_to_array (C++ AVSValue(const AVSValue*, int)): a NULL source with nonzero
   (or negative) size gives an empty array, array_size matches the allocation.
 - Interface v14 (AVISYNTH_INTERFACE_VERSION = 14): C API additions; C++: AVSValue::AsFunction exported.
