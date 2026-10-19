@@ -751,6 +751,22 @@ void AVSC_CC avs_clear_map(AVS_ScriptEnvironment * p, AVS_Map * map)
   }
 }
 
+// v14
+extern "C"
+AVS_Map* AVSC_CC avs_create_map(AVS_ScriptEnvironment* p)
+{
+  p->error = 0;
+  return (AVS_Map*)p->env->createMap();
+}
+
+// v14
+extern "C"
+void AVSC_CC avs_free_map(AVS_ScriptEnvironment* p, AVS_Map* map)
+{
+  p->error = 0;
+  p->env->freeMap((AVSMap*)map);
+}
+
 extern "C"
 int AVSC_CC avs_is_440(const AVS_VideoInfo * p)
 {
