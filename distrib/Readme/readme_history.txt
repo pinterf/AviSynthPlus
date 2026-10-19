@@ -11,7 +11,11 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261019 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
-- Interface v14 (AVISYNTH_INTERFACE_VERSION = 14): C API additions, no C++ API change.
+- Hardening: C API avs_set_to_array (C++ AVSValue(const AVSValue*, int)): a NULL source with nonzero
+  (or negative) size gives an empty array, array_size matches the allocation.
+- Interface v14 (AVISYNTH_INTERFACE_VERSION = 14): C API additions; C++: AVSValue::AsFunction exported.
+  - C++: AVSValue::AsFunction (was internal): get the PFunction of a function value, call it with
+    Invoke3/Invoke3Try. New AVS_Linkage entry, returns an empty PFunction on older runtimes.
   - Function values ('n' type, e.g. a script function passed to a plugin parameter of type "n"):
     avs_val_is_function, avs_invoke3, avs_invoke3_try (like C++ Invoke3, Invoke3Try).
     The AVS_Value itself is the function handle: copy it with avs_copy_value, free it with avs_release_value.

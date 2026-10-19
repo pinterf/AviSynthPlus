@@ -495,7 +495,13 @@ What's new in the API V13
 What's new in the API V14
 -------------------------
 
-- C API (AVISYNTH_INTERFACE_VERSION = 14), no C++ API change:
+- C++ API (AVISYNTH_INTERFACE_VERSION = 14):
+        - ``AVSValue::AsFunction`` exported (was internal use only): get the ``PFunction`` of a function value
+          (``'n'`` type), call it with ``env->Invoke3`` or ``env->Invoke3Try``.
+          New ``AVS_Linkage`` entry; returns an empty ``PFunction`` on runtimes older than V14.
+          See :ref:`AsFunction<cplusplus_avsvalueasfunction>` .
+
+- C API (AVISYNTH_INTERFACE_VERSION = 14):
         - Function values (``'n'`` type, e.g. a script function passed to a plugin parameter of type ``n``):
 
           * ``avs_val_is_function``
