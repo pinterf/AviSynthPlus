@@ -139,6 +139,8 @@
 //              New avs_is_440, avs_is_ya, avs_is_410, avs_is_411
 // 202610xx V13.1 AVS_CACHE_USER_FORWARD_BEGIN..AVS_CACHE_USER_FORWARD_END cache hint range: passed upstream through
 //              the core's cache/MT guard/Prefetch/OnCPU/OnCUDA wrappers (#521)
+//              Add AVS_CS_RGBP8 and AVS_CS_RGBAP8 aliases (like C++ CS_RGBP8, CS_RGBAP8)
+//              Add AVS_VALUE_TYPE_xxx constants for AVS_Value type (like C++ AvsValueType), plus C-only AVS_VALUE_TYPE_ERROR
 
 // Notes.
 // Choose either method:
@@ -317,6 +319,7 @@ enum {
 
   // RGB planar
   AVS_CS_RGBP   = AVS_CS_GENERIC_RGBP | AVS_CS_SAMPLE_BITS_8,  // Planar RGB 8 bit samples
+  AVS_CS_RGBP8  = AVS_CS_GENERIC_RGBP | AVS_CS_SAMPLE_BITS_8,  // Planar RGB 8 bit samples
   AVS_CS_RGBP10 = AVS_CS_GENERIC_RGBP | AVS_CS_SAMPLE_BITS_10, // Planar RGB 10bit samples
   AVS_CS_RGBP12 = AVS_CS_GENERIC_RGBP | AVS_CS_SAMPLE_BITS_12, // Planar RGB 12bit samples
   AVS_CS_RGBP14 = AVS_CS_GENERIC_RGBP | AVS_CS_SAMPLE_BITS_14, // Planar RGB 14bit samples
@@ -325,6 +328,7 @@ enum {
 
   // RGBA planar
   AVS_CS_RGBAP   = AVS_CS_GENERIC_RGBAP | AVS_CS_SAMPLE_BITS_8,  // Planar RGBA 8 bit samples
+  AVS_CS_RGBAP8  = AVS_CS_GENERIC_RGBAP | AVS_CS_SAMPLE_BITS_8,  // Planar RGBA 8 bit samples
   AVS_CS_RGBAP10 = AVS_CS_GENERIC_RGBAP | AVS_CS_SAMPLE_BITS_10, // Planar RGBA 10bit samples
   AVS_CS_RGBAP12 = AVS_CS_GENERIC_RGBAP | AVS_CS_SAMPLE_BITS_12, // Planar RGBA 12bit samples
   AVS_CS_RGBAP14 = AVS_CS_GENERIC_RGBAP | AVS_CS_SAMPLE_BITS_14, // Planar RGBA 14bit samples
@@ -1025,6 +1029,21 @@ typedef struct AVS_Map {
 // To maintain source code compatibility with future versions of the
 // avisynth_c API don't use the AVS_Value directly.  Use the helper
 // functions below.
+
+// AVS_Value type, values match C++ AvsValueType
+enum {
+  AVS_VALUE_TYPE_UNDEFINED = 'v', // void, undefined value
+  AVS_VALUE_TYPE_BOOL = 'b',      // boolean
+  AVS_VALUE_TYPE_INT = 'i',       // 32 bit integer
+  AVS_VALUE_TYPE_LONG = 'l',      // 64 bit integer
+  AVS_VALUE_TYPE_FLOAT = 'f',     // 32 bit floating point
+  AVS_VALUE_TYPE_DOUBLE = 'd',    // 64 bit floating point
+  AVS_VALUE_TYPE_STRING = 's',    // string (const char *)
+  AVS_VALUE_TYPE_CLIP = 'c',      // clip
+  AVS_VALUE_TYPE_FUNCTION = 'n',  // function, not supported on C interface
+  AVS_VALUE_TYPE_ARRAY = 'a',     // array of AVS_Value
+  AVS_VALUE_TYPE_ERROR = 'e'      // error message string, C interface only
+};
 
 // AVS_Value is laid out identically to AVSValue
 typedef struct AVS_Value AVS_Value;
