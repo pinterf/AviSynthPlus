@@ -367,6 +367,8 @@ Quick list
 +-------------------------------------+-----------------------+-------+
 | avs_get_as_bool                     | AVS_Value             | 11    |
 +-------------------------------------+-----------------------+-------+
+| avs_get_as_clip                     | AVS_Value             | 11    |
++-------------------------------------+-----------------------+-------+
 | avs_get_as_int                      | AVS_Value             | 11    |
 +-------------------------------------+-----------------------+-------+
 | avs_get_as_long                     | AVS_Value             | 11    |
@@ -961,7 +963,9 @@ avs_set_to_clip
 ---------------
 
 Stuffs an AVS_Clip into an AVS_Value. Clip reference count is increased by one. After this, the original
-AVS_Clip can be released with avs_release_clip.
+AVS_Clip can be released with avs_release_clip. The value must be released with ``avs_release_value``.
+The inline ``avs_new_value_clip`` calls this API, the same rules apply.
+See also the common rules at :ref:`avs_set_to_xxx<c_avs_set_to_xxx>`.
 
 In C++ a simple direct assignment is done: ``PClip clip = ... ; AVSValue retval = clip;``
 
@@ -1464,95 +1468,330 @@ avs_set_channel_mask
 avs_get_channel_mask
 --------------------
 
+.. _c_avs_set_to_xxx:
+
+The ``avs_set_to_xxx`` setters are API calls (v11), the counterparts of the ``avs_new_value_xxx``
+inline helpers. They construct the value in place, through the pointer.
+
+Common rules:
+
+- The previous content of ``*v`` is overwritten, not released. Use them on a fresh value, or call
+  ``avs_release_value`` first if it held a clip, function, array, or a ``double``/``long`` value.
+- Resource-owning results must be released with ``avs_release_value``: clip, array, and on 32-bit (x86)
+  systems ``double`` and ``long`` (stored in separately allocated memory there; on 64-bit systems the
+  release is a no-op for them, portable code calls it anyway). For ``void``, ``bool``, ``int``, ``float``,
+  ``string`` and ``error`` the release is a no-op.
+- The whole ``AVS_Value`` is initialized, unlike in the inline helpers, which set only the type and
+  the data member.
+
+Differences from the inline helpers:
+
++-----------------------+-----------------------------+--------------------------------------------------------------+
+| API (allocates/owns)  | inline helper               | difference                                                   |
++=======================+=============================+==============================================================+
+| ``avs_set_to_bool``,  | ``avs_new_value_bool``,     | same result, no resources                                    |
+| ``_int``, ``_float``  | ``_int``, ``_float``        |                                                              |
++-----------------------+-----------------------------+--------------------------------------------------------------+
+| ``avs_set_to_string``,| ``avs_new_value_string``,   | same: only the pointer is stored, the string is not copied   |
+| ``_error``            | ``_error``                  |                                                              |
++-----------------------+-----------------------------+--------------------------------------------------------------+
+| ``avs_set_to_double``,| none                        | API only; must be released                                   |
+| ``_long``             |                             |                                                              |
++-----------------------+-----------------------------+--------------------------------------------------------------+
+| ``avs_set_to_array``  | ``avs_new_value_array``     | API deep copies (must be released); inline only points to    |
+|                       |                             | the caller's array (must not be released)                    |
++-----------------------+-----------------------------+--------------------------------------------------------------+
+| ``avs_set_to_clip``   | ``avs_new_value_clip``      | same: the inline one calls the API, both add a reference,    |
+|                       |                             | both must be released                                        |
++-----------------------+-----------------------------+--------------------------------------------------------------+
+| ``avs_set_to_void``   | ``avs_void`` constant       | same result                                                  |
++-----------------------+-----------------------------+--------------------------------------------------------------+
+
 .. _c_avs_set_to_void:
 
 avs_set_to_void
 ---------------
+
+::
+
+    void avs_set_to_void(AVS_Value*);
+
+Sets an undefined (``'v'``) value, like assigning the ``avs_void`` constant. Release is a no-op.
 
 .. _c_avs_set_to_error:
 
 avs_set_to_error
 ----------------
 
+::
+
+    void avs_set_to_error(AVS_Value*, const char* v0);
+
+Sets an error value. Only the pointer is stored, the message is not copied: it must outlive the value
+(use a string literal or ``avs_save_string``). Release is a no-op.
+Returned from a filter function (``avs_add_function`` callback), the error is thrown as a script error.
+
 .. _c_avs_set_to_bool:
 
 avs_set_to_bool
 ---------------
+
+::
+
+    void avs_set_to_bool(AVS_Value*, int v0);
+
+Any nonzero ``v0`` is stored as true. Release is a no-op.
 
 .. _c_avs_set_to_int:
 
 avs_set_to_int
 --------------
 
+::
+
+    void avs_set_to_int(AVS_Value*, int v0);
+
+32-bit integer. Release is a no-op.
+
 .. _c_avs_set_to_string:
 
 avs_set_to_string
 -----------------
+
+::
+
+    void avs_set_to_string(AVS_Value*, const char* v0);
+
+Only the pointer is stored, the string is not copied: it must outlive the value. For a string that
+lives as long as the script environment, store a copy made by ``avs_save_string``. Release is a no-op.
 
 .. _c_avs_set_to_float:
 
 avs_set_to_float
 ----------------
 
+::
+
+    void avs_set_to_float(AVS_Value*, float v0);
+
+32-bit float. Release is a no-op.
+
 .. _c_avs_set_to_double:
 
 avs_set_to_double
 -----------------
+
+::
+
+    void avs_set_to_double(AVS_Value*, double d);
+
+64-bit floating point. No inline counterpart. Must be released with ``avs_release_value``:
+on 32-bit (x86) systems the value is stored in separately allocated memory.
 
 .. _c_avs_set_to_long:
 
 avs_set_to_long
 ---------------
 
+::
+
+    void avs_set_to_long(AVS_Value*, int64_t l);
+
+64-bit integer. No inline counterpart. Must be released with ``avs_release_value``:
+on 32-bit (x86) systems the value is stored in separately allocated memory.
+
 .. _c_avs_set_to_array:
 
 avs_set_to_array
---------------------
+----------------
+
+::
+
+    void avs_set_to_array(AVS_Value*, AVS_Value* src, int size);
+
+Creates an array value from ``size`` elements of ``src``. The array and its elements are deep copied
+(nested arrays as well, clips and functions get an additional reference), so the result must be
+released with ``avs_release_value``. ``src`` itself is not touched, release its elements separately
+if they own resources.
+
+The inline helper ``avs_new_value_array`` is the non-allocating alternative::
+
+    AVS_Value avs_new_value_array(AVS_Value * v0, int size);
+
+It allocates nothing, only points to the caller's array of ``size`` elements:
+
+- do not call ``avs_release_value`` on it, that would free the caller's array;
+- elements are not copied or reference counted, the array must outlive the use of the returned value.
+
+Typical use is assembling ``args`` for ``avs_invoke``, ``avs_invoke2`` or ``avs_invoke3``:
+the core makes its own copy for the call.
+
+Example, calling ``StackHorizontal(clip, clip2)``, where ``clip`` and ``clip2`` are existing clip values.
+Both ways start from a plain C array of the arguments. It holds simple struct copies, never release it.
+Non-allocating way::
+
+    AVS_Value src[2] = { clip, clip2 };
+    AVS_Value res = avs_invoke(env, "StackHorizontal", avs_new_value_array(src, 2), NULL);
+    // no avs_release_value for the array
+    avs_release_value(res); // invoke's value must be released
+
+The same through the API::
+
+    AVS_Value src[2] = { clip, clip2 };
+    AVS_Value args;
+    avs_set_to_array(&args, src, 2);
+    AVS_Value res = avs_invoke(env, "StackHorizontal", args, NULL);
+    avs_release_value(args); // deep copy, must be released
+    avs_release_value(res); // invoke's value must be released
+
+.. _c_avs_new_value_array:
+
+avs_new_value_array
+-------------------
+
+::
+
+    AVS_Value avs_new_value_array(AVS_Value * v0, int size);
+
+Inline (non-API) helper from ``avisynth_c.h``, not an exported function: it is compiled into the plugin.
+Non-allocating array value, do not release it. See the description and examples
+at :ref:`avs_set_to_array<c_avs_set_to_array>`.
+
+.. _c_avs_get_as_xxx:
+
+The ``avs_get_as_xxx`` getters and the array accessors below are API calls (v11), the
+non-inline counterparts of the ``avs_as_xxx`` inline helpers.
+
+Releasing: except ``avs_get_as_clip``, they allocate nothing. They return a plain C value
+(``int``, ``int64_t``, ``double``) or a pointer into the source ``AVS_Value``, which stays owned by it.
+Nothing returned by them must be released.
+
+What must be released with ``avs_release_value`` is the *source* ``AVS_Value`` itself, when it owns
+resources: a clip, a function, an array created by ``avs_set_to_array`` (or returned by ``avs_invoke``),
+and 64-bit ``double`` and ``long`` values. On 32-bit (x86) systems ``double`` and ``long`` are stored
+in separately allocated memory; on 64-bit systems they are stored in the ``AVS_Value`` directly,
+releasing them is a no-op there, but portable code releases them anyway. Release the source only after
+the last use of the pointers obtained from it.
 
 .. _c_avs_get_as_bool:
 
 avs_get_as_bool
 ---------------
 
+::
+
+    int avs_get_as_bool(AVS_Value v);
+
+Returns 1 or 0. Nothing to release.
+
+.. _c_avs_get_as_clip:
+
+avs_get_as_clip
+---------------
+
+::
+
+    AVS_Clip* avs_get_as_clip(AVS_Value v, AVS_ScriptEnvironment* env);
+
+Like ``avs_take_clip``: the only getter which allocates. Returns a new ``AVS_Clip`` and increases
+the clip's reference count by one; release it with ``avs_release_clip``. The source ``AVS_Value``
+can be released independently. See also :ref:`c_avs_take_clip`.
+
 .. _c_avs_get_as_int:
 
 avs_get_as_int
 --------------
+
+::
+
+    int avs_get_as_int(AVS_Value v);
+
+Returns a 32-bit integer, also from a 64-bit ``long`` value (truncated). Nothing to release.
 
 .. _c_avs_get_as_long:
 
 avs_get_as_long
 ---------------
 
+::
+
+    int64_t avs_get_as_long(AVS_Value v);
+
+Returns a 64-bit integer, from an ``int`` or ``long`` value. The returned value is a plain
+``int64_t``, nothing to release; a source ``long`` value must be released (see above).
+
 .. _c_avs_get_as_string:
 
 avs_get_as_string
 -----------------
+
+::
+
+    const char* avs_get_as_string(AVS_Value v);
+
+Returns the string pointer stored in the value, not a copy. Do not free it.
+Strings coming from Avisynth (script, ``avs_save_string``) live as long as the script environment.
 
 .. _c_avs_get_as_float:
 
 avs_get_as_float
 ----------------
 
+::
+
+    double avs_get_as_float(AVS_Value v);
+
+Returns a ``double``, from an ``int``, ``long``, ``float`` or ``double`` value. The returned value is
+a plain ``double``, nothing to release; a source ``double`` or ``long`` value must be released (see above).
+
 .. _c_avs_get_as_error:
 
 avs_get_as_error
 ----------------
+
+::
+
+    const char* avs_get_as_error(AVS_Value v);
+
+Returns the error message of an error value, NULL if the value is not an error. Pointer, not a copy,
+do not free it.
 
 .. _c_avs_get_as_array:
 
 avs_get_as_array
 ----------------
 
+::
+
+    const AVS_Value* avs_get_as_array(AVS_Value v);
+
+Returns a pointer to the elements of an array value. Borrowed: owned by the array value, do not release
+it or its elements; it is valid until the array value is released.
+
 .. _c_avs_get_array_elt:
 
 avs_get_array_elt
 -----------------
 
+::
+
+    AVS_Value avs_get_array_elt(AVS_Value v, int index);
+
+Returns an element of an array value (or the value itself if it is not an array).
+A plain struct copy, no reference counting: do not release it. Use ``avs_copy_value`` on it
+to keep the element after the array value is released (and release that copy later).
+
 .. _c_avs_get_array_size:
 
 avs_get_array_size
 ------------------
+
+::
+
+    int avs_get_array_size(AVS_Value v);
+
+Returns the number of elements of an array value. Nothing to release.
+Call it on array values only (``avs_val_is_array``); a non-array value returns 1, but debug builds assert.
 
 .. _c_avs_val_defined:
 
