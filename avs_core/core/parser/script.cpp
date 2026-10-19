@@ -758,26 +758,47 @@ AVSValue Muldiv(AVSValue args, void*, IScriptEnvironment* ) {
   return (int)result;
 }
 
-// v11: up to int64 range
-AVSValue Floor(AVSValue args, void*, IScriptEnvironment* ) { 
-  int64_t result = static_cast<int64_t>(floor(args[0].AsFloat()));
+// Converts an integer valued double to int64; NaN, infinity and values out of the
+// 64 bit range are a script error (a plain cast would be undefined behavior).
+static int64_t DoubleToInt64(double d, const char* name, IScriptEnvironment* env)
+{
+  // 2^63 is exact in double, INT64_MAX is not
+  if (!(d >= -9223372036854775808.0 && d < 9223372036854775808.0)) // false for NaN as well
+    env->ThrowError("%s: the value is out of the 64 bit integer range", name);
+  return static_cast<int64_t>(d);
+}
+
+// keep the smaller type
+static AVSValue IntOrLong(int64_t result)
+{
   if (result >= INT_MIN && result <= INT_MAX)
     return (int)result;
   return result;
 }
+
+// Rounds half away from zero, exactly. x - trunc(x) is exact, unlike trunc(x + 0.5), which
+// gives 1 for 0.49999999999999994 and rounds odd values above 2^52 one up.
+// Not std::round: it is not exact either in every runtime (mingw-w64 x64 msvcrt).
+static double RoundHalfAway(double x)
+{
+  const double t = std::trunc(x);
+  return std::fabs(x - t) >= 0.5 ? t + std::copysign(1.0, x) : t;
+}
+
 // v11: up to int64 range
-AVSValue Ceil(AVSValue args, void*, IScriptEnvironment* ) { 
-  int64_t result = static_cast<int64_t>(ceil(args[0].AsFloat()));
-  if (result >= INT_MIN && result <= INT_MAX)
-    return (int)result;
-  return result;
+AVSValue Floor(AVSValue args, void*, IScriptEnvironment* env) {
+  if (args[0].IsInt()) return args[0]; // no precision loss through double
+  return IntOrLong(DoubleToInt64(std::floor(args[0].AsFloat()), "Floor", env));
 }
 // v11: up to int64 range
-AVSValue Round(AVSValue args, void*, IScriptEnvironment* ) { 
-  int64_t result = args[0].AsFloat() < 0 ? -static_cast<int64_t>(-args[0].AsFloat() + .5) : static_cast<int64_t>(args[0].AsFloat() + .5);
-  if (result >= INT_MIN && result <= INT_MAX)
-    return (int)result;
-  return result;
+AVSValue Ceil(AVSValue args, void*, IScriptEnvironment* env) {
+  if (args[0].IsInt()) return args[0];
+  return IntOrLong(DoubleToInt64(std::ceil(args[0].AsFloat()), "Ceil", env));
+}
+// v11: up to int64 range
+AVSValue Round(AVSValue args, void*, IScriptEnvironment* env) {
+  if (args[0].IsInt()) return args[0];
+  return IntOrLong(DoubleToInt64(RoundHalfAway(args[0].AsFloat()), "Round", env));
 }
 
 AVSValue Acos(AVSValue args, void* , IScriptEnvironment* ) { return acos(args[0].AsFloat()); }
@@ -2102,28 +2123,24 @@ AVSValue Frac(AVSValue args, void*, IScriptEnvironment*) {
   return result;
 }
 
-AVSValue Int(AVSValue args, void*, IScriptEnvironment*) {  
+AVSValue Int(AVSValue args, void*, IScriptEnvironment* env) {
   if (args[0].IsLongStrict()) return args[0].AsLong();
   if (args[0].IsInt()) return args[0].AsInt();
-  
-  int64_t result = int64_t(args[0].AsFloat());
-  if (result >= INT_MIN && result <= INT_MAX)
-    return (int)result;
-  return result;
+
+  return IntOrLong(DoubleToInt64(std::trunc(args[0].AsFloat()), "Int", env));
 }
 
-AVSValue IntI(AVSValue args, void*, IScriptEnvironment*) {
+// Always 32 bit: wraps around like for integer input, IntI(x) == IntI(Long(x))
+AVSValue IntI(AVSValue args, void*, IScriptEnvironment* env) {
   if (args[0].IsInt()) return static_cast<int>(args[0].AsLong());
 
-  int result = static_cast<int>(args[0].AsFloat());
-  return result;
+  return static_cast<int>(DoubleToInt64(std::trunc(args[0].AsFloat()), "IntI", env));
 }
 
-AVSValue Long(AVSValue args, void*, IScriptEnvironment*) {
+AVSValue Long(AVSValue args, void*, IScriptEnvironment* env) {
   if (args[0].IsInt()) return args[0].AsLong();
 
-  int64_t result = static_cast<int64_t>(args[0].AsFloat());
-  return result;
+  return DoubleToInt64(std::trunc(args[0].AsFloat()), "Long", env);
 }
 
 AVSValue Float(AVSValue args, void*, IScriptEnvironment*) {

@@ -19,6 +19,14 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   PlaneMinMaxStats) are real pixel values and stay 32 bit float. Existed since 3.7.4.
 - Spline: calculation and result in 64 bit double (were 32 bit float), e.g. Spline(0.1, 0, 0, 1, 1, false)
   equals 0.1, and integer x values above 2^24 are not rounded any more.
+- Fix: Floor, Ceil, Round, Int, IntI, Long: values out of the 64 bit integer range, NaN and infinity
+  returned garbage (e.g. Int(Pow(10.0, 30)) = -9223372036854775808); now they are a script error.
+  IntI of a floating-point value outside the 32 bit range wraps around like for integers
+  (IntI(4294967297.0) = 1, was -2147483648). Existed since classic Avisynth.
+- Fix: Round was inexact: values just below 0.5 rounded up (0.5 - 2^-54 gave 1), odd values above 2^52
+  were rounded one up. Halves are still rounded away from zero. Floor, Ceil and Round return an integer
+  argument unchanged; it lost precision above 2^53 (through double).
+  Existed since classic Avisynth (the integer argument case since 3.7.4).
 - Fix: script integer division and modulo of the smallest 64 bit integer by -1 (e.g.
   (-9223372036854775807 - 1) / -1) froze or crashed the host process (CPU divide exception).
   Now "/" throws an "integer overflow in division" script error, "%" returns 0.

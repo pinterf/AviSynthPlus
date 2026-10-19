@@ -88,6 +88,7 @@ Floor
     Floor(float)
 
 Converts from float to int (round down on any fractional amount).
+An integer argument is returned unchanged. A value out of the 64 bit integer range, NaN or infinity is an error (since 3.7.6).
 
 *Examples:*
 ::
@@ -104,12 +105,13 @@ Ceil
     Ceil(float)
 
 Converts from float to int (round up on any fractional amount).
+An integer argument is returned unchanged. A value out of the 64 bit integer range, NaN or infinity is an error (since 3.7.6).
 
 *Examples:*
 ::
 
-    Ceil(1.2) = 2.0
-    Ceil(1.6) = 2.0
+    Ceil(1.2) = 2
+    Ceil(1.6) = 2
     Ceil(-1.2) = -1
     Ceil(-1.6) = -1
 
@@ -119,7 +121,9 @@ Round
 
     Round(float)
 
-Converts from float to int (round off to nearest integer).
+Converts from float to int (round off to nearest integer). Halves are rounded away from zero
+(``Round(2.5) = 3``, ``Round(-2.5) = -3``), exactly, also for large values (since 3.7.6).
+An integer argument is returned unchanged. A value out of the 64 bit integer range, NaN or infinity is an error (since 3.7.6).
 
 *Examples:*
 ::
@@ -137,6 +141,7 @@ Int
 
 Converts from single-precision, `floating-point`_ or any integer value to int (round towards
 zero). If the result fit into 32 bit integer, the result type is integer, else 64 bit long.
+A value out of the 64 bit integer range, NaN or infinity is an error (since 3.7.6).
 
 *Examples:*
 ::
@@ -153,16 +158,19 @@ IntI
     IntI(float)
 
 Converts from a `floating-point`_ or any integer value to 32 bit int (round towards zero).
+Values outside the 32 bit range wrap around, the same way for integer and floating-point
+arguments: ``IntI(4294967297) = IntI(4294967297.0) = 1``.
+A value out of the 64 bit integer range, NaN or infinity is an error (since 3.7.6).
 
 Since v3.7.4.
 
 *Examples:*
 ::
 
-    Int(1.2) = 1
-    Int(1.6) = 1
-    Int(-1.2) = -1
-    Int(-1.6) = -1
+    IntI(1.2) = 1
+    IntI(1.6) = 1
+    IntI(-1.2) = -1
+    IntI(-1.6) = -1
 
 Long
 ~~~~
@@ -171,6 +179,7 @@ Long
     Long(float)
 
 Converts from a `floating-point`_ or any integer value to 64 bit int (round towards zero).
+A value out of the 64 bit integer range, NaN or infinity is an error (since 3.7.6).
 
 Since v3.7.4.
 
@@ -180,7 +189,7 @@ Since v3.7.4.
     Long(1.2) = 1
     Long(1.6) = 1
     Long(-1.2) = -1
-    Int(-1.6) = -1
+    Long(-1.6) = -1
 
 Float
 ~~~~~
@@ -447,6 +456,9 @@ Changelog
 +=================+===================================+
 | 3.7.6           | | Spline: 64 bit double           |
 |                 | | Frac: double for double input   |
+|                 | | Floor, Ceil, Round, Int, IntI,  |
+|                 |   Long: out of range is an error |
+|                 | | Round: exact halves             |
 +-----------------+-----------------------------------+
 | 3.7.4           | | Changed Float, Int              |
 |                 | | Add IntI, Long, FloatF, Double  |
