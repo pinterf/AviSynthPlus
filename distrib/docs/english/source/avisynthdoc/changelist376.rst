@@ -479,6 +479,9 @@ Bugfixes
   ``*Difference*`` functions) and ``PlaneMinMaxStats`` returned 32 bit float, so e.g. ``AverageLuma() < 2.6``
   was true for an average of exactly 2.6 (script constants are 64 bit double). Now these computed results
   are 64 bit double; the min and max of a 32 bit float clip stay 32 bit float pixel values. Existed since 3.7.4.
+- Fix: script integer division and modulo of the smallest 64 bit integer by -1 froze or crashed the
+  host process. Now ``/`` throws an "integer overflow in division" error, ``%`` returns 0.
+  Existed since classic Avisynth (before 3.7.4 with the smallest 32 bit integer).
 - Fix: ``PlaneMinMaxStats`` on 32 bit float clips with threshold 0: the thresholded minimum and maximum
   (elements 2 and 3) were wrong; now they equal the minimum and maximum, like for integer clips.
   Existed since 3.7.3.

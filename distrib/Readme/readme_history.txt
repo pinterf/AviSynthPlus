@@ -19,6 +19,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   PlaneMinMaxStats) are real pixel values and stay 32 bit float. Existed since 3.7.4.
 - Spline: calculation and result in 64 bit double (were 32 bit float), e.g. Spline(0.1, 0, 0, 1, 1, false)
   equals 0.1, and integer x values above 2^24 are not rounded any more.
+- Fix: script integer division and modulo of the smallest 64 bit integer by -1 (e.g.
+  (-9223372036854775807 - 1) / -1) froze or crashed the host process (CPU divide exception).
+  Now "/" throws an "integer overflow in division" script error, "%" returns 0.
+  Existed since classic Avisynth (before 3.7.4 with the smallest 32 bit integer, -2147483648).
 - Fix: PlaneMinMaxStats on 32 bit float clips with threshold 0: the thresholded minimum and maximum
   (elements 2 and 3) were wrong, e.g. 0.0000001 instead of 0.0078 (luma), -0.5 instead of 0 (chroma).
   Now they equal the minimum and maximum, like for integer clips. Existed since 3.7.3.

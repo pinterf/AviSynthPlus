@@ -484,6 +484,8 @@ AVSValue ExpDiv::Evaluate(IScriptEnvironment* env)
   if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
     if (y.AsLong() == 0)
       env->ThrowError("Evaluate: division by zero");
+    if (x.AsLong() == INT64_MIN && y.AsLong() == -1) // UB, a hardware exception on x86
+      env->ThrowError("Evaluate: integer overflow in division");
     int64_t result = x.AsLong() / y.AsLong();
     // keep the smaller type
     if (result >= INT_MIN && result <= INT_MAX)
@@ -508,6 +510,8 @@ AVSValue ExpMod::Evaluate(IScriptEnvironment* env)
   if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
     if (y.AsLong() == 0)
       env->ThrowError("Evaluate: division by zero");
+    if (y.AsLong() == -1) // x % -1 is always 0; INT64_MIN % -1 would be UB, a hardware exception on x86
+      return 0;
     int64_t result = x.AsLong() % y.AsLong();
     // keep the smaller type
     if (result >= INT_MIN && result <= INT_MAX)
