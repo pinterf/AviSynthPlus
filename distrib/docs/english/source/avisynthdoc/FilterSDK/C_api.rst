@@ -421,6 +421,20 @@ Quick list
 +-------------------------------------+-----------------------+-------+
 | avs_is_ya                           | AVS_VideoInfo         | 13    |
 +-------------------------------------+-----------------------+-------+
+| avs_val_is_function                 | AVS_Value             | 14    |
++-------------------------------------+-----------------------+-------+
+| avs_val_get_type                    | AVS_Value             | 14    |
++-------------------------------------+-----------------------+-------+
+| avs_invoke_try                      | AVS_ScriptEnvironment | 14    |
++-------------------------------------+-----------------------+-------+
+| avs_invoke2                         | AVS_ScriptEnvironment | 14    |
++-------------------------------------+-----------------------+-------+
+| avs_invoke2_try                     | AVS_ScriptEnvironment | 14    |
++-------------------------------------+-----------------------+-------+
+| avs_invoke3                         | AVS_ScriptEnvironment | 14    |
++-------------------------------------+-----------------------+-------+
+| avs_invoke3_try                     | AVS_ScriptEnvironment | 14    |
++-------------------------------------+-----------------------+-------+
 
 
 Reference
@@ -681,6 +695,98 @@ avs_invoke
 ----------
 
 See also: :ref:`cplusplus_invoke`
+
+.. _c_avs_invoke_try:
+
+avs_invoke_try
+--------------
+
+::
+
+    int avs_invoke_try(AVS_ScriptEnvironment *, AVS_Value* result, const char * name,
+                       AVS_Value args, const char** arg_names);
+
+v14. No-throw variant of ``avs_invoke`` (C++ ``InvokeTry``).
+
+Return values of the ``_try`` variants (``avs_invoke_try``, ``avs_invoke2_try``, ``avs_invoke3_try``):
+
+- 1: success, the result is in ``*result``, release it with ``avs_release_value``.
+- 0 and ``avs_get_error`` returns NULL: the function cannot be called with the given arguments
+  (e.g. no such function name). ``*result`` is untouched.
+- 0 and ``avs_get_error`` is set: other error, e.g. an error inside the called function.
+
+.. _c_avs_invoke2:
+
+avs_invoke2
+-----------
+
+::
+
+    AVS_Value avs_invoke2(AVS_ScriptEnvironment *, AVS_Value implicit_last, const char * name,
+                          AVS_Value args, const char** arg_names);
+
+v14. ``avs_invoke`` with a value for the implicit ``last`` (C++ ``Invoke2``); pass ``avs_void`` if none.
+The returned value must be released with ``avs_release_value``. On error it returns an error value,
+``avs_get_error`` tells the reason.
+
+.. _c_avs_invoke2_try:
+
+avs_invoke2_try
+---------------
+
+::
+
+    int avs_invoke2_try(AVS_ScriptEnvironment *, AVS_Value* result, AVS_Value implicit_last,
+                        const char * name, AVS_Value args, const char** arg_names);
+
+v14. No-throw variant of ``avs_invoke2`` (C++ ``Invoke2Try``). Return values: see :ref:`avs_invoke_try<c_avs_invoke_try>`.
+
+.. _c_avs_invoke3:
+
+avs_invoke3
+-----------
+
+::
+
+    AVS_Value avs_invoke3(AVS_ScriptEnvironment *, AVS_Value implicit_last, AVS_Value func,
+                          AVS_Value args, const char** arg_names);
+
+v14. Calls a function value (C++ ``Invoke3``), e.g. a script function passed to a plugin parameter of type ``n``.
+``func`` must be a function value (``avs_val_is_function``), otherwise an error value is returned.
+Pass ``avs_void`` as ``implicit_last`` if none.
+The returned value must be released with ``avs_release_value``. On error it returns an error value,
+``avs_get_error`` tells the reason.
+
+The ``AVS_Value`` itself is the function handle, there is no separate function type:
+keep it with ``avs_copy_value``, free it with ``avs_release_value``.
+
+::
+
+    // script: ApplyInt(function(x) { return x + 1 }, 5)  # 6
+    static AVS_Value AVSC_CC apply_int(AVS_ScriptEnvironment* env, AVS_Value args, void* user_data)
+    {
+      AVS_Value i = avs_get_array_elt(args, 1);
+      AVS_Value fargs;
+      avs_set_to_array(&fargs, &i, 1);
+      AVS_Value res = avs_invoke3(env, avs_void, avs_get_array_elt(args, 0), fargs, NULL);
+      avs_release_value(fargs);
+      return res; // result or error value, goes back to the script
+    }
+    // in avisynth_c_plugin_init2:
+    avs_add_function(env, "ApplyInt", "ni", apply_int, NULL);
+
+.. _c_avs_invoke3_try:
+
+avs_invoke3_try
+---------------
+
+::
+
+    int avs_invoke3_try(AVS_ScriptEnvironment *, AVS_Value* result, AVS_Value implicit_last,
+                        AVS_Value func, AVS_Value args, const char** arg_names);
+
+v14. No-throw variant of ``avs_invoke3`` (C++ ``Invoke3Try``). Return values: see :ref:`avs_invoke_try<c_avs_invoke_try>`.
+A ``func`` which is not a function value returns 0 with ``avs_get_error`` set.
 
 .. _c_avs_make_writable:
 
@@ -1498,6 +1604,38 @@ avs_val_is_array
 avs_val_is_error
 ----------------
 
+.. _c_avs_val_is_function:
+
+avs_val_is_function
+-------------------
+
+v14. Returns 1 if the value is a function (``'n'`` type). See :ref:`avs_invoke3<c_avs_invoke3>`.
+
+.. _c_avs_val_get_type:
+
+avs_val_get_type
+----------------
+
+::
+
+    int avs_val_get_type(AVS_Value v);
+
+v14. Returns the type of the value as one of the ``AVS_VALUE_TYPE_xxx`` constants (C++ ``AVSValue::GetType``)::
+
+    AVS_VALUE_TYPE_UNDEFINED = 'v', // void, undefined value
+    AVS_VALUE_TYPE_BOOL = 'b',      // boolean
+    AVS_VALUE_TYPE_INT = 'i',       // 32 bit integer
+    AVS_VALUE_TYPE_LONG = 'l',      // 64 bit integer
+    AVS_VALUE_TYPE_FLOAT = 'f',     // 32 bit floating point
+    AVS_VALUE_TYPE_DOUBLE = 'd',    // 64 bit floating point
+    AVS_VALUE_TYPE_STRING = 's',    // string (const char *)
+    AVS_VALUE_TYPE_CLIP = 'c',      // clip
+    AVS_VALUE_TYPE_FUNCTION = 'n',  // function, call it with avs_invoke3 (v14)
+    AVS_VALUE_TYPE_ARRAY = 'a',     // array of AVS_Value
+    AVS_VALUE_TYPE_ERROR = 'e'      // error message string, C interface only
+
+Use it instead of reading the ``type`` field of ``AVS_Value`` directly.
+
 .. _c_avs_prop_get_int_saturated:
 
 avs_prop_get_int_saturated
@@ -1754,4 +1892,4 @@ ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2026/08/25 22:52:00 $
+$Date: 2026/10/19 12:00:00 $

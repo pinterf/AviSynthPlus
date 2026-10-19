@@ -11,6 +11,33 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261019 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Interface v14 (AVISYNTH_INTERFACE_VERSION = 14): C API additions, no C++ API change.
+  - Function values ('n' type, e.g. a script function passed to a plugin parameter of type "n"):
+    avs_val_is_function, avs_invoke3, avs_invoke3_try (like C++ Invoke3, Invoke3Try).
+    The AVS_Value itself is the function handle: copy it with avs_copy_value, free it with avs_release_value.
+  - avs_val_get_type: returns the type of an AVS_Value as AVS_VALUE_TYPE_xxx (like C++ AVSValue::GetType).
+  - avs_invoke_try, avs_invoke2, avs_invoke2_try (like C++ InvokeTry, Invoke2, Invoke2Try):
+    no-throw invoke, invoke with implicit 'last' (pass avs_void if none).
+  - The _try variants return 1 on success, with the result in *result (release it with avs_release_value).
+    They return 0 if the function cannot be called with the given arguments (avs_get_error returns NULL),
+    or on other errors (avs_get_error tells the reason).
+  - AVS_CS_RGBP8, AVS_CS_RGBAP8 aliases (like C++ CS_RGBP8, CS_RGBAP8).
+  - AVS_VALUE_TYPE_xxx constants (like C++ AvsValueType), plus the C-only AVS_VALUE_TYPE_ERROR.
+  Example:
+    // script: ApplyInt(function(x) { return x + 1 }, 5)  # 6
+    static AVS_Value AVSC_CC apply_int(AVS_ScriptEnvironment* env, AVS_Value args, void* user_data)
+    {
+      AVS_Value i = avs_get_array_elt(args, 1);
+      AVS_Value fargs;
+      avs_set_to_array(&fargs, &i, 1);
+      AVS_Value res = avs_invoke3(env, avs_void, avs_get_array_elt(args, 0), fargs, NULL);
+      avs_release_value(fargs);
+      return res; // result or error value, goes back to the script
+    }
+    // in avisynth_c_plugin_init2:
+    avs_add_function(env, "ApplyInt", "ni", apply_int, NULL);
+- C++ API: CS_xxx_CHROMA_PLACEMENT (AvsChromaPlacement) marked deprecated: never implemented,
+  use the _ChromaLocation frame property.
 - Interface v13.1 (AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1): user defined cache hints passed upstream
   by the core, for communication between plugins (#521).
   New CachePolicyHint range CACHE_USER_FORWARD_BEGIN (0x40000000) .. CACHE_USER_FORWARD_END (0x7FFFFFFF,

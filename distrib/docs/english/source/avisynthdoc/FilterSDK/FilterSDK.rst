@@ -490,6 +490,31 @@ What's new in the API V13
 
           See :ref:`SetCacheHints<cplusplus_setcachehints>` .
 
+.. _api_v14_whats_new:
+
+What's new in the API V14
+-------------------------
+
+- C API (AVISYNTH_INTERFACE_VERSION = 14), no C++ API change:
+        - Function values (``'n'`` type, e.g. a script function passed to a plugin parameter of type ``n``):
+
+          * ``avs_val_is_function``
+          * ``avs_invoke3``, ``avs_invoke3_try`` (like C++ ``Invoke3``, ``Invoke3Try``)
+
+          The ``AVS_Value`` itself is the function handle: copy it with ``avs_copy_value``,
+          free it with ``avs_release_value``. See :ref:`avs_invoke3<c_avs_invoke3>` .
+
+        - More invoke variants:
+
+          * ``avs_invoke_try`` (like C++ ``InvokeTry``): no-throw invoke
+          * ``avs_invoke2``, ``avs_invoke2_try`` (like C++ ``Invoke2``, ``Invoke2Try``): invoke with implicit ``last``
+
+        - Value type query:
+
+          * ``avs_val_get_type``, returns one of the ``AVS_VALUE_TYPE_xxx`` constants (like C++ ``AVSValue::GetType``)
+
+        - ``AVS_CS_RGBP8``, ``AVS_CS_RGBAP8`` aliases (like C++ ``CS_RGBP8``, ``CS_RGBAP8``)
+
 
 Some history
 ------------
