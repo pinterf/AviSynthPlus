@@ -472,6 +472,10 @@ Bugfixes
 - Fix #495 (debug builds only): ``VideoFrame::CheckMemory()`` ignored the allocation margin and
   reported a buffer overrun for every frame.
 - Fix #495 POSIX debug builds failed to compile (now forwards the error to ``stderr``).
+- Fix: ``propGetAll``: string array properties returned only their first element; now the value is
+  an array, like for integer, float and clip arrays. Existed since 3.6.0.
+- Fix: ``propGetAsArray`` on a frame type property (set by plugins) returned an array of ``true`` values;
+  now it throws an error, like ``propGetAny``. Existed since 3.6.0.
 - Fix: ``propGetXXX`` (C++ and C API) with a NULL ``error`` parameter terminated the process on a failed
   read (missing key, wrong type, index): now it throws ``AvisynthError`` (C API: returns, the reason is
   in ``avs_get_error``). ``propGetClip`` and ``propGetFrame`` behave the same way. Existed since 3.6.0.

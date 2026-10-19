@@ -11,6 +11,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261019 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: propGetAll: string array properties returned only their first element; now the value is
+  an array, like for integer, float and clip arrays. Existed since 3.6.0.
+- Fix: propGetAsArray on a frame type property (set by plugins) returned an array of true values
+  (PVideoFrame was implicitly converted to bool); now it throws an error, like propGetAny. Existed since 3.6.0.
 - Fix: propGetXXX (C++ and C API) with a NULL error parameter terminated the process on a failed read
   (missing key, wrong type, index): the AvisynthError was thrown inside a noexcept function.
   Now it throws AvisynthError (C API: returns 0/NULL, the reason is in avs_get_error).

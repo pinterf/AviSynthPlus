@@ -1022,6 +1022,8 @@ AVSValue GetPropertyAsArray::Create(AVSValue args, void* , IScriptEnvironment* e
     // special: zero array
     return AVSValue(nullptr, 0);
   }
+  if (propType == 'v') // like propGetAny; AVSValue has no frame type (would silently become bool)
+    env->ThrowError("Error getting frame property \"%s\": video frames not supported as function return values", propName);
   // check auto
   int size = env->propNumElements(avsmap, propName);
 
@@ -1053,7 +1055,6 @@ AVSValue GetPropertyAsArray::Create(AVSValue args, void* , IScriptEnvironment* e
           elem = AVSValue(env->SaveString(s));
       }
         break;
-      case 'v': elem = AVSValue(env->propGetFrame(avsmap, propName, i, &error)); break;
       case 'c': elem = AVSValue(env->propGetClip(avsmap, propName, i, &error)); break;
       default:
         elem = AVSValue();
@@ -1153,10 +1154,22 @@ AVSValue GetAllProperties::Create(AVSValue args, void*, IScriptEnvironment* env_
       }
     }
     else if (propType == 's') {
-      // no string arrays
-      const char* s = env->propGetData(avsmap, propName, 0, &error);
-      if (!error)
-        elem = AVSValue(env->SaveString(s));
+      if (propNumElements == 1) {
+        // single string
+        const char* s = env->propGetData(avsmap, propName, 0, &error);
+        if (!error)
+          elem = AVSValue(env->SaveString(s));
+      }
+      else {
+        //string array
+        std::vector<AVSValue> avsarr(propNumElements);
+        for (int i = 0; i < propNumElements; ++i) {
+          const char* s = env->propGetData(avsmap, propName, i, &error);
+          if (!error)
+            avsarr[i] = AVSValue(env->SaveString(s));
+        }
+        elem = AVSValue(avsarr.data(), propNumElements); // array deep copy
+      }
     }
     else if (propType == 'c') {
       if (propNumElements == 1)

@@ -357,11 +357,13 @@ propGetAsArray
 ~~~~~~~~~~~~~~
 ::
 
-    propGetAsArray(clip, string key_name[, integer "index", integer "offset"])
+    propGetAsArray(clip, string key_name[, integer "offset"])
 
 A frame property can hold multiple values of the same type: it can be an array.
 
 ``propGetAsArray`` returns an array. For a single property the array size will be 1.
+For a property which is not set, it returns an empty (zero sized) array.
+Frame type properties (set by plugins) cannot be returned, an error is thrown, like in ``propGetAny``.
 
 propGetClip
 ~~~~~~~~~~~
@@ -380,7 +382,8 @@ propGetAll
 Returns all frame properties in an array of [key-value] pairs. Array size will be ``numProps``
 
 Each key-value pair is contained in a two dimensional subarray.
-If the property value itself is an array again then "value" will be an array as well.
+If the property value itself is an array again (integer, float, string or clip) then "value" will be an array as well.
+The value of a frame type property (set by plugins) is undefined.
 
 This array contains all properties of the specific frame.
 
