@@ -134,6 +134,11 @@
 // 20251127 V12 AVS_CACHE_INFORM_NUM_THREADS constant to inform the filter about the number of threads by avs_set_cache_hints
 //              Add const AVS_AEP_CACHESIZE_L2 for avs_get_env_property level 2 cache size query,
 // 20251202     Add avs_get_cpu_flags_ex returning full 64 bit flags, new AVX-512 group flags, ARM64 CPU flags.
+// 202608xx V13 New pixel formats: YUV(A) 4:4:0, 4:1:1, 4:1:0 at all bit depths, YA (Y plus alpha)
+//              AVS_CS_GENERIC_YUV440/411/410, AVS_CS_GENERIC_YA and AVS_CS_xxx constants
+//              New avs_is_440, avs_is_ya, avs_is_410, avs_is_411
+// 202610xx V13.1 AVS_CACHE_USER_FORWARD_BEGIN..AVS_CACHE_USER_FORWARD_END cache hint range: passed upstream through
+//              the core's cache/MT guard/Prefetch/OnCPU/OnCUDA wrappers (#521)
 
 // Notes.
 // Choose either method:
@@ -164,11 +169,11 @@
 // Constants
 //
 
-#ifndef __AVISYNTH_12_H__
+#ifndef __AVISYNTH_13_H__
 enum {
   AVISYNTH_INTERFACE_CLASSIC_VERSION = 6,
   AVISYNTH_INTERFACE_VERSION = 13,
-  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 0 // reset to zero whenever the normal interface version bumps
+  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1 // reset to zero whenever the normal interface version bumps
 };
 #endif
 
@@ -582,7 +587,14 @@ enum {
   AVS_CACHE_GET_DEV_TYPE = 601,          // Device types a filter can return
   AVS_CACHE_GET_CHILD_DEV_TYPE = 602,    // Device types a fitler can receive
 
-  AVS_CACHE_USER_CONSTANTS = 1000       // Smaller values are reserved for the core
+  AVS_CACHE_USER_CONSTANTS = 1000,      // Smaller values are reserved for the core
+
+  // V13.1 (AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION 1)
+  // User defined hints in this range are passed upstream through the core's internal
+  // wrappers (cache, MT guard, Prefetch, OnCPU/OnCUDA), returning the result of the
+  // filter.
+  AVS_CACHE_USER_FORWARD_BEGIN = 0x40000000,
+  AVS_CACHE_USER_FORWARD_END = 0x7FFFFFFF // inclusive
 };
 
 

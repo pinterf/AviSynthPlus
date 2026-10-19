@@ -59,6 +59,11 @@
 // 20251127  V12 CACHE_INFORM_NUM_THREADS CachePolicyHint enum to inform the filter about the number of threads by SetCacheHints
 //               New env property AEP_CACHESIZE_L2
 // 20251202      GetCPUFlagsEx returning full 64 bit flags, new AVX-512 group flags, ARM64 CPU flags.
+// 202608xx  V13 New pixel formats: YUV(A) 4:4:0, 4:1:1, 4:1:0 at all bit depths, YA (Y plus alpha)
+//               CS_GENERIC_YUV440/411/410, CS_GENERIC_YA and CS_xxx constants
+//               New VideoInfo::Is440, IsYA, Is410, Is411
+// 202610xx  V13.1 CACHE_USER_FORWARD_BEGIN..CACHE_USER_FORWARD_END CachePolicyHint range: passed upstream through
+//               the core's cache/MT guard/Prefetch/OnCPU/OnCUDA wrappers (#521)
 
 // http://avisynth.nl
 
@@ -95,8 +100,8 @@
 // graphical user interfaces.
 
 
-#ifndef __AVISYNTH_12_H__
-#define __AVISYNTH_12_H__
+#ifndef __AVISYNTH_13_H__
+#define __AVISYNTH_13_H__
 
 #include "avs/config.h"
 #include "avs/capi.h"
@@ -130,7 +135,7 @@ enum AvsVersion {
   AVISYNTH_CLASSIC_INTERFACE_VERSION_26BETA = 5,
   AVISYNTH_CLASSIC_INTERFACE_VERSION = 6,
   AVISYNTH_INTERFACE_VERSION = 13,
-  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 0 // reset to zero whenever the normal interface version bumps
+  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1 // reset to zero whenever the normal interface version bumps
 };
 
 /* Compiler-specific crap */
@@ -1331,7 +1336,14 @@ enum CachePolicyHint {
   CACHE_GET_DEV_TYPE,          // Device types a filter can return
   CACHE_GET_CHILD_DEV_TYPE,    // Device types a filter can receive
 
-  CACHE_USER_CONSTANTS = 1000       // Smaller values are reserved for the core
+  CACHE_USER_CONSTANTS = 1000,      // Smaller values are reserved for the core
+
+  // v13.1
+  // User defined hints in this range are passed upstream through the core's internal
+  // wrappers (cache, MT guard, Prefetch, OnCPU/OnCUDA), returning the result of the
+  // filter.
+  CACHE_USER_FORWARD_BEGIN = 0x40000000,
+  CACHE_USER_FORWARD_END = 0x7FFFFFFF // inclusive
 };
 
 // Base class for all filters.
@@ -2133,4 +2145,4 @@ AVSC_API(IScriptEnvironment2*, CreateScriptEnvironment2)(int version = AVISYNTH_
 
 #pragma pack(pop)
 
-#endif //__AVISYNTH_12_H__
+#endif //__AVISYNTH_13_H__
