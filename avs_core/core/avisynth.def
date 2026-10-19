@@ -181,3 +181,5 @@ EXPORTS
   avs_invoke_try = _avs_invoke_try@24
   avs_invoke2 = _avs_invoke2@28
   avs_invoke2_try = _avs_invoke2_try@32
+  avs_create_map = _avs_create_map@4
+  avs_free_map = _avs_free_map@8
