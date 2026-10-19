@@ -64,6 +64,7 @@
 //               New VideoInfo::Is440, IsYA, Is410, Is411
 // 202610xx  V13.1 CACHE_USER_FORWARD_BEGIN..CACHE_USER_FORWARD_END CachePolicyHint range: passed upstream through
 //               the core's cache/MT guard/Prefetch/OnCPU/OnCUDA wrappers (#521)
+//               CS_xxx_CHROMA_PLACEMENT (AvsChromaPlacement) marked deprecated: never implemented, use _ChromaLocation
 
 // http://avisynth.nl
 
@@ -675,7 +676,7 @@ struct VideoInfo {
     for packed RGB(A): only 8 and 16 bits are valid
     
     Other YV12 specific (will never be used)
-      C  20-23 Chroma Placement values 0-4; see CS_xxx_CHROMA_PLACEMENT
+      C  20-23 Chroma Placement values 0-4; see CS_xxx_CHROMA_PLACEMENT (deprecated, unused)
     
     Color family and layout
                            Packed      Planar               Planar  Planar
@@ -949,7 +950,8 @@ struct VideoInfo {
     IT_NEXT_AVAILABLE = 1 << 23
   };
 
-  // Chroma placement bits 20 -> 23  ::FIXME:: Really want a Class to support this
+  // DEPRECATED, do not use. Classic 2.6 leftover, never implemented: pixel_type bits 20 -> 23
+  // are neither set nor read anywhere. Use the _ChromaLocation frame property instead.
   enum AvsChromaPlacement {
     CS_UNKNOWN_CHROMA_PLACEMENT = 0 << 20,
     CS_MPEG1_CHROMA_PLACEMENT   = 1 << 20,
