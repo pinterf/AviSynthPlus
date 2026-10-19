@@ -1347,8 +1347,11 @@ static const AVS_Linkage avs_linkage = {    // struct AVS_Linkage {
   &VideoInfo::Is410,                        //   bool    (VideoInfo::*Is410)()  const;
   &VideoInfo::Is411,                        //   bool    (VideoInfo::*Is411)()  const;
 
+  // V14
+  &AVSValue::AsFunction,                    //   PFunction (AVSValue::*AVSValue_AsFunction)() const;
+
   // a single { nullptr } initializes the whole placeholder array
-  { nullptr },                              // void          (VideoInfo::* reserved2[64 - 35])(); // Reserve pointer space for Avisynth+
+  { nullptr },                              // void          (VideoInfo::* reserved2[64 - 36])(); // Reserve pointer space for Avisynth+
 
 /**********************************************************************/
   // AviSynth Neo additions
