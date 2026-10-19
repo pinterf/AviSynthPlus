@@ -392,10 +392,6 @@ ScriptFunction::ScriptFunction( const PExpression& _body, const bool* _param_flo
   memcpy(param_names, _param_names, param_count * sizeof(const char*));
 }
 
-static bool is_within_int_in_float32_range(int64_t value) {
-  return value >= -16777216 && value <= 16777216;
-}
-
 AVSValue ScriptFunction::Execute(AVSValue args, void* user_data, IScriptEnvironment* env)
 {
   ScriptFunction* self = (ScriptFunction*)user_data;
@@ -404,11 +400,9 @@ AVSValue ScriptFunction::Execute(AVSValue args, void* user_data, IScriptEnvironm
     env->SetVar(self->param_names[i], 
       // Same as in ScriptFunction::Execute and AVSValue FunctionInstance::Execute
 
-      // force float args that are actually long/int (int64) to be float/double (depending on the range)
-      // opportunity to fit into the smaller float size
-      (self->param_floats[i] && args[i].IsInt()) ?
-      is_within_int_in_float32_range(args[i].AsLong()) ? (float)args[i].AsLong() : (double)args[i].AsLong() :
-      args[i]
+      // int/long args passed to float parameters are converted to 64 bit double.
+      // Not to 32 bit float: then arithmetic between two such parameters would be done in float.
+      (self->param_floats[i] && args[i].IsInt()) ? AVSValue((double)args[i].AsLong()) : args[i]
     );
 
   AVSValue result;
