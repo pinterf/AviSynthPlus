@@ -665,7 +665,7 @@ int AVSC_CC avs_prop_set_clip(AVS_ScriptEnvironment * p, AVS_Map * map, const ch
 {
    p->error = 0;
   try {
-    return (p->env->propSetClip((AVSMap*)map, key, *(PClip*)clip, append));
+    return (p->env->propSetClip((AVSMap*)map, key, clip->clip, append)); // AVS_Clip is a wrapper, not a PClip
   }
   catch (const AvisynthError& err) {
     p->error = err.msg;
