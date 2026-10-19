@@ -17,6 +17,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   e.g. AverageLuma() == 2.6 was false and AverageLuma() < 2.6 was true for an average of exactly 2.6.
   Now these computed results are 64 bit double. The min and max of a 32 bit float clip (YPlaneMin, YPlaneMax,
   PlaneMinMaxStats) are real pixel values and stay 32 bit float. Existed since 3.7.4.
+- Fix: Frac returned 32 bit float for any (also 64 bit double) argument; now the result is 64 bit double,
+  32 bit float only for a 32 bit float argument (like Min, Max). Existed since 3.7.4.
+  Values beyond the 64 bit integer range returned garbage instead of 0 (existed since classic Avisynth).
 - Fix: script comparison operators (==, !=, <, >, <=, >=) of a 32 bit float and a 64 bit double compared in
   double, so a 32 bit float value was not equal to the same value written as a script constant:
   e.g. Floatf(2.6) == 2.6 was false and Floatf(2.6) < 2.6 was true; for values rounded up in float,

@@ -359,6 +359,7 @@ Frac
     Frac(float)
 
 Returns the fractional portion of the value provided.
+The result is 32-bit float for a 32-bit float argument, otherwise 64-bit double (since 3.7.6).
 
 *Examples:*
 ::

@@ -2100,9 +2100,10 @@ AVSValue IsVersionOrGreater(AVSValue args, void*, IScriptEnvironment* env)
 }
 
 AVSValue Frac(AVSValue args, void*, IScriptEnvironment*) {
-  if (args[0].IsInt()) return 0.f;
-  double result = args[0].AsFloat() - int64_t(args[0].AsFloat());
-  if (args[0].IsFloat())
+  if (args[0].IsInt()) return 0.0;
+  const double x = args[0].AsFloat();
+  const double result = x - std::trunc(x); // no int64 overflow on big values
+  if (args[0].IsFloatfStrict()) // keep 32 bit float type, like Min, Max
     return (float)result;
   return result;
 }

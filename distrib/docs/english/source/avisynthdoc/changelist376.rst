@@ -477,6 +477,9 @@ Bugfixes
   ``*Difference*`` functions) and ``PlaneMinMaxStats`` returned 32 bit float, so e.g. ``AverageLuma() < 2.6``
   was true for an average of exactly 2.6 (script constants are 64 bit double). Now these computed results
   are 64 bit double; the min and max of a 32 bit float clip stay 32 bit float pixel values. Existed since 3.7.4.
+- Fix: ``Frac`` returned 32 bit float for any (also 64 bit double) argument; now the result is 64 bit double,
+  32 bit float only for a 32 bit float argument. Existed since 3.7.4.
+  Values beyond the 64 bit integer range returned garbage instead of 0 (existed since classic Avisynth).
 - Fix: script comparison operators (``==``, ``!=``, ``<``, ``>``, ``<=``, ``>=``) of a 32 bit float and a
   64 bit double compared in double, e.g. ``Floatf(2.6) == 2.6`` was false and ``Floatf(2.6) < 2.6`` was true;
   for values rounded up in float, ``Floatf(0.1) > 0.1`` was true.
