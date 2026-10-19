@@ -55,7 +55,7 @@ private:
   union {
     int* intVal;
     bool* boolVal;
-    float* floatVal;
+    double* floatVal; // 64 bit double, like script floats
     const char* *stringVal;
   };
 

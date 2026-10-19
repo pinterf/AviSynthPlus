@@ -99,6 +99,7 @@ File format
         | Tells **ConditionalReader** to expect floating-point values.
         | (Decimal number with ``'.'`` decimal point, and optionally followed by
           an ``'E'`` character and decimal exponent)
+        | Values are stored and returned as 64-bit double (since 3.7.6, before: 32-bit float).
 
     ``TYPE bool``
 
@@ -370,6 +371,9 @@ Changelog
 +----------------+----------------------------------+
 | Version        | Changes                          |
 +================+==================================+
+| Avisynth 3.7.6 | float type: 64-bit double values |
+|                | (were 32-bit float)              |
++----------------+----------------------------------+
 | Avisynth 3.6.0 | Added "local"                    |
 +----------------+----------------------------------+
 | Avisynth+r2915 | Added "condvarsuffix"            |

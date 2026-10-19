@@ -227,7 +227,7 @@ ConditionalReader::ConditionalReader(PClip _child, const char* filename, const c
               intVal = new int[vi.num_frames];
             } else if (!lstrcmpi(type, "float")) {
               mode = MODE_FLOAT;
-              floatVal = new float[vi.num_frames];
+              floatVal = new double[vi.num_frames];
             } else if (!lstrcmpi(type, "bool")) {
               mode = MODE_BOOL;
               boolVal = new bool[vi.num_frames];
@@ -362,8 +362,8 @@ AVSValue ConditionalReader::ConvertType(const char* content, int line, IScriptEn
       return AVSValue(ival);
 
     case MODE_FLOAT:
-      float fval;
-      fields = sscanf(content, "%e", &fval);
+      double fval;
+      fields = sscanf(content, "%le", &fval);
       if (fields != 1)
         ThrowLine("ConditionalReader: Could not find an expected float at line %d!", line, env);
 
@@ -427,7 +427,7 @@ void ConditionalReader::SetRange(int start_frame, int stop_frame, AVSValue v) {
   start_frame = max(start_frame+offset, 0);
   stop_frame = min(stop_frame+offset, vi.num_frames-1);
   int p;
-  float q;
+  double q;
   bool r;
   const char* s;
 
@@ -439,7 +439,7 @@ void ConditionalReader::SetRange(int start_frame, int stop_frame, AVSValue v) {
       }
       break;
     case MODE_FLOAT:
-      q = v.Defined() ? v.AsFloatf() : 0.0f;
+      q = v.Defined() ? v.AsFloat() : 0.0;
       for (i = start_frame; i <= stop_frame; i++) {
         floatVal[i] = q;
       }
@@ -471,7 +471,7 @@ void ConditionalReader::SetFrame(int framenumber, AVSValue v) {
       intVal[framenumber+offset] = v.AsInt();
       break;
     case MODE_FLOAT:
-      floatVal[framenumber+offset] = v.AsFloatf();
+      floatVal[framenumber+offset] = v.AsFloat();
       break;
     case MODE_BOOL:
       boolVal[framenumber+offset] = v.AsBool();
