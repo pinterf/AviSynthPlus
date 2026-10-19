@@ -43,6 +43,8 @@
 
 #include <cfloat>
 #include <climits>
+#include <cstdlib>
+#include <string>
 
 
 
@@ -372,17 +374,22 @@ void Tokenizer::GetNumber()
   constexpr int64_t INT64_MAX_MOD_10 = INT64_MAX % 10;
   type = 'l';
   longlong = 0;
-  double dtemp = 0;
-  double place = 1;
+  // For floating point: the digits without the decimal point, and the number of fractional digits.
+  // Parsed as "<digits>e-<fraction_digits>" by strtod: correctly rounded, and independent of the
+  // locale decimal point, which the host application may have changed.
+  // The former d = d * 10 + digit, then d / 10^n method was exact only up to ~15 digits: above 2^53
+  // each step rounds, and the final division rounds again, so long constants were off by a few ulps
+  // (e.g. 3.14159265358979324 gave 3.1415926535897927 instead of 3.1415926535897931).
+  std::string digits;
+  int fraction_digits = 0;
 
   do {
     if (*pc == '.') {
-      // first, gather into double
       type = 'f';
       ++pc;
       while (isdigit(*pc)) {
-        place *= 10;
-        dtemp = dtemp * 10 + (*pc - '0');
+        digits += *pc;
+        fraction_digits++;
         ++pc;
       }
       break;
@@ -395,17 +402,17 @@ void Tokenizer::GetNumber()
         else
           longlong = longlong * 10 + (*pc - '0');
       }
-      dtemp = dtemp * 10 + (*pc - '0'); // gather always
+      digits += *pc; // gather always
     }
     ++pc;
   } while (isdigit(*pc) || *pc == '.');
 
-  dtemp /= place;
-  if (dtemp >= DBL_MAX)
-    env->ThrowError("Tokenizer: Number is to big.");
-
   if (type == 'f') {
-    double_pt = dtemp; // v11: type name remained 'f' but content is double
+    const std::string number = digits + "e-" + std::to_string(fraction_digits);
+    const double d = std::strtod(number.c_str(), nullptr);
+    if (d > DBL_MAX) // inf
+      env->ThrowError("Tokenizer: Number is to big.");
+    double_pt = d; // v11: type name remained 'f' but content is double
   }
   else if (longlong <= INT_MAX) {
     // store into a more simple type

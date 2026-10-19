@@ -479,6 +479,9 @@ Bugfixes
   ``*Difference*`` functions) and ``PlaneMinMaxStats`` returned 32 bit float, so e.g. ``AverageLuma() < 2.6``
   was true for an average of exactly 2.6 (script constants are 64 bit double). Now these computed results
   are 64 bit double; the min and max of a 32 bit float clip stay 32 bit float pixel values. Existed since 3.7.4.
+- Fix: script floating point constants with many digits were parsed inexactly (e.g. ``3.14159265358979324``
+  gave 3.1415926535897927 instead of 3.1415926535897931); now they are parsed correctly rounded.
+  Existed since classic Avisynth.
 - Fix: ``Floor``, ``Ceil``, ``Round``, ``Int``, ``IntI``, ``Long``: values out of the 64 bit integer range,
   NaN and infinity returned garbage; now they are a script error. ``IntI`` of a floating-point value
   outside the 32 bit range wraps around like for integers. Existed since classic Avisynth.
