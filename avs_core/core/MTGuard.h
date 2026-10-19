@@ -30,6 +30,8 @@ private:
 
   const MtMode MTMode;
 
+  int ForwardUserCacheHint(int cachehints, int frame_range);
+
 public:
   ~MTGuard();
 #ifdef AVS_WINDOWS

@@ -283,9 +283,46 @@ bool __stdcall MTGuard::GetParity(int n)
   return ChildFilters[0].filter->GetParity(n);
 }
 
+// IF v13.1
+int MTGuard::ForwardUserCacheHint(int cachehints, int frame_range)
+{
+  switch (MTMode)
+  {
+  case MT_NICE_FILTER:
+  {
+    // passed to the single instance
+    auto& child = ChildFilters[0];
+    return (child.filter->GetVersion() >= 5) ? child.filter->SetCacheHints(cachehints, frame_range) : 0;
+  }
+  case MT_MULTI_INSTANCE:
+  case MT_SERIALIZED:
+  {
+    // MT_SERIALIZED: lock like in GetFrame/GetAudio
+    // MT_MULTI_INSTANCE special: passed to every instance, each call has its own lock
+    // Note: instances that are created by EnableMT (Prefetch) later, will not receive earlier hints
+    int result = 0;
+    const size_t instances = (MTMode == MT_MULTI_INSTANCE) ? nThreads : 1;
+    for (size_t i = 0; i < instances; ++i) {
+      auto& child = ChildFilters[i];
+      std::lock_guard<std::mutex> lock(child.mutex);
+      const int res = (child.filter->GetVersion() >= 5) ? child.filter->SetCacheHints(cachehints, frame_range) : 0;
+      // result from index 0 only
+      if (i == 0) // MT_MULTI_INSTANCE: return the result of the first instance, as the others may throw
+        result = res;
+    }
+    return result;
+  }
+  default:
+    assert(0);
+    throw AvisynthError("Invalid Avisynth logic.");
+  }
+}
+
 int __stdcall MTGuard::SetCacheHints(int cachehints, int frame_range)
 {
-  AVS_UNUSED(frame_range);
+  if (IsForwardedUserCacheHint(cachehints))
+    return ForwardUserCacheHint(cachehints, frame_range); // GetVersion>=5 check inside
+
   if (CACHE_GET_MTMODE == cachehints) {
     return MT_NICE_FILTER;
   }
