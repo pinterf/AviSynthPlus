@@ -2532,6 +2532,57 @@ Filter returns 1 to the CACHE_DONT_CACHE_ME query.
     }
 
 
+CACHE_USER_FORWARD_BEGIN .. CACHE_USER_FORWARD_END
+..................................................
+
+User defined hints for communication between plugins.
+
+Since v13.1 (interface version 13, ``AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION`` 1).
+
+Hints in the range ``CACHE_USER_FORWARD_BEGIN`` (0x40000000) to ``CACHE_USER_FORWARD_END``
+(0x7FFFFFFF, inclusive) are passed upstream through the invisible wrappers the core puts
+around a filter: cache, MT guard, ``Prefetch`` and ``OnCPU``/``OnCUDA``. The result of the
+filter is returned to the caller. Hints outside this range are not forwarded by the
+core. C interface: ``AVS_CACHE_USER_FORWARD_BEGIN``, ``AVS_CACHE_USER_FORWARD_END``,
+``avs_set_cache_hints``.
+
+The meaning of a key and of the ``frame_range`` parameter is up to the cooperating
+plugins. Choose keys that are unlikely to collide with other plugins.
+
+Rules:
+
+- The hint still goes "only to the next filter". Other filters in between (e.g.
+  ``Trim``, or any ``GenericVideoFilter`` that does not handle the key) return 0 and cut it.
+  A cooperating filter may pass a key on to its own child.
+- ``MT_SERIALIZED`` filters receive the hint under the same lock as ``GetFrame``.
+- ``MT_MULTI_INSTANCE`` filters: the hint is passed to every existing instance; the
+  result is the one of the first instance. Instances created later, when ``Prefetch``
+  is applied, do not receive hints sent earlier (e.g. from a constructor).
+  Use the range for queries, or for state that every instance can rebuild by itself.
+  Hint delivery can be partial: if an instance throws, the instances before it have
+  already received the hint, and the caller gets the exception instead of a result.
+- Parameter and result are 32-bit ``int``. For a 64-bit value use two keys (low and
+  high part) as a workaround.
+- Return 0 for unknown keys, as for every other hint.
+- Detection: interface version 13 and ``env->GetEnvProperty(AEP_INTERFACE_BUGFIX)`` >= 1
+  (C: ``avs_get_env_property(env, AVS_AEP_INTERFACE_BUGFIX)``), or any interface version above 13.
+
+::
+
+    // shared header of the cooperating plugins; the key must be inside the range
+    const int MYPLUGIN_HINT_QUERY = CACHE_USER_FORWARD_BEGIN + 0x1234;
+
+    // upstream filter
+    int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+      if (cachehints == CACHE_GET_MTMODE) return MT_NICE_FILTER;
+      if (cachehints == MYPLUGIN_HINT_QUERY) return my_answer(frame_range);
+      return 0;
+    }
+
+    // downstream filter, e.g. in its constructor
+    int answer = (child->GetVersion() >= 5) ? child->SetCacheHints(MYPLUGIN_HINT_QUERY, param) : 0;
+
+
 
 Old, up to Avisynth 2.6
 .......................
@@ -2855,9 +2906,13 @@ The following constants are defined in avisynth.h:
       CACHE_GET_DEV_TYPE,           // Device types a filter can return
       CACHE_GET_CHILD_DEV_TYPE,    // Device types a fitler can receive
 
-      CACHE_USER_CONSTANTS = 1000       // Smaller values are reserved for the core
+      CACHE_USER_CONSTANTS = 1000,      // Smaller values are reserved for the core
 
-    };  
+      // v13.1
+      CACHE_USER_FORWARD_BEGIN = 0x40000000, // user defined hints passed upstream by the core wrappers
+      CACHE_USER_FORWARD_END = 0x7FFFFFFF    // inclusive
+
+    };
 
 
 .. _cplusplus_cpufeatureflags:
@@ -3328,4 +3383,4 @@ ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2025/12/31 17:40:00 $
+$Date: 2026/10/19 10:00:00 $

@@ -482,6 +482,14 @@ What's new in the API V13
           * ``avs_is_440``, ``avs_is_410``, ``avs_is_411``, ``avs_is_ya`` (C)
           * ``Is440``, ``Is410``, ``Is411``, ``IsYA`` (C++)
 
+        - V13.1 (bugfix version 1): user defined cache hints passed upstream by the core (cache, MT guard, ``Prefetch``,
+          ``OnCPU``/``OnCUDA``), for communication between plugins:
+
+          * ``CachePolicyHint::CACHE_USER_FORWARD_BEGIN`` .. ``CACHE_USER_FORWARD_END`` (C++)
+          * ``AVS_CACHE_USER_FORWARD_BEGIN`` .. ``AVS_CACHE_USER_FORWARD_END`` (C)
+
+          See :ref:`SetCacheHints<cplusplus_setcachehints>` .
+
 
 Some history
 ------------
@@ -510,7 +518,7 @@ License terms
 
 Note: Avisynth Filter SDK parts are under specific :doc:`SDK license <SDKLicense>` terms.
 
-$Date: 2026/08/25 22:40:00 $
+$Date: 2026/10/19 10:00:00 $
 
 Latest online Avisynth+ version is at https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html
 This one is maintained properly.

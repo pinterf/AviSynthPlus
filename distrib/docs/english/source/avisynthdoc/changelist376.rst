@@ -228,6 +228,14 @@ Additions, changes
 Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - Bump to interface version 13 for new color constants
+- v13.1 interface (``AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION`` = 1): user defined cache hint range passed upstream for communication between plugins
+  (https://github.com/AviSynth/AviSynthPlus/issues/521). The core's cache, MT guard, ``Prefetch`` and
+  ``OnCPU``/``OnCUDA`` wrappers pass these hints to the filter and return its result:
+
+  * ``CachePolicyHint::CACHE_USER_FORWARD_BEGIN`` .. ``CACHE_USER_FORWARD_END`` (C++)
+  * ``AVS_CACHE_USER_FORWARD_BEGIN`` .. ``AVS_CACHE_USER_FORWARD_END`` (C)
+
+  See :ref:`SetCacheHints<cplusplus_setcachehints>` .
 - introduce ``AVS_RESTRICT`` to ``avs/config.h`` (compiler invariant c++ ``__restrict``)
 - AVX512: CMake to recognize ``*_avx512b.*`` and ``*_avx512.*`` file pattern, add compiler specific AVX512 
   compile flags accordingly (AVX512 Base and Ice Lake extensions)
@@ -597,7 +605,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/10/15 08:40:00 $
+$Date: 2026/10/19 10:00:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

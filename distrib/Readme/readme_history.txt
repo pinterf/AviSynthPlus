@@ -9,8 +9,37 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20261015 3.7.5.rXXXX (pre 3.7.6)
+20261019 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Interface v13.1 (AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1): user defined cache hints passed upstream
+  by the core, for communication between plugins (#521).
+  New CachePolicyHint range CACHE_USER_FORWARD_BEGIN (0x40000000) .. CACHE_USER_FORWARD_END (0x7FFFFFFF,
+  inclusive); C API: AVS_CACHE_USER_FORWARD_BEGIN .. AVS_CACHE_USER_FORWARD_END.
+  Hints in this range pass through the invisible wrappers the core puts around a filter (cache, MT guard,
+  Prefetch, OnCPU/OnCUDA); the filter's result is returned to the caller. Other hints, including
+  the CACHE_USER_CONSTANTS (1000+) range, are not forwarded. The meaning of a key and of frame_range is up to
+  the cooperating plugins.
+  - Still "next filter only": other filters in between (e.g. Trim, any GenericVideoFilter not handling
+    the key) return 0 and cut it. A cooperating filter may pass the key on to its own child.
+  - MT_SERIALIZED: the hint is passed under the same lock as GetFrame.
+  - MT_MULTI_INSTANCE: passed to every existing instance, each under its own lock; the result is the
+    first instance's. Instances created later by Prefetch do not receive earlier hints (e.g. sent from a
+    constructor). If an instance throws, the instances before it already got the hint.
+  - Parameter and result are 32-bit int; return 0 for unknown keys.
+  - Detection: interface version 13 and GetEnvProperty(AEP_INTERFACE_BUGFIX) >= 1, or interface > 13.
+  Example:
+    // shared header of the cooperating plugins; the key must be inside the range
+    const int MYPLUGIN_HINT_QUERY = CACHE_USER_FORWARD_BEGIN + 0x1234;
+
+    // upstream filter
+    int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+      if (cachehints == CACHE_GET_MTMODE) return MT_NICE_FILTER;
+      if (cachehints == MYPLUGIN_HINT_QUERY) return my_answer(frame_range);
+      return 0;
+    }
+
+    // downstream filter, e.g. in its constructor
+    int answer = (child->GetVersion() >= 5) ? child->SetCacheHints(MYPLUGIN_HINT_QUERY, param) : 0;
 - Expr: relative pixel load border modes, as an optional suffix after x[dx,dy]:
   :c - clamp, the edge pixel is cloned (default, same as no suffix)      a a a | a b c d
   :m - mirror, edge pixel repeated (akarin.Expr compatible)              c b a | a b c d
