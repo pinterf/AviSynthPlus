@@ -145,6 +145,7 @@
 //              New avs_invoke_try, avs_invoke2, avs_invoke2_try (like C++ InvokeTry, Invoke2, Invoke2Try)
 //              Add AVS_CS_RGBP8 and AVS_CS_RGBAP8 aliases (like C++ CS_RGBP8, CS_RGBAP8)
 //              Add AVS_VALUE_TYPE_xxx constants for AVS_Value type (like C++ AvsValueType), plus C-only AVS_VALUE_TYPE_ERROR
+//              New avs_create_map, avs_free_map: standalone property map (like C++ createMap, freeMap)
 
 // Notes.
 // Choose either method:
@@ -1602,6 +1603,12 @@ AVSC_API(int, avs_prop_set_float_array)(AVS_ScriptEnvironment* p, AVS_Map* map, 
 
 AVSC_API(void, avs_clear_map)(AVS_ScriptEnvironment* p, AVS_Map* map);
 
+// v14: standalone property map, not attached to a frame (like C++ createMap, freeMap).
+// Use it with the avs_prop_xxx functions; every map from avs_create_map must be freed with avs_free_map.
+// Do not call avs_free_map on a frame's map (avs_get_frame_props_ro/rw).
+AVSC_API(AVS_Map*, avs_create_map)(AVS_ScriptEnvironment* p);
+AVSC_API(void, avs_free_map)(AVS_ScriptEnvironment* p, AVS_Map* map);
+
 // with frame property source
 AVSC_API(AVS_VideoFrame*, avs_new_video_frame_p)(AVS_ScriptEnvironment*,
   const AVS_VideoInfo* vi, const AVS_VideoFrame* prop_src);
@@ -1876,6 +1883,9 @@ struct AVS_Library {
   // calling function values
   AVSC_DECLARE_FUNC(avs_invoke3);
   AVSC_DECLARE_FUNC(avs_invoke3_try);
+  // standalone property map
+  AVSC_DECLARE_FUNC(avs_create_map);
+  AVSC_DECLARE_FUNC(avs_free_map);
 };
 
 #undef AVSC_DECLARE_FUNC
@@ -2186,6 +2196,9 @@ avs_bits_per_component    constant 8 (8 bits/component)
   // calling function values
   AVSC_LOAD_FUNC_OPT(avs_invoke3);
   AVSC_LOAD_FUNC_OPT(avs_invoke3_try);
+  // standalone property map
+  AVSC_LOAD_FUNC_OPT(avs_create_map);
+  AVSC_LOAD_FUNC_OPT(avs_free_map);
 
 #undef __AVSC_STRINGIFY
 #undef AVSC_STRINGIFY
