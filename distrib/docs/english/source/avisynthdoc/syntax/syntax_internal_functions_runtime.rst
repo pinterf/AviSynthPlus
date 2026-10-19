@@ -218,6 +218,8 @@ Changelog
 | Avisynth 3.7.6 | Average*, *Difference*, PlaneMinMaxStats: 64 bit double    |
 |                | results (were 32 bit float). Min, max of 32 bit float clips|
 |                | stay 32 bit float pixel values.                            |
+|                | Fix: PlaneMinMaxStats thresholded min, max of 32 bit float |
+|                | clips with threshold 0.                                    |
 +----------------+------------------------------------------------------------+
 | Avisynth 3.7.2 | Added a 6th element to PlaneMinMaxStats result             |
 +----------------+------------------------------------------------------------+

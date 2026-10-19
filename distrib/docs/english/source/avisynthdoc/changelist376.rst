@@ -477,6 +477,9 @@ Bugfixes
   ``*Difference*`` functions) and ``PlaneMinMaxStats`` returned 32 bit float, so e.g. ``AverageLuma() < 2.6``
   was true for an average of exactly 2.6 (script constants are 64 bit double). Now these computed results
   are 64 bit double; the min and max of a 32 bit float clip stay 32 bit float pixel values. Existed since 3.7.4.
+- Fix: ``PlaneMinMaxStats`` on 32 bit float clips with threshold 0: the thresholded minimum and maximum
+  (elements 2 and 3) were wrong; now they equal the minimum and maximum, like for integer clips.
+  Existed since 3.7.3.
 - Fix: ``ConditionalReader`` ``Type float`` stored and returned 32 bit float values, so e.g. a value 0.7 read
   from the file was not equal to the script constant 0.7 (64 bit double). Now the values are 64 bit double.
   Existed since 3.7.4.

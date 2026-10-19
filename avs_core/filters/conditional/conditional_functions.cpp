@@ -867,8 +867,11 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
     if (pixelsize == 4) {
       const bool chroma = (plane == PLANAR_U) || (plane == PLANAR_V);
       const double shift = chroma ? 32768.0 : 0;
-      stats_thresholded_min = (stats_thresholded_min - shift) / (buffersize - 1); // convert back to float range, /65535
-      stats_thresholded_max = (stats_thresholded_max - shift) / (buffersize - 1);
+      if (threshold != 0) {
+        // histogram based; with threshold 0 they are copies of the real min and max, no conversion
+        stats_thresholded_min = (stats_thresholded_min - shift) / (buffersize - 1); // convert back to float range, /65535
+        stats_thresholded_max = (stats_thresholded_max - shift) / (buffersize - 1);
+      }
       stats_median = (stats_median - shift) / (buffersize - 1);
     }
 

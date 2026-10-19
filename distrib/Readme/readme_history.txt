@@ -17,6 +17,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   e.g. AverageLuma() == 2.6 was false and AverageLuma() < 2.6 was true for an average of exactly 2.6.
   Now these computed results are 64 bit double. The min and max of a 32 bit float clip (YPlaneMin, YPlaneMax,
   PlaneMinMaxStats) are real pixel values and stay 32 bit float. Existed since 3.7.4.
+- Fix: PlaneMinMaxStats on 32 bit float clips with threshold 0: the thresholded minimum and maximum
+  (elements 2 and 3) were wrong, e.g. 0.0000001 instead of 0.0078 (luma), -0.5 instead of 0 (chroma).
+  Now they equal the minimum and maximum, like for integer clips. Existed since 3.7.3.
 - Fix: ConditionalReader "Type float" stored and returned 32 bit float values, so e.g. a value 0.7 read
   from the file was not equal to the script constant 0.7 (64 bit double). Now the values are 64 bit double.
   Existed since 3.7.4.

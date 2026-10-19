@@ -898,6 +898,15 @@ Changelog
 +----------------+------------------------------------------------------------+
 | Version        | Changes                                                    |
 +================+============================================================+
+| Avisynth 3.7.6 | Average*, *Difference*, PlaneMinMaxStats: 64 bit double    |
+|                | results (were 32 bit float). Min, max of 32 bit float      |
+|                | clips stay 32 bit float pixel values.                      |
+|                | Fix: PlaneMinMaxStats thresholded min, max of 32 bit float |
+|                | clips with threshold 0.                                    |
+|                | Fix: ConditionalFilter compares integers in 64 bit, floats |
+|                | in double (float when either side is 32 bit float).        |
+|                | Fix: ConditionalSelect index range check in 64 bit.        |
++----------------+------------------------------------------------------------+
 | Avisynth 3.7.4 | Fix: Allow "local" in the first long ConditionalFilter     |
 |                | version                                                    |
 +----------------+------------------------------------------------------------+
@@ -913,4 +922,4 @@ Changelog
 | AviSynth 2.6.0 | Number of expressions changed from 16 to nearly unlimited. |
 +----------------+------------------------------------------------------------+
 
-$Date: 2023/12/19 15:11:00 $
+$Date: 2026-10-19 18:00:00 $
