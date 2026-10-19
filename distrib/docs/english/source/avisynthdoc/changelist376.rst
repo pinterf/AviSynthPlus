@@ -223,6 +223,8 @@ Additions, changes
 - "TemporalSoften" 10-16 bit: the average is rounded half up in all (C/SSE/AVX2) paths, which give
   identical results; differs from earlier versions by 1 only on exact .5 averages (when
   ``scenechange`` left an even number of frames).
+- ``Spline``: calculation and result in 64 bit double (were 32 bit float), e.g.
+  ``Spline(0.1, 0, 0, 1, 1, false)`` equals 0.1. Slight output change in the last digits.
 
 
 Build environment, Interface

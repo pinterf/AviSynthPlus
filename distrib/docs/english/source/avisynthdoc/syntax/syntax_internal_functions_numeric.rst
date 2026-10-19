@@ -15,7 +15,7 @@ Otherwise the result is stored into 64-bit long ``l``.
 When both operands are 32-bit float, arithmetic is done in 32-bits and the result is a 32-bit float.
 Otherwise the calculation is done in 64-bit double ``d`` precision.
 
-Except ``MulDiv``, ``Rand`` and ``Spline`` the calculations are 64-bit (int or double) compatible.
+Except ``MulDiv`` and ``Rand`` the calculations are 64-bit (int or double) compatible.
 
 Max
 ~~~
@@ -403,12 +403,13 @@ Spline
 Interpolates the Y value at point X using the control points x1/y1, ... There
 have to be at least 2 x/y-pairs. The interpolation can be cubic (the result
 is a spline) or linear (the result is a polygon). Default is cubic.
+The calculation is done in 64-bit double precision, the result is 64-bit double (since 3.7.6).
 
 *Examples:*
 ::
 
     Spline(5, 0, 0, 10, 10, 20, 0, false) = 5
-    Spline(5, 0, 0, 10, 10, 20, 0, true) = 7
+    Spline(5, 0, 0, 10, 10, 20, 0, true) = 6.875
 
 ContinuedNumerator, ContinuedDenominator
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -444,6 +445,9 @@ Changelog
 +-----------------+-----------------------------------+
 | Version         | Changes                           |
 +=================+===================================+
+| 3.7.6           | | Spline: 64 bit double           |
+|                 | | Frac: double for double input   |
++-----------------+-----------------------------------+
 | 3.7.4           | | Changed Float, Int              |
 |                 | | Add IntI, Long, FloatF, Double  |
 +-----------------+-----------------------------------+

@@ -1364,24 +1364,24 @@ AVSValue Exist(AVSValue args, void*, IScriptEnvironment*nv) {
 //WE ->
 
 // Spline functions to generate and evaluate a natural bicubic spline
-void spline(float x[], float y[], int n, float y2[])
+void spline(double x[], double y[], int n, double y2[])
 {
   int i, k;
-  float p, qn, sig, un, * u;
+  double p, qn, sig, un, * u;
 
-  u = new float[n];
+  u = new double[n];
 
-  y2[1] = u[1] = 0.0f;
+  y2[1] = u[1] = 0.0;
 
   for (i = 2; i <= n - 1; i++) {
     sig = (x[i] - x[i - 1]) / (x[i + 1] - x[i - 1]);
-    p = sig * y2[i - 1] + 2.0f;
-    y2[i] = (sig - 1.0f) / p;
+    p = sig * y2[i - 1] + 2.0;
+    y2[i] = (sig - 1.0) / p;
     u[i] = (y[i + 1] - y[i]) / (x[i + 1] - x[i]) - (y[i] - y[i - 1]) / (x[i] - x[i - 1]);
-    u[i] = (6.0f * u[i] / (x[i + 1] - x[i - 1]) - sig * u[i - 1]) / p;
+    u[i] = (6.0 * u[i] / (x[i + 1] - x[i - 1]) - sig * u[i - 1]) / p;
   }
-  qn = un = 0.0f;
-  y2[n] = (un - qn * u[n - 1]) / (qn * y2[n - 1] + 1.0f);
+  qn = un = 0.0;
+  y2[n] = (un - qn * u[n - 1]) / (qn * y2[n - 1] + 1.0);
   for (k = n - 1; k >= 1; k--) {
     y2[k] = y2[k] * y2[k + 1] + u[k];
   }
@@ -1389,10 +1389,10 @@ void spline(float x[], float y[], int n, float y2[])
   delete[] u;
 }
 
-int splint(float xa[], float ya[], float y2a[], int n, float x, float& y, bool cubic)
+int splint(double xa[], double ya[], double y2a[], int n, double x, double& y, bool cubic)
 {
   int klo, khi, k;
-  float h, b, a;
+  double h, b, a;
 
   klo = 1;
   khi = n;
@@ -1402,15 +1402,15 @@ int splint(float xa[], float ya[], float y2a[], int n, float x, float& y, bool c
     else klo = k;
   }
   h = xa[khi] - xa[klo];
-  if (h == 0.0f) {
-    y = 0.0f;
+  if (h == 0.0) {
+    y = 0.0;
     return -1;	// all x's have to be different
   }
   a = (xa[khi] - x) / h;
   b = (x - xa[klo]) / h;
 
   if (cubic) {
-    y = a * ya[klo] + b * ya[khi] + ((a * a * a - a) * y2a[klo] + (b * b * b - b) * y2a[khi]) * (h * h) / 6.0f;
+    y = a * ya[klo] + b * ya[khi] + ((a * a * a - a) * y2a[klo] + (b * b * b - b) * y2a[khi]) * (h * h) / 6.0;
   }
   else {
     y = a * ya[klo] + b * ya[khi];
@@ -1482,17 +1482,17 @@ AVSValue AVSTime(AVSValue args, void*, IScriptEnvironment* env)
   return env->SaveString(s);
 }
 
-// FIXME: to v11 64 bit support
+// v11: 64 bit double precision
 AVSValue Spline(AVSValue args, void*, IScriptEnvironment* env)
 {
   int n;
-  float x, y;
+  double x, y;
   int i;
   bool cubic;
 
   AVSValue coordinates;
 
-  x = args[0].AsFloatf(0);
+  x = args[0].AsFloat(0);
   coordinates = args[1];
   cubic = args[2].AsBool(true);
 
@@ -1503,14 +1503,14 @@ AVSValue Spline(AVSValue args, void*, IScriptEnvironment* env)
   n = n / 2;
 
   const size_t work_array_stride = static_cast<size_t>(n) + 1;
-  std::vector<float> buf(work_array_stride * 3);
-  float* xa = buf.data();
-  float* ya = xa + work_array_stride;
-  float* y2a = ya + work_array_stride;
+  std::vector<double> buf(work_array_stride * 3);
+  double* xa = buf.data();
+  double* ya = xa + work_array_stride;
+  double* y2a = ya + work_array_stride;
 
   for (i = 1; i <= n; i++) {
-    xa[i] = coordinates[(i - 1) * 2 + 0].AsFloatf(0);
-    ya[i] = coordinates[(i - 1) * 2 + 1].AsFloatf(0);
+    xa[i] = coordinates[(i - 1) * 2 + 0].AsFloat(0);
+    ya[i] = coordinates[(i - 1) * 2 + 1].AsFloat(0);
   }
 
   for (i = 1; i < n; i++) {
