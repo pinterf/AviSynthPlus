@@ -880,6 +880,9 @@ int __stdcall CacheGuard::SetCacheHints(int cachehints, int frame_range)
     return (child->GetVersion() >= 5) ? child->SetCacheHints(cachehints, frame_range) : 0;
 
   default:
+    // user defined hints from the forwarded range: pass the request to the child
+    if (IsForwardedUserCacheHint(cachehints))
+      return (child->GetVersion() >= 5) ? child->SetCacheHints(cachehints, frame_range) : 0;
     return 0;
   }
 

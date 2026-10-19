@@ -347,12 +347,15 @@ void __stdcall Prefetcher::GetAudio(void* buf, int64_t start, int64_t count, ISc
 
 int __stdcall Prefetcher::SetCacheHints(int cachehints, int frame_range)
 {
-  AVS_UNUSED(frame_range);
   if (CACHE_GET_MTMODE == cachehints)
     return MT_NICE_FILTER;
 
   if (CACHE_GET_DEV_TYPE == cachehints)
     return (_pimpl->child->GetVersion() >= 5) ? _pimpl->child->SetCacheHints(CACHE_GET_DEV_TYPE, 0) : 0;
+
+  // user defined hints from the forwarded range: pass the request to the child
+  if (IsForwardedUserCacheHint(cachehints))
+    return (_pimpl->child->GetVersion() >= 5) ? _pimpl->child->SetCacheHints(cachehints, frame_range) : 0;
 
   return 0;
 }

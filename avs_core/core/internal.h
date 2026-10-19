@@ -183,6 +183,13 @@ public:
   int __stdcall SetCacheHints(int cachehints, int frame_range);
 };
 
+// User defined cache hints which the internal core wrappers (CacheGuard, MTGuard,
+// Prefetcher, OnCPU/OnCUDA) pass to their child instead of dropping them (#521).
+static AVS_FORCEINLINE bool IsForwardedUserCacheHint(int cachehints) {
+  // strictly speaking, the max check is done for consistent code, it's already INT_MAX
+  return cachehints >= CACHE_USER_FORWARD_BEGIN && cachehints <= CACHE_USER_FORWARD_END;
+}
+
 
 
 /*** Inline helper methods ***/
