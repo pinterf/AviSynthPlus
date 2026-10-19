@@ -23,6 +23,7 @@ Average
 
 This group of functions return a float value with the average pixel value of
 a plane (Luma, U-chroma and V-chroma, R, G or B respectively).
+The result is 64 bit double (since 3.7.6, before: 32 bit float).
 
 In v2.61 an offset argument is added which enables you to access other frames than the current one.
 
@@ -56,6 +57,7 @@ RGBDifference supports only packed (non-planar) RGB clips (that is RGB24/32/48/6
 
 This group of functions return a float value between 0 and 255 (or 0 and max_pixel_value for 
 bit depths over 8) of the absolute difference between two planes from two different clips.
+The result is 64 bit double (since 3.7.6, before: 32 bit float).
 
 Either the combined RGB difference or the Luma, U-chroma or V-chroma, or R, B or B
 component differences, respectively.
@@ -176,6 +178,9 @@ the given threshold is checked against this pixel level-pixel count table.
 This histogram cannot be done for 32 bit float data thus 32 bit float pixels
 are converted to 16 bit integer data before creating the histogram.
 
+Result types: integer for 8-16 bit clips. For 32 bit float clips the minimum and maximum
+without threshold are the real pixel values (32 bit float), the other results are 64 bit double.
+
 *Examples:*
 ::
 
@@ -196,6 +201,9 @@ All-in-one stats
 
 Returns an 6-element array with [min,max,thresholded minimum,thresholded maximum,median,average]
 
+The elements are 64 bit double, except min and max of a 32 bit float clip, which are the real
+32 bit float pixel values (since 3.7.6, before: all elements were 32 bit float).
+
 See more at :doc:`Conditional filters <../corefilters/conditionalfilter>` section.
 
 --------
@@ -207,6 +215,10 @@ Changelog
 +----------------+------------------------------------------------------------+
 | Version        | Changes                                                    |
 +================+============================================================+
+| Avisynth 3.7.6 | Average*, *Difference*, PlaneMinMaxStats: 64 bit double    |
+|                | results (were 32 bit float). Min, max of 32 bit float clips|
+|                | stay 32 bit float pixel values.                            |
++----------------+------------------------------------------------------------+
 | Avisynth 3.7.2 | Added a 6th element to PlaneMinMaxStats result             |
 +----------------+------------------------------------------------------------+
 | Avisynth 3.7.1 | Added PlaneMinMaxStats                                     |
@@ -217,7 +229,7 @@ Changelog
 | AviSynth 2.61  | added offset parameters                                    |
 +----------------+------------------------------------------------------------+
 
-$Date: 2025-02-25 17:10:48-05:00 $
+$Date: 2026-10-19 17:15:00 $
 
 .. _YV12: http://avisynth.nl/index.php/YV12
 .. _colorspace: http://avisynth.nl/index.php/Color_spaces

@@ -473,6 +473,15 @@ Bugfixes
 - Fix #495 (debug builds only): ``VideoFrame::CheckMemory()`` ignored the allocation margin and
   reported a buffer overrun for every frame.
 - Fix #495 POSIX debug builds failed to compile (now forwards the error to ``stderr``).
+- Fix: runtime functions ``AverageLuma`` (and the other ``Average*``), ``LumaDifference`` (and the other
+  ``*Difference*`` functions) and ``PlaneMinMaxStats`` returned 32 bit float, so e.g. ``AverageLuma() < 2.6``
+  was true for an average of exactly 2.6 (script constants are 64 bit double). Now these computed results
+  are 64 bit double; the min and max of a 32 bit float clip stay 32 bit float pixel values. Existed since 3.7.4.
+- Fix: ``ConditionalFilter`` compared integers truncated to 32 bit (e.g. ``4294967297 == 1`` was true) and
+  floats rounded to 32 bit float (e.g. ``16777217.0 == 16777216.0`` was true). Now integers are compared
+  in 64 bit and floats in double precision; when either side is a 32 bit float, both sides are
+  rounded to float as before. ``ConditionalSelect``: a 64 bit index out of the 32 bit range selected a
+  wrong clip instead of the default one. Existed since 3.7.4.
 - Fix: ``propGetAll``: string array properties returned only their first element; now the value is
   an array, like for integer, float and clip arrays. Existed since 3.6.0.
 - Fix: ``propGetAsArray`` on a frame type property (set by plugins) returned an array of ``true`` values;
@@ -630,7 +639,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/10/19 10:00:00 $
+$Date: 2026/10/19 17:15:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

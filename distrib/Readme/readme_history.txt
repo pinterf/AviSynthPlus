@@ -11,6 +11,17 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261019 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: runtime functions AverageLuma (and the other Average*), LumaDifference (and the other *Difference*,
+  *DifferenceFromPrevious, *DifferenceToNext) and PlaneMinMaxStats returned 32 bit float, so the result
+  did not compare equal to the same value written as a (64 bit double) script constant:
+  e.g. AverageLuma() == 2.6 was false and AverageLuma() < 2.6 was true for an average of exactly 2.6.
+  Now these computed results are 64 bit double. The min and max of a 32 bit float clip (YPlaneMin, YPlaneMax,
+  PlaneMinMaxStats) are real pixel values and stay 32 bit float. Existed since 3.7.4.
+- Fix: ConditionalFilter compared integers truncated to 32 bit (e.g. 4294967297 == 1 was true) and
+  floats rounded to 32 bit float (e.g. 16777217.0 == 16777216.0 was true). Now integers are compared
+  in 64 bit and floats in double precision; when either side is a 32 bit float, both sides are
+  rounded to float as before. ConditionalSelect: a 64 bit index out of the 32 bit range selected a
+  wrong clip instead of the default one. Existed since 3.7.4.
 - Fix: propGetAll: string array properties returned only their first element; now the value is
   an array, like for integer, float and clip arrays. Existed since 3.6.0.
 - Fix: propGetAsArray on a frame type property (set by plugins) returned an array of true values

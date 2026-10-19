@@ -37,6 +37,7 @@
 #include "../../core/parser/scriptparser.h"
 #include "conditional_reader.h"
 #include <cmath>
+#include <cinttypes>
 
 #ifdef AVS_WINDOWS
     #include <avs/win.h>
@@ -226,7 +227,7 @@ PVideoFrame __stdcall ConditionalSelect::GetFrame(int n, IScriptEnvironment* env
     env->SetVar("current_frame", prev_current_frame);       // Restore current_frame
   }
 
-  const int i = result.AsInt();
+  const int64_t i = result.AsLong(); // range check in 64 bit, no truncation
 
   PVideoFrame dst;
 
@@ -240,9 +241,9 @@ PVideoFrame __stdcall ConditionalSelect::GetFrame(int n, IScriptEnvironment* env
   }
 
   if (show) {
-    char text[32];
+    char text[48];
 
-    snprintf(text, sizeof(text)-1, "Expression Result:%i\n", result.AsInt());
+    snprintf(text, sizeof(text)-1, "Expression Result:%" PRId64 "\n", i);
     text[sizeof(text)-1] = '\0';
 
     env->MakeWritable(&dst);
@@ -358,6 +359,22 @@ int __stdcall ConditionalFilter::SetCacheHints(int cachehints, int frame_range)
   return 0;  // We do not pass cache requests upwards.
 }
 
+// Float compare operands. When either side is a 32 bit float (e.g. Floatf(), the min/max pixel
+// of a float clip, a plugin returning a 32 bit float), both are rounded to float, else a float result
+// would compare less or greater than the same value written as a (double) literal,
+// e.g. 2.6f vs 2.6. Otherwise (double, int, long) the compare is done in double.
+static void GetCompareFloats(const AVSValue& e1_result, const AVSValue& e2_result, double& f1, double& f2)
+{
+  if (e1_result.IsFloatfStrict() || e2_result.IsFloatfStrict()) {
+    f1 = (float)e1_result.AsFloat();
+    f2 = (float)e2_result.AsFloat();
+  }
+  else {
+    f1 = e1_result.AsFloat();
+    f2 = e2_result.AsFloat();
+  }
+}
+
 PVideoFrame __stdcall ConditionalFilter::GetFrame(int n, IScriptEnvironment* env_)
 {
   InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
@@ -434,8 +451,8 @@ PVideoFrame __stdcall ConditionalFilter::GetFrame(int n, IScriptEnvironment* env
   bool test_int=false;
   bool test_string=false;
 
-  int e1 = 0;
-  int e2 = 0;
+  int64_t e1 = 0;
+  int64_t e2 = 0;
   double f1 = 0.0;
   double f2 = 0.0;
   try {
@@ -452,24 +469,22 @@ PVideoFrame __stdcall ConditionalFilter::GetFrame(int n, IScriptEnvironment* env
         env->ThrowError("Conditional filter: Second expression did not return an integer or bool, as in first bool expression.");
       test_int = true;
       e1 = e1_result.AsBool();
-      e2 = e2_result.IsInt() ? e2_result.AsInt() : e2_result.AsBool();
+      e2 = e2_result.IsInt() ? e2_result.AsLong() : e2_result.AsBool();
 
     } else if (e1_result.IsInt()) {
       if (e2_result.IsInt() || e2_result.IsBool()) {
         test_int = true;
-        e1 = e1_result.AsInt();
-        e2 = e2_result.IsInt() ? e2_result.AsInt() : e2_result.AsBool();
+        e1 = e1_result.AsLong(); // 64 bit compare
+        e2 = e2_result.IsInt() ? e2_result.AsLong() : e2_result.AsBool();
       } else if (e2_result.IsFloat()) {
-        f1 = (float)e1_result.AsFloat();
-        f2 = (float)e2_result.AsFloat();
+        GetCompareFloats(e1_result, e2_result, f1, f2);
       } else
         env->ThrowError("Conditional filter: Second expression did not return a float, integer or bool, as in first integer expression.");
 
     } else if (e1_result.IsFloat()) {
-      f1 = (float)e1_result.AsFloat();
       if (!e2_result.IsFloat())
         env->ThrowError("Conditional filter: Second expression did not return a float or an integer, as in first float expression.");
-      f2 = (float)e2_result.AsFloat();
+      GetCompareFloats(e1_result, e2_result, f1, f2);
     } else {
       env->ThrowError("ConditionalFilter: First expression did not return an integer, bool or float!");
     }
@@ -517,8 +532,8 @@ PVideoFrame __stdcall ConditionalFilter::GetFrame(int n, IScriptEnvironment* env
         );
       } else if (test_int) {
         snprintf(text, sizeof(text)-1,
-          "Left side Conditional Result:%i\n"
-          "Right side Conditional Result:%i\n"
+          "Left side Conditional Result:%" PRId64 "\n"
+          "Right side Conditional Result:%" PRId64 "\n"
           "Evaluate result: %s\n",
           e1, e2, (state) ? t_TRUE : t_FALSE
         );

@@ -252,9 +252,9 @@ AVSValue AveragePlane::AvgPlane(AVSValue clip, void* , int plane, int offset, IS
       sum = get_sum_of_pixels_c<float>(srcp, height, width, pitch);
   }
 
-  float f = (float)(sum / (height * width));
+  const double f = sum / (height * width);
 
-  return (AVSValue)f;
+  return AVSValue(f); // 64 bit double, like script floats since v11
 }
 
 AVSValue ComparePlane::Create(AVSValue args, void* user_data, IScriptEnvironment* env) {
@@ -418,14 +418,14 @@ AVSValue ComparePlane::CmpPlane(AVSValue clip, AVSValue clip2, void* , int plane
       }
   }
 
-  float f;
+  double f;
 
   if (vi.IsRGB32() || vi.IsRGB64())
-    f = (float)((sad * 4) / (height * width * 3)); // why * 4/3? alpha plane was masked out, anyway
+    f = (sad * 4) / (height * width * 3); // why * 4/3? alpha plane was masked out, anyway
   else
-    f = (float)(sad / (height * width));
+    f = sad / (height * width);
 
-  return (AVSValue)f;
+  return AVSValue(f); // 64 bit double
 }
 
 
@@ -514,14 +514,14 @@ AVSValue ComparePlane::CmpPlaneSame(AVSValue clip, void* , int offset, int plane
       }
   }
 
-  float f;
+  double f;
 
   if (vi.IsRGB32() || vi.IsRGB64())
-    f = (float)((sad * 4) / (height * width * 3));
+    f = (sad * 4) / (height * width * 3);
   else
-    f = (float)(sad / (height * width));
+    f = sad / (height * width);
 
-  return (AVSValue)f;
+  return AVSValue(f); // 64 bit double
 }
 
 AVSValue MinMaxPlane::Create_minmax_stats(AVSValue args, void* user_data, IScriptEnvironment* env) {
@@ -668,12 +668,14 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
   if (w == 0 || h == 0)
     env->ThrowError("MinMax: plane does not exist!");
 
-  float stats_min;
-  float stats_max;
-  float stats_median;
-  float stats_thresholded_min;
-  float stats_thresholded_max;
-  float stats_average;
+  // Computed results are 64 bit double. Exception: min and max of a 32 bit float clip are
+  // real pixel values, they are kept as 32 bit float, not to change their value in a double compare.
+  AVSValue stats_min;
+  AVSValue stats_max;
+  double stats_median;
+  double stats_thresholded_min;
+  double stats_thresholded_max;
+  double stats_average;
 
   if (threshold == 0 || mode == MinMaxPlane::STATS) {
     // special case, no histogram needed
@@ -681,15 +683,18 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
     if (pixelsize == 4) // 32 bit float
     {
       double sum = 0;
+      float fmin, fmax;
       if (mode == MinMaxPlane::STATS)
-        get_minmax_float_c<true>(srcp, pitch, w, h, stats_min, stats_max, sum);
+        get_minmax_float_c<true>(srcp, pitch, w, h, fmin, fmax, sum);
       else
-        get_minmax_float_c<false>(srcp, pitch, w, h, stats_min, stats_max, sum);
+        get_minmax_float_c<false>(srcp, pitch, w, h, fmin, fmax, sum);
 
-      if (mode == MinMaxPlane::MIN) return stats_min;
-      else if (mode == MinMaxPlane::MAX) return stats_max;
-      else if (mode == MinMaxPlane::MINMAX_DIFFERENCE) return stats_max - stats_min;
-      stats_average = (float)(sum / (w * h));
+      if (mode == MinMaxPlane::MIN) return fmin;
+      else if (mode == MinMaxPlane::MAX) return fmax;
+      else if (mode == MinMaxPlane::MINMAX_DIFFERENCE) return (double)fmax - fmin; // computed: double
+      stats_min = fmin; // pixel value: 32 bit float
+      stats_max = fmax;
+      stats_average = sum / (w * h);
       // STATS: go on
     }
     else
@@ -713,9 +718,9 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
       else if (mode == MinMaxPlane::MINMAX_DIFFERENCE) return max - min;
 
       // STATS: go on
-      stats_min = (float)min;
-      stats_max = (float)max;
-      stats_average = (float)((double)sum / (w * h));
+      stats_min = (double)min;
+      stats_max = (double)max;
+      stats_average = (double)sum / (w * h);
     }
   }
 
@@ -805,8 +810,8 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
     }
   }
   else if (mode == MinMaxPlane::STATS && threshold == 0) {
-    stats_thresholded_min = (float)stats_min;
-    stats_thresholded_max = (float)stats_max;
+    stats_thresholded_min = stats_min.AsFloat();
+    stats_thresholded_max = stats_max.AsFloat();
     retval = -1; // stats: n/a
   }
   else if (mode == MinMaxPlane::MINMAX_DIFFERENCE || mode == MinMaxPlane::STATS) {
@@ -834,8 +839,8 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
     }
 
     retval = t_max - t_min; // results <0 will be returned if threshold > 50
-    stats_thresholded_min = (float)t_min;
-    stats_thresholded_max = (float)t_max;
+    stats_thresholded_min = t_min;
+    stats_thresholded_max = t_max;
   }
   
   if (mode == MinMaxPlane::STATS) {
@@ -852,7 +857,7 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
         break;
       }
     }
-    stats_median = (float)retval;
+    stats_median = retval;
   }
 
   delete[] accum_buf;
@@ -861,10 +866,10 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
   if (mode == MinMaxPlane::STATS) {
     if (pixelsize == 4) {
       const bool chroma = (plane == PLANAR_U) || (plane == PLANAR_V);
-      const float shift = chroma ? 32768.0f : 0;
-      stats_thresholded_min = (float)((double)(stats_thresholded_min - shift) / (buffersize - 1)); // convert back to float, /65535
-      stats_thresholded_max = (float)((double)(stats_thresholded_max - shift) / (buffersize - 1)); // convert back to float, /65535
-      stats_median = (float)((double)(stats_median - shift) / (buffersize - 1)); // convert back to float, /65535
+      const double shift = chroma ? 32768.0 : 0;
+      stats_thresholded_min = (stats_thresholded_min - shift) / (buffersize - 1); // convert back to float range, /65535
+      stats_thresholded_max = (stats_thresholded_max - shift) / (buffersize - 1);
+      stats_median = (stats_median - shift) / (buffersize - 1);
     }
 
     AVSValue result[] = { stats_min, stats_max, stats_thresholded_min, stats_thresholded_max, stats_median, stats_average };
