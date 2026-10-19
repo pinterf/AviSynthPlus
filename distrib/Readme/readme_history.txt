@@ -13,6 +13,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 --------------------------------
 - Fix: C API avs_prop_get_clip crashed on the first use of the returned clip (returned a raw clip
   pointer instead of an AVS_Clip). Existed since 3.6.0.
+- Fix: propGetClip, propGetFrame (C++ and C API) did not report errors (missing key, wrong type, index),
+  *error was always 0. Script propGetClip now reports these errors like the other propGetXXX functions,
+  instead of returning an empty clip value. Regression since 3.7.4.
 - Hardening: C API avs_set_to_array (C++ AVSValue(const AVSValue*, int)): a NULL source with nonzero
   (or negative) size gives an empty array, array_size matches the allocation.
 - Interface v14 (AVISYNTH_INTERFACE_VERSION = 14): C API additions; C++: AVSValue::AsFunction exported.

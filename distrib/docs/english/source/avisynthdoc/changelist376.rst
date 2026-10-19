@@ -474,6 +474,9 @@ Bugfixes
 - Fix #495 POSIX debug builds failed to compile (now forwards the error to ``stderr``).
 - Fix: C API ``avs_prop_get_clip`` crashed on the first use of the returned clip
   (returned a raw clip pointer instead of an ``AVS_Clip``). Existed since 3.6.0.
+- Fix: ``propGetClip``, ``propGetFrame`` (C++ and C API) did not report errors (missing key, wrong type,
+  index), ``*error`` was always 0. Script ``propGetClip`` now reports these errors like the other
+  ``propGetXXX`` functions, instead of returning an empty clip value. Regression since 3.7.4.
 - Fix #523: C++ API (``AVS_Linkage``), V13 test build regression: the new V13 ``VideoInfo`` entries
   shifted ``GetNeoEnv`` (plugins using ``PNeoEnv`` crashed); the original layout is restored.
   The linkage call macros now also check entries for null, so plugins built with the V13 header

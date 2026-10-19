@@ -6157,7 +6157,8 @@ int ScriptEnvironment::propGetDataTypeHint(const AVSMap* map, const char* key, i
 
 PClip ScriptEnvironment::propGetClip(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
   int dummyError;
-  VSArrayBase* arr = propGetShared(map, key, index, &dummyError, AVSPropertyType::PROPERTYTYPE_CLIP, this); // ptVideoNode
+  // report the error if the caller asks for it; NULL error: no throw (noexcept), empty result as before
+  VSArrayBase* arr = propGetShared(map, key, index, error ? error : &dummyError, AVSPropertyType::PROPERTYTYPE_CLIP, this); // ptVideoNode
   if (arr) {
     // PClip itself is reference counted
     PClip ref = reinterpret_cast<VSVideoNodeArray*>(arr)->at(index);
@@ -6172,7 +6173,8 @@ PClip ScriptEnvironment::propGetClip(const AVSMap* map, const char* key, int ind
 const PVideoFrame ScriptEnvironment::propGetFrame(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
   // PVideoFrame itself is reference counted
   int dummyError;
-  VSArrayBase* arr = propGetShared(map, key, index, &dummyError, AVSPropertyType::PROPERTYTYPE_FRAME, this); //  ptVideoFrame
+  // report the error if the caller asks for it; NULL error: no throw (noexcept), empty result as before
+  VSArrayBase* arr = propGetShared(map, key, index, error ? error : &dummyError, AVSPropertyType::PROPERTYTYPE_FRAME, this); //  ptVideoFrame
   if (arr) {
     PVideoFrame ref = reinterpret_cast<VSVideoFrameArray*>(arr)->at(index);
     return ref;
