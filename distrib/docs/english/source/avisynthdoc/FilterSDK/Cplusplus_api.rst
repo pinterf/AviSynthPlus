@@ -1674,7 +1674,14 @@ createMap, v8
 
     virtual AVSMap* __stdcall createMap() = 0;
 
-internal use only, creating frame property buffer.
+Creates a standalone, empty property map, not attached to a frame. Use it with the ``propXxx``
+functions, e.g. as a temporary key-value store; free it with ``freeMap``.
+C interface (v14): ``avs_create_map``.
+
+A map is the same container as the frame properties, modelled after VapourSynth's ``VSMap``:
+each key holds an array of values of one type (``int64_t``, ``double``, data (string or binary),
+``PClip`` or ``PVideoFrame``); a single value is a one-element array. Unlike ``AVSValue`` arrays,
+these arrays are flat: no nesting, no mixed types, no map inside a map, and no function type.
 
 
 .. _cplusplus_freemap:
@@ -1686,7 +1693,9 @@ freeMap, v8
 
     virtual void __stdcall freeMap(AVSMap* map) = 0;
 
-internal use only, frees up frame property buffer.
+Frees a map created by ``createMap``, with its content (clip and frame references stored in it
+are released). Do not call it on a frame's map (``getFramePropsRO``, ``getFramePropsRW``), that one
+is owned by the frame. C interface (v14): ``avs_free_map``.
 
 
 .. _cplusplus_clearmap:

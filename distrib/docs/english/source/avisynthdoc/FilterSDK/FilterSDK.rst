@@ -519,6 +519,10 @@ What's new in the API V14
 
           * ``avs_val_get_type``, returns one of the ``AVS_VALUE_TYPE_xxx`` constants (like C++ ``AVSValue::GetType``)
 
+        - Standalone property map (like C++ ``createMap``, ``freeMap``):
+
+          * ``avs_create_map``, ``avs_free_map``
+
         - ``AVS_CS_RGBP8``, ``AVS_CS_RGBAP8`` aliases (like C++ ``CS_RGBP8``, ``CS_RGBAP8``)
 
 

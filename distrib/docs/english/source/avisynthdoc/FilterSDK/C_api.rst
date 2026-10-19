@@ -437,6 +437,10 @@ Quick list
 +-------------------------------------+-----------------------+-------+
 | avs_invoke3_try                     | AVS_ScriptEnvironment | 14    |
 +-------------------------------------+-----------------------+-------+
+| avs_create_map                      | AVS_Map               | 14    |
++-------------------------------------+-----------------------+-------+
+| avs_free_map                        | AVS_Map               | 14    |
++-------------------------------------+-----------------------+-------+
 
 
 Reference
@@ -1377,6 +1381,45 @@ avs_prop_set_float_array
 
 avs_clear_map
 -------------
+
+.. _c_avs_create_map:
+
+avs_create_map
+--------------
+
+::
+
+    AVS_Map* avs_create_map(AVS_ScriptEnvironment* p);
+
+v14. Creates a standalone, empty property map, not attached to a frame (C++ ``createMap``).
+Use it with the ``avs_prop_xxx`` functions, e.g. as a temporary key-value store.
+It must be freed with ``avs_free_map``.
+
+A map is the same container as the frame properties, modelled after VapourSynth's ``VSMap``:
+each key holds an array of values of one type (64-bit integer, double, data (string or binary), clip
+or frame); a single value is a one-element array. Unlike ``AVS_Value`` arrays, these arrays are flat:
+no nesting, no mixed types, no map inside a map, and no function type.
+
+.. _c_avs_free_map:
+
+avs_free_map
+------------
+
+::
+
+    void avs_free_map(AVS_ScriptEnvironment* p, AVS_Map* map);
+
+v14. Frees a map created by ``avs_create_map`` (C++ ``freeMap``), with its content: clip and frame
+references stored in it are released. Do not call it on a frame's map (``avs_get_frame_props_ro``,
+``avs_get_frame_props_rw``), that one is owned by the frame. NULL is allowed.
+
+::
+
+    AVS_Map* m = avs_create_map(env);
+    avs_prop_set_int(env, m, "count", 42, AVS_PROPAPPENDMODE_REPLACE);
+    int err;
+    int64_t count = avs_prop_get_int(env, m, "count", 0, &err);
+    avs_free_map(env, m);
 
 .. _c_avs_new_video_frame_p:
 

@@ -25,6 +25,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   - The _try variants return 1 on success, with the result in *result (release it with avs_release_value).
     They return 0 if the function cannot be called with the given arguments (avs_get_error returns NULL),
     or on other errors (avs_get_error tells the reason).
+  - avs_create_map, avs_free_map: standalone property map, not attached to a frame (like C++ createMap, freeMap).
+    Use it with the avs_prop_xxx functions; free every created map with avs_free_map.
   - AVS_CS_RGBP8, AVS_CS_RGBAP8 aliases (like C++ CS_RGBP8, CS_RGBAP8).
   - AVS_VALUE_TYPE_xxx constants (like C++ AvsValueType), plus the C-only AVS_VALUE_TYPE_ERROR.
   Example:

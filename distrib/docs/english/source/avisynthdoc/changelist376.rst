@@ -242,6 +242,7 @@ Build environment, Interface
   * Function values: ``avs_val_is_function``, ``avs_invoke3``, ``avs_invoke3_try`` (like C++ ``Invoke3``, ``Invoke3Try``)
   * ``avs_invoke_try``, ``avs_invoke2``, ``avs_invoke2_try`` (like C++ ``InvokeTry``, ``Invoke2``, ``Invoke2Try``)
   * ``avs_val_get_type`` and ``AVS_VALUE_TYPE_xxx`` constants (like C++ ``AVSValue::GetType``, ``AvsValueType``)
+  * ``avs_create_map``, ``avs_free_map``: standalone property map (like C++ ``createMap``, ``freeMap``)
   * ``AVS_CS_RGBP8``, ``AVS_CS_RGBAP8`` aliases
 
   See :ref:`API v14 changes<api_v14_whats_new>` for more details.
