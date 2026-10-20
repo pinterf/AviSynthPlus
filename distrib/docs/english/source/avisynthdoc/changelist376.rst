@@ -241,6 +241,10 @@ Additions, changes
   needed). Exactly one conversion is allowed, an invalid format string is an error.
   Was: the value was always passed as float, so integer conversions printed garbage
   (``String(5, "%d")`` = '0'), and ``%s``, ``%n``, ``%Lf`` crashed.
+- ``Format``: optional format specification for numbers after a colon, e.g. ``{:.2f}``, ``{0:x}``,
+  ``{name:05d}``, ``{my_variable:.8f}``: a single printf-like numeric conversion, the leading ``%`` is
+  optional. Handled the same way as ``String(x, format_string)`` (integer conversions, 64 bit, no C type
+  size prefixes needed).
 - New script function ``Hex64(int [, int width])``: 64 bit version of ``Hex`` (pair of ``HexValue64``),
   e.g. ``Hex64(-1)`` = "FFFFFFFFFFFFFFFF", ``Hex64(4294967297)`` = "100000001". Width is 0 to 16.
   ``Hex`` documentation corrected: it is 32 bit, width 0 to 8.

@@ -190,7 +190,7 @@ You can also put arbitrary text around the format_string as defined above, simil
     # integer conversions (since 3.7.6)
     Subtitle( String(123, "%05d") )             # '00123'
     Subtitle( String(255, "%x") )               # 'ff'
-    Subtitle( String(255, "%#06X") )            # '0X00FF'
+    Subtitle( String(255, "%#06X") )            # '0X00FF'   (width 6 includes the '0X' prefix)
     Subtitle( String(2.7, "%d") )               # '2'        (truncated like Int)
     Subtitle( String(9007199254740993, "%d") )  # '9007199254740993' (64 bit, exact)
     Subtitle( String(50, "%d%%") )              # '50%'

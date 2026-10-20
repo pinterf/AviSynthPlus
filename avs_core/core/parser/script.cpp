@@ -1796,13 +1796,13 @@ AVSValue GetParity(AVSValue args, void*, IScriptEnvironment*) {  return args[0].
 AVSValue HasVideo(AVSValue args, void*, IScriptEnvironment*) {  return VI(args[0]).HasVideo(); }
 AVSValue HasAudio(AVSValue args, void*, IScriptEnvironment*) {  return VI(args[0]).HasAudio(); }
 
-// printf-like formatting of a single number, for String(x, format).
+// printf-like formatting of a single number, for String(x, format) and Format's {x:spec}.
 // The argument type passed to printf must follow the conversion letter, not the value type:
 // the documented use is an integer value with a float format, e.g. String(frame, "%05.0f").
 // Exactly one conversion is allowed. The user's C type size prefix (h, l, ll, L, I64...) is dropped,
 // the value's own type decides: int32 or int64 (PRId64 prefix inserted), floating point as double.
 // v must be a number (IsFloat). Returns a string saved by env.
-static const char* FormatNumber(const AVSValue& v, const char* fmt, const char* fname, IScriptEnvironment* env)
+static const char* FormatNumber(const AVSValue& v, const char* fmt, bool require_conversion, const char* fname, IScriptEnvironment* env)
 {
   std::string newfmt;
   char conversion = 0;
@@ -1832,8 +1832,11 @@ static const char* FormatNumber(const AVSValue& v, const char* fmt, const char* 
     newfmt += conversion;
   }
 
-  if (!conversion) // text only, "%%" -> "%"
-    return env->Sprintf(newfmt.c_str());
+  if (!conversion) {
+    if (require_conversion)
+      env->ThrowError("%s: no numeric conversion in the format \"%s\"", fname, fmt);
+    return env->Sprintf(newfmt.c_str()); // text only, "%%" -> "%"
+  }
 
   if (strchr("fFeEgGaA", conversion)) {
     // a 32 bit float is passed with its exact value (promoted to double anyway)
@@ -1860,7 +1863,7 @@ AVSValue String(AVSValue args, void*, IScriptEnvironment* env)
   if (args[1].Defined()) {
     if (!args[0].IsFloat()) // IsFloat: any integer or floating point
       return "";
-    return FormatNumber(args[0], args[1].AsString(), "String", env);
+    return FormatNumber(args[0], args[1].AsString(), false, "String", env);
   }
   else {
     // standard behaviour
@@ -1929,15 +1932,29 @@ AVSValue FormatString(AVSValue args, void*, IScriptEnvironment* env)
   // max_pixel_value = 255
   // Format("max pixel value = {max_pixel_value}!")
   // Format("Pi={1} x={0} y={0}!", 12, Pi())
+  // Format("{:.2f} {w:05d}", Pi(), ["w", 12]) // since 3.7.6: optional printf-like spec after ':'
   std::string format = args[0].AsString();
   int numargs = args[1].ArraySize();
 
+  // value to text, with the optional spec: numbers only, "%" prefix optional ("{x:.3f}", "{x:%.3f}")
+  auto value_to_text = [env](const AVSValue& v, const std::string& spec) -> std::string {
+    if (spec.empty())
+      return AVSValue_to_string(v, env); // simple, type dependent formatting
+    if (!v.IsFloat()) // any integer or floating point
+      env->ThrowError("Format: format specification \"%s\" is allowed only for numbers", spec.c_str());
+    const std::string fmt = spec[0] == '%' ? spec : "%" + spec;
+    // exactly one conversion, no text around it: one '%', ends with the conversion letter
+    if (fmt.find('%', 1) != std::string::npos || !strchr("diuoxXfFeEgGaA", fmt.back()))
+      env->ThrowError("Format: invalid format specification \"%s\", it must be a single numeric conversion: "
+        "[%%][flags][width][.precision] and one of d i u o x X f F e E g G a A", spec.c_str());
+    return FormatNumber(v, fmt.c_str(), true /* require_conversion */, "Format" /* who gives the error*/, env);
+  };
+
   // (name), value pairs, name can be empty
-  std::vector<std::pair<std::string, std::string>> sv;
+  std::vector<std::pair<std::string, AVSValue>> sv;
   for (int i = 0; i < numargs; i++)
   {
     std::string name; // can be empty
-    std::string val_as_s;
 
     AVSValue v = args[1][i];
     // ["name", value] support
@@ -1947,10 +1964,9 @@ AVSValue FormatString(AVSValue args, void*, IScriptEnvironment* env)
       name = v[0].AsString();
       v = v[1];
     }
-
-    val_as_s = AVSValue_to_string(v, env);
-
-    sv.push_back(std::make_pair(name, val_as_s));
+    // gather only values, not the final formatted result strings
+    // formatting is done later (optional specifiers)
+    sv.push_back(std::make_pair(name, v));
   }
 
   size_t supplied_params_count = sv.size();
@@ -2009,13 +2025,20 @@ AVSValue FormatString(AVSValue args, void*, IScriptEnvironment* env)
       break;
 
     last_param_section = format.substr(last_pos, x - last_pos); // name, order number or empty
+    // optional format specification after ':' e.g. {:.2f} {0:x} {name:05d}
+    std::string spec;
+    const size_t colon = last_param_section.find(':');
+    if (colon != std::string::npos) {
+      spec = last_param_section.substr(colon + 1);
+      last_param_section.erase(colon);
+    }
 
     if (last_param_section.empty()) {
       // simple {}, insert next parameter, consume one from the list
       // in c++20 you cannot mix
       if (param_counter >= supplied_params_count)
         env->ThrowError("Format: more parameter sections than parameters supplied");
-      ss += sv[param_counter++].second;
+      ss += value_to_text(sv[param_counter++].second, spec);
     }
     else {
       // name or number
@@ -2049,23 +2072,21 @@ AVSValue FormatString(AVSValue args, void*, IScriptEnvironment* env)
         if (index < 0 || index >= (int)supplied_params_count)
           env->ThrowError("Format: parameter index is out of range: %d", index);
 
-        ss += sv[index].second;
+        ss += value_to_text(sv[index].second, spec);
       }
       else {
         // find among the named parameters
         auto it = std::find_if(sv.begin(), sv.end(),
-          [&last_param_section](const std::pair<std::string, std::string>& element) { return element.first == last_param_section; });
+          [&last_param_section](const std::pair<std::string, AVSValue>& element) { return element.first == last_param_section; });
         if (it != sv.end())
-          ss += it->second; // name was found
+          ss += value_to_text(it->second, spec); // name was found
         else {
           // last resort: variable with the given name
           AVSValue v;
           if (!env->GetVarTry(last_param_section.c_str(), &v))
             env->ThrowError("Format: no parameter or variable found with name \"%s\".", last_param_section.c_str());
 
-          std::string val_as_s = AVSValue_to_string(v, env);
-
-          ss += val_as_s;
+          ss += value_to_text(v, spec);
         }
       }
     }

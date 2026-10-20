@@ -53,6 +53,15 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   - exactly one conversion; "%%" prints "%"; a format without conversion prints its text.
     Anything else (%s %c %p %n, '*' width/precision, a second conversion, a lone '%') is a script error.
   All 119 distinct format strings found in a large script collection (UniversalPluginsFolders) work as before.
+- Format: optional format specification for numbers after a colon in the replacement field, like in Python
+  and C#: {:.2f}, {0:x}, {name:05d}, {my_variable:.8f}. The specification is a single printf-like numeric
+  conversion, the leading % is optional: [%][flags][width][.precision] and one of d i u o x X f F e E g G a A.
+  Handled exactly like the format string of String(x, format): converted according to the conversion
+  letter (Format("{:.0f}", 123) = "123", Format("{:d}", 2.7) = "2"), 64 bit integers exact, no C type
+  size prefixes needed. Allowed only for numbers, and no other text may be in it (error otherwise).
+  {a:} (empty specification) is the same as {a}. Text outside {} is not printf: Format("{:d}%", 5) = "5%".
+  Examples: Format("{:.2f}", Pi()) = "3.14", Format("{:05d}|{:x}|{:#06X}", 42, 255, 255) = "00042|ff|0X00FF".
+  So display text no longer needs a separate String(x, "%.2f") call.
 - New script function Hex64(int [, int width]): 64 bit pair of Hex, like HexValue64 for HexValue.
   Hex is 32 bit (a negative value gives 8 digits, a 64 bit value is cut to 32 bits: Hex(4294967297) = "1"),
   so 64 bit values had no hex string conversion. Hex64(-1) = "FFFFFFFFFFFFFFFF", Hex64(4294967297) = "100000001",

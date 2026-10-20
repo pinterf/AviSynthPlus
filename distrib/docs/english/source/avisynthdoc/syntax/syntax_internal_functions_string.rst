@@ -214,6 +214,8 @@ Each replacement field has the following format:
         identifier which is used for lookup named parameters. (when values are given in ["name", value] construction)
       or: 
         valid AviSynth variable name 
+    (optional, since 3.7.6)
+        : character followed by a format specification for numbers, e.g. {:.2f} {0:x} {name:05d}
     final } character. 
 
 - If arg-id is a number it specifies the index of the argument 
@@ -224,6 +226,14 @@ Each replacement field has the following format:
 - If not found, then arg-id is searched among Avisynth variables. 
 - If arg-id is omitted, the arguments are used in order. 
 - Mixing manual and automatic indexing is not an error. 
+- The optional format specification after ``:`` (since 3.7.6) is a printf-like single numeric
+  conversion, the leading ``%`` is optional (Python style ``{:.2f}`` or ``{:%.2f}``):
+  ``[%][flags][width][.precision]`` and one of ``d i u o x X f F e E g G a A``.
+  It works exactly as the format string of ``String(x, format_string)``: the value is converted
+  according to the conversion letter (an integer can be printed with ``f``, a floating point value
+  with ``d`` is truncated), 64 bit integers are printed exactly, C type size prefixes (``l``,
+  ``ll``, ``I64``) are not needed. It is allowed only for numbers; no other text may be in it.
+  ``{a:}`` (empty specification) is the same as ``{a}``.
 
 Notes
 
@@ -249,7 +259,8 @@ Number formatting
     - not-a-number and infinity are ``nan``, ``inf`` and ``-inf``.
 
     So the result can be used to build script text for ``Eval`` or an ``Expr`` expression without
-    losing precision. For a fixed number of decimals, e.g. for display, use ``String(x, "%.2f")``.
+    losing precision. For a fixed number of decimals, e.g. for display, use a format specification
+    (``{:.2f}``, since 3.7.6) or ``String(x, "%.2f")``.
 
 ::
 
@@ -261,6 +272,18 @@ Number formatting
     Format("{}", Pow(2.0,70)) # "1.1805916207174113e+21"
     Format("{}", 255)        # "255"
     Expr(Format("x {} *", 1.0/65535)) # exact constant in the expression
+
+    # with format specification (since 3.7.6)
+    Format("{:.2f}", Pi())                         # "3.14"
+    Format("{0:.3f} {0:e}", Pi())                  # "3.142 3.141593e+00"
+    Format("{:05d}|{:x}|{:#06X}", 42, 255, 255)    # "00042|ff|0X00FF" (width 6 includes the "0X" prefix)
+    Format("{w:5d}x{h:-5d}|", ["w", 640], ["h", 480]) # "  640x480  |"
+    Format("{:.0f}", 123)                          # "123"   (integer printed as float)
+    Format("{:d}", 2.7)                            # "2"     (truncated like Int)
+    Format("{:x}", 4294967297)                     # "100000001" (64 bit)
+    Format("{:5.1f}%", 99.44)                      # " 99.4%" (text outside {} is not printf: no %% needed)
+    my_coeff = 1.0/65535
+    Format("x {my_coeff:.8f} *")                   # "x 0.00001526 *" (variable, with specification)
 
 *Examples:*
 
@@ -477,6 +500,7 @@ Changelog
 +================+============================================+
 | 3.7.6          | | "Format": shortest round-trip floating   |
 |                |   point output (was 6 fixed decimals)      |
+|                | | "Format": format specification ``{:.2f}``|
 +----------------+--------------------------------------------+
 | Avisynth+      | | Added "Format"                           |
 |                | | Added "StrToUtf8"                        |
