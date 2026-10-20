@@ -41,6 +41,7 @@
 
 #include "strings.h"
 #include <cassert>
+#include <cfloat>
 #include <string>
 #include <algorithm>
 #include <codecvt>
@@ -228,7 +229,8 @@ std::string Utf8ToAnsi(const char* s_utf8)
 
 std::string double_to_string(double d)
 {
-  char s[50]; // safe size for a double
+  // "%lf" prints all integer digits: up to 309 for DBL_MAX, plus sign, '.', 6 decimals and '\0'
+  char s[DBL_MAX_10_EXP + 1 + 1 + 1 + 6 + 1 + 16]; // was 50 (too small -> crash)
 #ifdef MSVC
   _locale_t locale = _create_locale(LC_NUMERIC, "C"); // force '.' as decimal separator
   _sprintf_l(s, "%lf", locale, d);

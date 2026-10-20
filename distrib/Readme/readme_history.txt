@@ -26,6 +26,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Fix: script floating point constants with many digits were parsed inexactly (up to a few units in the
   last place), e.g. 3.14159265358979324 gave 3.1415926535897927 instead of 3.1415926535897931 (Pi),
   0.49999999999999994 gave 0.5. Now they are parsed correctly rounded. Existed since classic Avisynth.
+- Fix: Format with a large floating point value overflowed an internal stack buffer: all integer digits are
+  printed ("%lf"), e.g. Format("{}", 1e60) gives 67 characters into a 50 byte buffer, Format("{}", 1e308)
+  crashed. Existed since 3.6.0 (Format was added; the buffer was 30 bytes then).
 - Script parser, internal code correctness (no change in behavior, except the error message):
   identifiers, numbers and the variable name checks (VarExist, function names) use ASCII-only tests,
   the same as Expr and the frame property key check, instead of the C runtime isdigit/isalpha/isalnum.

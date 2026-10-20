@@ -492,6 +492,8 @@ Bugfixes
 - Fix: script floating point constants with many digits were parsed inexactly (e.g. ``3.14159265358979324``
   gave 3.1415926535897927 instead of 3.1415926535897931); now they are parsed correctly rounded.
   Existed since classic Avisynth.
+- Fix: ``Format`` with a large floating point value (e.g. ``Format("{}", 1e308)``) overflowed an internal
+  buffer and could crash. Existed since 3.6.0 (``Format`` was added).
 - Fix: ``Floor``, ``Ceil``, ``Round``, ``Int``, ``IntI``, ``Long``: values out of the 64 bit integer range,
   NaN and infinity returned garbage; now they are a script error. ``IntI`` of a floating-point value
   outside the 32 bit range wraps around like for integers. Existed since classic Avisynth.
