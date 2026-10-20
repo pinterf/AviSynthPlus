@@ -233,6 +233,14 @@ Additions, changes
   building an expression like ``Expr(Format("x {a} *"))``, silently inaccurate or plain wrong: ``1.0/65535``
   became ``0.000015`` (1.7% off), any value below 5e-7 became ``0``. Expressions built with ``Format``
   (``Eval``, ``Expr``) now keep the full precision. For a fixed number of decimals use ``String(x, "%.2f")``.
+- ``String(x, format)``: the value is passed according to the conversion letter: integer conversions
+  ``d i u o x X`` (e.g. ``String(255, "%x")`` = 'ff', 64 bit longs exact) besides the floating point ones
+  ``f F e E g G a A``; a floating point value with an integer conversion is truncated like ``Int``.
+  C type size prefixes (``h l ll L I64``, e.g. ``%lf``, ``%lld``) are ignored, the value's own type decides:
+  64 bit integer support with the same format string on any compiler and OS (no ``%lld``/``%I64d``
+  needed). Exactly one conversion is allowed, an invalid format string is an error.
+  Was: the value was always passed as float, so integer conversions printed garbage
+  (``String(5, "%d")`` = '0'), and ``%s``, ``%n``, ``%Lf`` crashed.
 - ``propShow``: floating point property values in the same shortest exact form as ``Format`` (e.g. ``0.1``,
   ``1e-07``), instead of 6 fixed decimals (``0.100000``, ``0.000000``).
 - "Expr": relative pixel load border modes: ``x[dx,dy]:c`` (clamp, clone the edge pixel; default,

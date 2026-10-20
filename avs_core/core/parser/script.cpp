@@ -38,6 +38,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cfloat>
+#include <climits>
 #include <cmath>
 #include <vector>
 #include <fstream>
@@ -1800,20 +1801,59 @@ AVSValue String(AVSValue args, void*, IScriptEnvironment* env)
   if (args[0].IsBool()) return (args[0].AsBool() ? "true" : "false");
   if (args[0].IsFunction()) return args[0].AsFunction()->ToString(env);
   if (args[1].Defined()) {
-    // WE --> when a format parameter is present
-    // order! if it is an Int: IsFloat gives True
-    // If parameter exists, always convert to float
-    if (args[0].GetType() == AvsValueType::VALUE_TYPE_FLOAT) // real 32 bit float
-    {
-      return env->Sprintf(args[1].AsString("%f"), args[0].AsFloatf());
-      // AsFloatf returns 32 bit float
+    if (!args[0].IsFloat()) // IsFloat: any integer or floating point
+      return "";
+    // The argument type passed to printf must follow the conversion letter, not the value type:
+    // the documented use is an integer value with a float format, e.g. String(frame, "%05.0f").
+    // Exactly one conversion is allowed. The user's C type size prefix (h, l, ll, L, I64...) is dropped,
+    // the value's own type decides: int32 or int64 (PRId64 prefix inserted), floating point as double.
+    const char* fmt = args[1].AsString();
+    std::string newfmt;
+    char conversion = 0;
+    size_t conversion_pos = 0; // where the conversion letter goes in newfmt
+    for (const char* p = fmt; *p; ) {
+      if (*p != '%') { newfmt += *p++; continue; }
+      if (p[1] == '%') { newfmt += "%%"; p += 2; continue; }
+      if (conversion)
+        env->ThrowError("String: only one conversion is allowed in the format string");
+      newfmt += *p++; // '%'
+      while (*p && strchr("-+ #0", *p)) newfmt += *p++; // flags
+      while (isAsciiDigit(*p)) newfmt += *p++; // width
+      if (*p == '.') {
+        newfmt += *p++;
+        while (isAsciiDigit(*p)) newfmt += *p++; // precision
+      }
+      while (*p && strchr("hlLqjztIw", *p)) { // C type size prefix: dropped
+        if (*p == 'I' && ((p[1] == '6' && p[2] == '4') || (p[1] == '3' && p[2] == '2')))
+          p += 2;
+        p++;
+      }
+      if (!*p || !strchr("diuoxXfFeEgGaA", *p))
+        env->ThrowError("String: invalid format string, a single numeric conversion is allowed: "
+          "%%[flags][width][.precision] and one of d i u o x X f F e E g G a A");
+      conversion = *p++;
+      conversion_pos = newfmt.size();
+      newfmt += conversion;
     }
-    else if (args[0].IsFloat()) // 32 or 64 bit integer or double
-    {
-      return env->Sprintf(args[1].AsString("%lf"), args[0].AsFloat());
-      // AsFloat returns double
+
+    if (!conversion) // text only, "%%" -> "%"
+      return env->Sprintf(newfmt.c_str());
+
+    if (strchr("fFeEgGaA", conversion)) {
+      // a 32 bit float is passed with its exact value (promoted to double anyway)
+      const double d = args[0].IsFloatfStrict() ? (double)args[0].AsFloatf() : args[0].AsFloat();
+      return env->Sprintf(newfmt.c_str(), d);
     }
-    return "";
+
+    // integer conversion; a floating point value is truncated like Int()
+    const bool is_integer = args[0].IsInt() || args[0].IsLongStrict();
+    const int64_t i = is_integer ? args[0].AsLong() : DoubleToInt64(std::trunc(args[0].AsFloat()), "String", env);
+    if (args[0].IsLongStrict() || i < INT_MIN || i > INT_MAX) {
+      // 64 bit: insert the length modifier of PRId64 ("ll" or "I64", compiler dependent)
+      newfmt.insert(conversion_pos, std::string(PRId64, sizeof(PRId64) - 2));
+      return env->Sprintf(newfmt.c_str(), i);
+    }
+    return env->Sprintf(newfmt.c_str(), (int)i); // e.g. String(-1, "%x") = "ffffffff", like Hex
   }
   else {
     // standard behaviour

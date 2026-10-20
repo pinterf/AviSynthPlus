@@ -36,6 +36,23 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   1.0/65535 -> "1.5259021896696422e-05", Pow(2.0,70) -> "1.1805916207174113e+21".
   Note: scripts using Format("{}", x) for display now get more (or fewer) digits; use String(x, "%.2f")
   for a fixed number of decimals. String() is unchanged. GetFilterProps() JSON uses the same output.
+- String(x, format): the value is passed to the format according to its conversion letter, not according
+  to the value type. Was: always passed as float (the documented format is %[flags][width][.precision]f),
+  so an integer conversion printed garbage: String(5, "%d") = "0", String(255, "%x") = "0",
+  String(2.7, "%d") = "-1717986918"; %s, %n and %Lf crashed; "%f %f" printed stack garbage.
+  Now:
+  - floating point conversions f F e E g G a A: as before, integer values are converted to float.
+  - integer conversions d i u o x X: integer values directly, 64 bit longs with all digits
+    (String(9007199254740993, "%d") = "9007199254740993"); a 32 bit int stays 32 bit
+    (String(-1, "%x") = "ffffffff", like Hex). Floating point values are truncated like Int(),
+    out of the 64 bit range is an error.
+  - C type size prefixes before the conversion letter (h, l, ll, L, I64..., e.g. the l in %lf or %lld)
+    are accepted and ignored: the value's own type decides (32 or 64 bit integer; floating point always
+    with double precision). So "%lf" works as before, and "%d" or "%x" prints a 64 bit long exactly,
+    without the compiler and OS dependent "%lld" or "%I64d": the same format string works everywhere.
+  - exactly one conversion; "%%" prints "%"; a format without conversion prints its text.
+    Anything else (%s %c %p %n, '*' width/precision, a second conversion, a lone '%') is a script error.
+  All 119 distinct format strings found in a large script collection (UniversalPluginsFolders) work as before.
 - propShow: floating point property values in the same shortest exact form as Format: 0.1, 0.3333333333333333,
   1e-07, [1.5, 2.0, 1e+20] instead of 0.100000, 0.333333, 0.000000, [1.500000, 2.000000, 100000000000000000000.000000].
   Locale independent ('.' decimal separator).
