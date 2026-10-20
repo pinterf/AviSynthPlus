@@ -43,7 +43,8 @@ Additions, changes
   * ``SetFilterPropPassthrough`` — compatibility shim for old filters that predate frame-property
     support (e.g. ``ColorMatrix``).  Copies all input frame properties to the filter's output;
     self-healing: becomes a no-op per frame once the plugin is updated to use ``NewVideoFrameP``.
-  * ``GetFilterProps`` — returns the registered rule table as a JSON string for diagnostics.
+  * ``GetFilterProps`` — returns the registered rule table as a JSON string for diagnostics
+    (valid JSON: escaped strings, NaN and infinity as ``null``).
 
   Addresses `issue #393 <https://github.com/AviSynth/AviSynthPlus/issues/393>`_ and more.
   See :doc:`SetFilterProp <./corefilters/setfilterprop>`.
@@ -731,7 +732,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/10/19 17:15:00 $
+$Date: 2026/10/20 17:15:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

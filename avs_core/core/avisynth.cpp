@@ -3467,6 +3467,35 @@ std::shared_ptr<const BitmapFont> ScriptEnvironment::GetCachedBitmapFont(int siz
   return font;
 }
 
+// JSON string literal: quotes, backslash and control characters escaped (UTF-8 bytes are kept)
+static std::string JsonString(const char* s)
+{
+  std::string r = "\"";
+  for (const char* p = s; *p; p++) {
+    const unsigned char c = static_cast<unsigned char>(*p);
+    if (c == '"') r += "\\\"";
+    else if (c == '\\') r += "\\\\";
+    else if (c == '\n') r += "\\n";
+    else if (c == '\r') r += "\\r";
+    else if (c == '\t') r += "\\t";
+    else if (c < 0x20) {
+      char buf[8];
+      snprintf(buf, sizeof(buf), "\\u%04x", c);
+      r += buf;
+    }
+    else r += static_cast<char>(c);
+  }
+  return r + "\"";
+}
+
+// JSON number of a floating point value, shortest exact form; nan and inf are not valid JSON numbers: null
+static std::string JsonNumber(const AVSValue& v)
+{
+  if (!std::isfinite(v.AsFloat()))
+    return "null";
+  return v.IsFloatfStrict() ? float_to_string(v.AsFloatf()) : double_to_string(v.AsFloat());
+}
+
 const char* ScriptEnvironment::GetFilterProps()
 {
   std::string json = "[\n";
@@ -3475,15 +3504,14 @@ const char* ScriptEnvironment::GetFilterProps()
     for (const auto& entry : kv.second) {
       if (!first) json += ",\n";
       first = false;
-      json += "  {\"filter\":\"" + kv.first + "\",\"key\":\"" + entry.key + "\"";
+      json += "  {\"filter\":" + JsonString(kv.first.c_str()) + ",\"key\":" + JsonString(entry.key.c_str());
       if (!entry.param_name.empty()) {
-        json += ",\"when_param\":\"" + entry.param_name + "\",\"when_value\":";
+        json += ",\"when_param\":" + JsonString(entry.param_name.c_str()) + ",\"when_value\":";
         // param_match can be a scalar or an alias array
         auto serializeScalar = [&](const AVSValue& v) -> std::string {
-          if (v.IsString()) return "\"" + std::string(v.AsString()) + "\"";
+          if (v.IsString()) return JsonString(v.AsString());
           if (v.IsInt())    return std::to_string(v.AsLong());
-          if (v.IsFloatfStrict()) return float_to_string(v.AsFloatf());
-          if (v.IsFloat())  return double_to_string(v.AsFloat());
+          if (v.IsFloat())  return JsonNumber(v);
           if (v.IsBool())   return v.AsBool() ? "true" : "false";
           return "null";
         };
@@ -3507,18 +3535,9 @@ const char* ScriptEnvironment::GetFilterProps()
         // bool values are converted to int at registration; this branch is a safety net
         json += "\"type\":\"int\",\"value\":" + std::to_string(entry.value.AsBool() ? 1 : 0);
       } else if (entry.value.IsFloat()) {
-        json += "\"type\":\"float\",\"value\":" + (entry.value.IsFloatfStrict() ?
-          float_to_string(entry.value.AsFloatf()) : double_to_string(entry.value.AsFloat()));
+        json += "\"type\":\"float\",\"value\":" + JsonNumber(entry.value);
       } else if (entry.value.IsString()) {
-        std::string escaped;
-        for (unsigned char c : std::string(entry.value.AsString())) {
-          if      (c == '"')  escaped += "\\\"";
-          else if (c == '\\') escaped += "\\\\";
-          else if (c == '\n') escaped += "\\n";
-          else if (c == '\r') escaped += "\\r";
-          else                escaped += c;
-        }
-        json += "\"type\":\"string\",\"value\":\"" + escaped + "\"";
+        json += "\"type\":\"string\",\"value\":" + JsonString(entry.value.AsString());
       } else if (!entry.value.Defined()) {
         json += "\"type\":\"capture\",\"value\":null"; // undefined(): capture from named call arg
       } else {

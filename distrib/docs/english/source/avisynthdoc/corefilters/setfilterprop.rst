@@ -151,7 +151,9 @@ Syntax and Parameters
 .. describe:: GetFilterProps
 
     Returns all registered rules as a JSON string (array of objects), useful
-    for inspection and debugging.
+    for inspection and debugging. The output is valid JSON: strings are escaped
+    (quotes, backslash, control characters), floating point values are written in
+    their shortest exact form, a NaN or infinite value is written as ``null``.
 
     Simple rules::
 
