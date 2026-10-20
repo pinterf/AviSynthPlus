@@ -9,6 +9,7 @@
 #include "CompatEnvironment.h"
 
 class ClipDataStore;
+class BitmapFont;
 
 typedef enum _ELogLevel
 {
@@ -258,6 +259,8 @@ public:
                                                    const char* key, const AVSValue& value, int mode) = 0;
   virtual const char* __stdcall GetFilterProps() = 0;
   virtual void __stdcall SetFilterPropPassthrough(const char* filter) = 0;
+  // shared, immutable bitmap font from the per-environment font cache, created on first use (nullptr if not found)
+  virtual std::shared_ptr<const BitmapFont> __stdcall GetCachedBitmapFont(int size, const char* name, bool bold) = 0;
 
   /*
     How casting down works in Avisynth, when passing differently typed 

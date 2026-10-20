@@ -86,6 +86,8 @@
 #include <cassert>
 #include "MTGuard.h"
 #include "cache.h"
+#include "info.h" // BitmapFont, font cache
+#include <avs/filesystem.h>
 #include <clocale>
 #include <cmath>
 #include <limits>
@@ -929,6 +931,7 @@ public:
                                 const char* key, const AVSValue& value, int mode);
   const char* GetFilterProps();
   void SetFilterPropPassthrough(const char* filter);
+  std::shared_ptr<const BitmapFont> GetCachedBitmapFont(int size, const char* name, bool bold);
   MtMode GetFilterMTMode(const Function* filter, bool* is_forced) const;
   void ParallelJob(ThreadWorkerFuncPtr jobFunc, void* jobData, IJobCompletion* completion);
   IJobCompletion* NewCompletion(size_t capacity);
@@ -1169,6 +1172,18 @@ private:
     AVSValue param_match;    // the value to compare against (only used when param_name is non-empty)
   };
   std::unordered_map<std::string, std::vector<PropEntry>> FilterPropMap;
+
+  // Bitmap font cache: fonts are immutable after creation and shared by all filters of this environment.
+  // Key: name (or BDF file name), size, bold.
+  // Optional:
+  // A font loaded from a BDF file is loaded again when the file's modification time changed.
+  struct FontCacheEntry {
+    std::shared_ptr<const BitmapFont> font;
+    bool from_file;
+    fs::file_time_type file_time; // valid when from_file
+  };
+  std::unordered_map<std::string, FontCacheEntry> font_cache;
+  std::mutex font_cache_mutex;
   std::unordered_set<std::string> FilterPropPassthroughSet; // filters that need input-prop forwarding
 
   // Logging-related members
@@ -2168,6 +2183,11 @@ public:
   void __stdcall SetFilterPropPassthrough(const char* filter)
   {
     core->SetFilterPropPassthrough(filter);
+  }
+
+  std::shared_ptr<const BitmapFont> __stdcall GetCachedBitmapFont(int size, const char* name, bool bold)
+  {
+    return core->GetCachedBitmapFont(size, name, bold);
   }
 
   int __stdcall IncrImportDepth()
@@ -3404,6 +3424,47 @@ void ScriptEnvironment::SetFilterPropPassthrough(const char* filter)
     name_to_register = loading + "_" + filter;
 
   FilterPropPassthroughSet.insert(NormalizeString(name_to_register));
+}
+
+std::shared_ptr<const BitmapFont> ScriptEnvironment::GetCachedBitmapFont(int size, const char* name, bool bold)
+{
+  // Assemble lookup key: name|size|b or name|size|n
+  const std::string key = std::string(name) + '|' + std::to_string(size) + (bold ? "|b" : "|n");
+  // Reload a BDF font when its file was modified during the life of this environment. Off: such a change
+  // is very unlikely, a script reload (a new environment) loads it again anyway; saves a file system call
+  // per cache hit. The check is kept for an eventual use.
+  constexpr bool check_file_change = false; // This is uber correct but really unneeded, and may slow down.
+
+  // modification time of the file; false if not available (e.g. the file was removed)
+  // a file system call, done only for external BDF fonts on a cache hit
+  // file_time_type is kept as is, its representation is library dependent (e.g. 128 bit in libc++)
+  // Note: the resolution can be 1 second (e.g. libstdc++ on Windows), a change within the same second is not seen.
+  auto get_file_time = [name](fs::file_time_type& ftime) -> bool {
+    std::error_code ec;
+    ftime = fs::last_write_time(fs::path(name), ec);
+    return !ec;
+  };
+
+  std::lock_guard<std::mutex> lock(font_cache_mutex);
+  auto it = font_cache.find(key);
+  if (it != font_cache.end()) {
+    fs::file_time_type ftime;
+    // optional file change check
+    if (!check_file_change || !it->second.from_file || (get_file_time(ftime) && ftime == it->second.file_time))
+      return it->second.font;
+    // BDF file modified, removed or replaced: drop the stale entry, load again (fails like uncached loading
+    // would). Existing filters keep their own reference to the old font.
+    font_cache.erase(it);
+  }
+  std::shared_ptr<const BitmapFont> font = CreateBitmapFont(size, name, bold, false);
+  if (font) { // not found: not cached, a BDF file may appear later
+    // built-in fonts are found first by name, a file is used only when no built-in font matched
+    FontCacheEntry entry{ font, font->IsFromFile(), fs::file_time_type() };
+    if (check_file_change && entry.from_file && !get_file_time(entry.file_time))
+      entry.from_file = false; // no file time: no reload check
+    font_cache[key] = entry;
+  }
+  return font;
 }
 
 const char* ScriptEnvironment::GetFilterProps()

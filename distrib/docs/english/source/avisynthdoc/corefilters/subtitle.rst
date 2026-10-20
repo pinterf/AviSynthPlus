@@ -497,6 +497,13 @@ Changelog
 |                 |  uses the built-in bitmap font instead of GDI rendering.                 |
 |                 || Add ``gdi`` parameter to ``Text`` (accepted but ignored; for API        |
 |                 |  compatibility with ``Subtitle``).                                       |
+|                 || ``Text``: bitmap fonts are cached per ScriptEnvironment and shared      |
+|                 |  (built-in and BDF), instead of a copy per filter instance; much faster  |
+|                 |  when created per frame, e.g. in ``ScriptClip`` or by ``propShow``.      |
+|                 || Fix: ``Text`` with invalid UTF-8: no reading past the end of the text,  |
+|                 |  an invalid byte no longer swallows the following characters.            |
+|                 || Fix: ``Text`` with a BDF font: characters above U+FFFF are displayed    |
+|                 |  (were cut to 16 bits and shown for a wrong character).                  |
 +-----------------+--------------------------------------------------------------------------+
 | 3.7.4           | Feature: SubTitle to accept real LF (``\r``) or CR LF (``\r\n``) control |
 |                 | characters for line break.                                               |

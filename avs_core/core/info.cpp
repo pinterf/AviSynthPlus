@@ -45,6 +45,7 @@
 // chroma location, overlay-like weighted chroma handling
 
 #include "info.h"
+#include "InternalEnvironment.h"
 #include <cstring>
 #include <sstream>
 #include <fstream>
@@ -2213,8 +2214,9 @@ std::unique_ptr<BitmapFont> CreateBitmapFont(int size, const char *name, bool bo
 
 std::shared_ptr<const BitmapFont> GetBitmapFont(int size, const char* name, bool bold, bool debugSave, IScriptEnvironment* env)
 {
-  AVS_UNUSED(env); // for the font cache
-  return CreateBitmapFont(size, name, bold, debugSave);
+  if (env == nullptr || debugSave)
+    return CreateBitmapFont(size, name, bold, debugSave);
+  return GetAndRevealCamouflagedEnv(env)->GetCachedBitmapFont(size, name, bold);
 }
 
 static void DrawString_internal(const BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& dst, int x, int y, std::string& s_utf8,

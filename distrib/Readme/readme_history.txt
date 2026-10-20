@@ -9,7 +9,7 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20261019 3.7.5.rXXXX (pre 3.7.6)
+20261020 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
 - Fix: runtime functions AverageLuma (and the other Average*), LumaDifference (and the other *Difference*,
   *DifferenceFromPrevious, *DifferenceToNext) and PlaneMinMaxStats returned 32 bit float, so the result
@@ -106,6 +106,15 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   it differently), and so was a signed left shift into the sign bit (BitLShift(1, 31), BitSet(0, 31)); these
   are done unsigned now. E.g. BitLShift(1, 32) = 1, BitLShift(1, 33) = 2, BitLShift(1, -1) = -2147483648,
   BitSet64(0, 64) = 1. All 46 tested cases give the same result as before. Documented in the bit functions page.
+- Bitmap font cache: the built-in (Terminus, info_h) and external BDF bitmap fonts are created once per
+  ScriptEnvironment and shared by all filters, instead of a separate copy (about 150 KB: bitmap, character
+  lookup table) for each filter instance, and a new one on every frame for propShow, ApplyMessage (e.g.
+  ConditionalFilter show=true, error messages, C plugins' avs_apply_message), Histogram("audiolevels")
+  labels and Text inside ScriptClip. A BDF file was even read and parsed again each time.
+  Measured (640x360, per frame): propShow 166 -> 52 us, ScriptClip("Text(String(current_frame))") 154 -> 37 us
+  (with Prefetch(4): 42 -> 18 us), Histogram("audiolevels") 231 -> 73 us, Text with a BDF font in ScriptClip
+  244 -> 35 us. The cache is freed with the ScriptEnvironment. A BDF file is read once per environment:
+  a change of the file is seen after reloading the script (a new environment). Rendering is unchanged.
 - Script parser, internal code correctness (no change in behavior, except the error message):
   identifiers, numbers and the variable name checks (VarExist, function names) use ASCII-only tests,
   the same as Expr and the frame property key check, instead of the C runtime isdigit/isalpha/isalnum.

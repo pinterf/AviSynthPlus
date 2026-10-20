@@ -203,13 +203,17 @@ public:
       SaveAsC(_codepoints);
   }
 
+  // true when loaded from an external BDF file (built-in fonts have no file name)
+  bool IsFromFile() const { return !font_filename.empty(); }
+
   // helper function for remapping an utf8 string to font index entry list
   std::vector<int> remap(const std::string& s_utf8) const;
 };
 
 // creates a new font instance (uncached)
 std::unique_ptr<BitmapFont> CreateBitmapFont(int size, const char* name, bool bold, bool debugSave);
-// Returns an immutable font, which can be shared. env: for the font cache.
+// Returns a shared, immutable font from the per-ScriptEnvironment font cache, created on first use.
+// Uncached (new instance) when env is nullptr or for debugSave.
 std::shared_ptr<const BitmapFont> GetBitmapFont(int size, const char* name, bool bold, bool debugSave, IScriptEnvironment* env);
 
 void SimpleTextOutW(const BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,

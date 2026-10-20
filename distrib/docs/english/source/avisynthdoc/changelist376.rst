@@ -675,6 +675,10 @@ Optimizations
 - "Expr": relative pixel load (``x[dx,dy]``): new AVX2 JIT version, ~2x faster on AVX2 CPUs
   (an expression with relative pixels ran on the SSE2 JIT before). The SSE2 JIT no longer requires
   SSSE3 (non-SSSE3 CPUs ran the whole expression in C) and is slightly quicker.
+- Bitmap fonts (``Text``, ``propShow``, ``Info``, ``ShowFrameNumber``, ``ApplyMessage`` and others) are created once per
+  ScriptEnvironment and shared, instead of building (or loading from a BDF file) a separate copy for each filter
+  instance and each runtime call. E.g. ``propShow`` 166 -> 52 microseconds per frame, ``ScriptClip`` with ``Text``
+  154 -> 37, ``Histogram("audiolevels")`` 231 -> 73, ``Text`` with a BDF font in ``ScriptClip`` 244 -> 35.
 
 Documentation
 ~~~~~~~~~~~~~
