@@ -233,6 +233,8 @@ Additions, changes
   building an expression like ``Expr(Format("x {a} *"))``, silently inaccurate or plain wrong: ``1.0/65535``
   became ``0.000015`` (1.7% off), any value below 5e-7 became ``0``. Expressions built with ``Format``
   (``Eval``, ``Expr``) now keep the full precision. For a fixed number of decimals use ``String(x, "%.2f")``.
+- ``propShow``: floating point property values in the same shortest exact form as ``Format`` (e.g. ``0.1``,
+  ``1e-07``), instead of 6 fixed decimals (``0.100000``, ``0.000000``).
 - "Expr": relative pixel load border modes: ``x[dx,dy]:c`` (clamp, clone the edge pixel; default,
   same as without suffix), ``x[dx,dy]:m`` (mirror, edge pixel repeated; akarin.Expr compatible),
   ``x[dx,dy]:r`` (mirror without repeating the edge pixel, like OpenCV ``BORDER_REFLECT_101``),

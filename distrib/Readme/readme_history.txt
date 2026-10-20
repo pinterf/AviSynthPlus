@@ -36,6 +36,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   1.0/65535 -> "1.5259021896696422e-05", Pow(2.0,70) -> "1.1805916207174113e+21".
   Note: scripts using Format("{}", x) for display now get more (or fewer) digits; use String(x, "%.2f")
   for a fixed number of decimals. String() is unchanged. GetFilterProps() JSON uses the same output.
+- propShow: floating point property values in the same shortest exact form as Format: 0.1, 0.3333333333333333,
+  1e-07, [1.5, 2.0, 1e+20] instead of 0.100000, 0.333333, 0.000000, [1.500000, 2.000000, 100000000000000000000.000000].
+  Locale independent ('.' decimal separator).
 - Fix: script floating point constants with many digits were parsed inexactly (up to a few units in the
   last place), e.g. 3.14159265358979324 gave 3.1415926535897927 instead of 3.1415926535897931 (Pi),
   0.49999999999999994 gave 0.5. Now they are parsed correctly rounded. Existed since classic Avisynth.

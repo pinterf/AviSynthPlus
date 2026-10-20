@@ -1681,7 +1681,7 @@ PVideoFrame __stdcall ShowProperties::GetFrame(int n, IScriptEnvironment* env)
           ss << "[";
         const double* arr = env->propGetFloatArray(avsmap, propName, &error);
         for (int i = 0; i < propNumElements; ++i) {
-          ss << std::to_string(arr[i]);
+          ss << double_to_string(arr[i]); // shortest exact form, like Format; locale independent
           if (i < propNumElements - 1)
             ss << ", ";
         }
