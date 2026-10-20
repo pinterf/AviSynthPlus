@@ -205,6 +205,15 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
     }
     // in avisynth_c_plugin_init2:
     avs_add_function(env, "ApplyInt", "ni", apply_int, NULL);
+- Fix: avisynth_c.h dynamic loader (#define AVSC_NO_DECLSPEC, avs_load_library, Windows):
+  - the 8 deprecated entries avs_is_yuv444p16, avs_is_yuv422p16, avs_is_yuv420p16, avs_is_y16,
+    avs_is_yuv444ps, avs_is_yuv422ps, avs_is_yuv420ps, avs_is_y32 were in the AVS_Library struct but never
+    loaded; since the struct was malloc'ed, they contained garbage: calling one crashed. Now loaded
+    (optional, NULL when missing). The struct is zero filled (calloc), so a not loaded entry is NULL.
+  - a failed load (e.g. a required function missing) freed the struct but not the loaded DLL (FreeLibrary).
+  - the loader part did not compile without including <windows.h> and <stdlib.h> before avisynth_c.h
+    (HMODULE, LoadLibraryA, GetProcAddress, malloc); it includes them now itself.
+  Existed since r2487 (2016).
 - C++ API: CS_xxx_CHROMA_PLACEMENT (AvsChromaPlacement) marked deprecated: never implemented,
   use the _ChromaLocation frame property.
 - Interface v13.1 (AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1): user defined cache hints passed upstream

@@ -1661,18 +1661,11 @@ AVSC_API(int64_t, avs_get_var_long)(AVS_ScriptEnvironment*, const char* name, in
 // When AVSC_NO_DECLSPEC is defined, you can use avs_load_library to populate API functions into a struct
 // AVSC_INLINE functions which call onto an API functions should be treated specially (todo)
 
-/*
-  The following functions needs to have been declared, probably from windows.h
-
-  void* malloc(size_t)
-  void free(void*);
-
-  HMODULE LoadLibraryA(const char*);
-  void* GetProcAddress(HMODULE, const char*);
-  FreeLibrary(HMODULE);
-*/
-
 #ifndef EXTERNAL_AVS_C_API_LOADER // If external loader is NOT active, then define these helpers
+
+// The loader needs calloc, free (stdlib.h) and HMODULE, LoadLibraryA, GetProcAddress, FreeLibrary (windows.h)
+#include <stdlib.h>
+#include <windows.h>
 
 typedef struct AVS_Library AVS_Library;
 
@@ -1944,7 +1937,8 @@ AVSC_INLINE int avs_bits_per_component_fallback(const AVS_VideoInfo * p)
 // AVSC_INLINE helpers which are calling into API procedures are not treated here (todo)
 
 AVSC_INLINE AVS_Library * avs_load_library() {
-  AVS_Library *library = (AVS_Library *)malloc(sizeof(AVS_Library));
+  // calloc: zero filled: an entry which is not loaded (optional, missing) is NULL
+  AVS_Library *library = (AVS_Library *)calloc(1, sizeof(AVS_Library));
   if (library == NULL)
     return NULL;
   library->handle = LoadLibraryA("avisynth");
@@ -2089,6 +2083,15 @@ avs_bits_per_component    constant 8 (8 bits/component)
   AVSC_LOAD_FUNC_OPT(avs_component_size);
   AVSC_LOAD_FUNC_OPT(avs_bits_per_component);
 #endif
+  // Avisynth+ specific, deprecated (use avs_is_444, avs_is_422, avs_is_420, avs_is_y with avs_bits_per_component)
+  AVSC_LOAD_FUNC_OPT(avs_is_yuv444p16);
+  AVSC_LOAD_FUNC_OPT(avs_is_yuv422p16);
+  AVSC_LOAD_FUNC_OPT(avs_is_yuv420p16);
+  AVSC_LOAD_FUNC_OPT(avs_is_y16);
+  AVSC_LOAD_FUNC_OPT(avs_is_yuv444ps);
+  AVSC_LOAD_FUNC_OPT(avs_is_yuv422ps);
+  AVSC_LOAD_FUNC_OPT(avs_is_yuv420ps);
+  AVSC_LOAD_FUNC_OPT(avs_is_y32);
   // Avisynth+ interface V8, no backward compatible simulation
   AVSC_LOAD_FUNC_OPT(avs_subframe_planar_a);
   // frame properties
@@ -2224,6 +2227,8 @@ avs_bits_per_component    constant 8 (8 bits/component)
   return library;
 
 fail:
+  if (library->handle != NULL)
+    FreeLibrary(library->handle);
   free(library);
   return NULL;
 }
