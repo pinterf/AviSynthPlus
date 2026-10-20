@@ -93,9 +93,11 @@ std::string Utf8ToAnsi(const char* s_utf8);
 
 std::string GetFullPathNameWrapUtf8(const std::string& f);
 
-// Converts a double to string using the "C" locale (always '.' as decimal
-// separator), matching the behaviour of String() and AVSValue_to_string().
+// Shortest representation which reads back to the same value, like Python's repr():
+// 1.5, 1.0, 0.0001, 1e-05, 1.5e+16, nan, inf. Locale independent ('.' as decimal separator).
+// The float version gives the shortest digits for the 32 bit value (0.1f -> "0.1").
 std::string double_to_string(double d);
+std::string float_to_string(float f);
 
 size_t str_utf8_size(const std::string& s);
 std::string U16_to_utf8(uint16_t u16);

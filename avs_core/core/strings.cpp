@@ -42,6 +42,9 @@
 #include "strings.h"
 #include <cassert>
 #include <cfloat>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <algorithm>
 #include <codecvt>
@@ -227,18 +230,91 @@ std::string Utf8ToAnsi(const char* s_utf8)
 
 #endif
 
+// Shortest decimal digits which read back to the same value, laid out like Python's repr().
+// min_digits: 15 for double (DBL_DIG), 6 for float (FLT_DIG); max_digits: 17 for double, 9 for float;
+// is_float: round-trip check in 32 bit float precision.
+// Starting at DBL_DIG/FLT_DIG is enough: when the shortest form has k <= DBL_DIG digits, printing with
+// DBL_DIG digits gives the same k digits followed by zeros (the value is closer to its shortest decimal
+// than half a unit in the DBL_DIG-th digit), and the trailing zeros are stripped below.
+// So at most 3 (float: 4) print + read back rounds instead of up to 17.
+// Not for subnormals (below DBL_MIN / FLT_MIN): they have fewer significant bits, so they start from 1 digit.
+static std::string shortest_to_string(double d, int min_digits, int max_digits, bool is_float)
+{
+  if (std::isnan(d))
+    return "nan";
+  if (std::isinf(d))
+    return d < 0 ? "-inf" : "inf";
+  if (d == 0)
+    return std::signbit(d) ? "-0.0" : "0.0";
+
+  // find the shortest precision which round-trips
+  std::string digits; // significant digits, without the decimal point
+  int exponent = 0; // decimal exponent of the first digit
+  const bool subnormal = std::fabs(d) < (is_float ? (double)FLT_MIN : DBL_MIN);
+  for (int precision = subnormal ? 1 : min_digits; precision <= max_digits; precision++) {
+    char buf[40];
+    snprintf(buf, sizeof(buf), "%.*e", precision - 1, std::fabs(d)); // e.g. "1.5e-05"
+    // collect the digits, skipping the decimal point (which can be locale dependent)
+    digits.clear();
+    const char* p = buf;
+    for (; *p && *p != 'e' && *p != 'E'; p++)
+      if (isAsciiDigit(*p))
+        digits += *p;
+    exponent = (int)strtol(p + 1, nullptr, 10);
+    // read back without a decimal point, so locale independent
+    const std::string number = digits + "e" + std::to_string(exponent - (int)(digits.size() - 1));
+    const bool same = is_float ?
+      std::strtof(number.c_str(), nullptr) == (float)std::fabs(d) :
+      std::strtod(number.c_str(), nullptr) == std::fabs(d);
+    if (same)
+      break;
+  }
+  while (digits.size() > 1 && digits.back() == '0')
+    digits.pop_back();
+
+  std::string s = d < 0 ? "-" : "";
+  const int ndigits = (int)digits.size();
+  if (exponent < -4 || exponent >= 16) {
+    // 1e-05, 1.5e+16
+    s += digits[0];
+    if (ndigits > 1) {
+      s += '.';
+      s += digits.substr(1);
+    }
+    char e[8];
+    snprintf(e, sizeof(e), "e%c%02d", exponent < 0 ? '-' : '+', std::abs(exponent));
+    s += e;
+  }
+  else if (exponent < 0) {
+    // 0.0001, 0.015
+    s += "0.";
+    s += std::string(-exponent - 1, '0');
+    s += digits;
+  }
+  else {
+    // 1.0, 1.5, 100.0, 1234567890123456.0
+    if (ndigits > exponent + 1) {
+      s += digits.substr(0, exponent + 1);
+      s += '.';
+      s += digits.substr(exponent + 1);
+    }
+    else {
+      s += digits;
+      s += std::string(exponent + 1 - ndigits, '0');
+      s += ".0";
+    }
+  }
+  return s;
+}
+
 std::string double_to_string(double d)
 {
-  // "%lf" prints all integer digits: up to 309 for DBL_MAX, plus sign, '.', 6 decimals and '\0'
-  char s[DBL_MAX_10_EXP + 1 + 1 + 1 + 6 + 1 + 16]; // was 50 (too small -> crash)
-#ifdef MSVC
-  _locale_t locale = _create_locale(LC_NUMERIC, "C"); // force '.' as decimal separator
-  _sprintf_l(s, "%lf", locale, d);
-  _free_locale(locale);
-#else
-  sprintf(s, "%lf", d);
-#endif
-  return s;
+  return shortest_to_string(d, DBL_DIG, 17, false);
+}
+
+std::string float_to_string(float f)
+{
+  return shortest_to_string(f, FLT_DIG, 9, true);
 }
 
 std::string GetFullPathNameWrapUtf8(const std::string& f)

@@ -3421,6 +3421,7 @@ const char* ScriptEnvironment::GetFilterProps()
         auto serializeScalar = [&](const AVSValue& v) -> std::string {
           if (v.IsString()) return "\"" + std::string(v.AsString()) + "\"";
           if (v.IsInt())    return std::to_string(v.AsLong());
+          if (v.IsFloatfStrict()) return float_to_string(v.AsFloatf());
           if (v.IsFloat())  return double_to_string(v.AsFloat());
           if (v.IsBool())   return v.AsBool() ? "true" : "false";
           return "null";
@@ -3445,7 +3446,8 @@ const char* ScriptEnvironment::GetFilterProps()
         // bool values are converted to int at registration; this branch is a safety net
         json += "\"type\":\"int\",\"value\":" + std::to_string(entry.value.AsBool() ? 1 : 0);
       } else if (entry.value.IsFloat()) {
-        json += "\"type\":\"float\",\"value\":" + double_to_string(entry.value.AsFloat());
+        json += "\"type\":\"float\",\"value\":" + (entry.value.IsFloatfStrict() ?
+          float_to_string(entry.value.AsFloatf()) : double_to_string(entry.value.AsFloat()));
       } else if (entry.value.IsString()) {
         std::string escaped;
         for (unsigned char c : std::string(entry.value.AsString())) {

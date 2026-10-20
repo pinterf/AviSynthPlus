@@ -1856,6 +1856,7 @@ static std::string AVSValue_to_string(AVSValue v, IScriptEnvironment* env) {
   if (v.IsBool()) return v.AsBool() ? "true" : "false";
   if (v.IsFunction()) return v.AsFunction()->ToString(env);
   if (v.IsInt()) return std::to_string(v.AsLong()); // AsLong handles both 32 and 64-bit int
+  if (v.IsFloatfStrict()) return float_to_string(v.AsFloatf()); // 32 bit float: its own shortest digits
   if (v.IsFloat()) return double_to_string(v.AsFloat());
   return "";
 }

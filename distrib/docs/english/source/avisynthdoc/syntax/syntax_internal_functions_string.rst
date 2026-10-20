@@ -233,6 +233,35 @@ Notes
 
     Format("{} {}!", "Hello", "world", "something") # OK, produces "Hello world!"
 
+Number formatting
+
+    Integers are inserted with all digits. Floating point values are inserted with the shortest
+    representation which reads back to exactly the same value, in the same way as Python's ``repr()``
+    (since 3.7.6, before: 6 fixed decimals like ``String``, which silently falsified expressions built
+    with ``Format``, e.g. in ``Expr(Format("x {a} *"))`` ``1.0/65535`` became ``0.000015`` and values
+    below 5e-7 became ``0``):
+
+    - positional notation between 0.0001 and 1e16, otherwise scientific notation with ``e``,
+      a sign and at least two exponent digits;
+    - a whole value keeps its ``.0``, so it is read back as a floating point number;
+    - ``.`` is the decimal separator, independent of the locale;
+    - a 32 bit float value gets its own shortest digits (``Floatf(0.1)`` gives "0.1");
+    - not-a-number and infinity are ``nan``, ``inf`` and ``-inf``.
+
+    So the result can be used to build script text for ``Eval`` or an ``Expr`` expression without
+    losing precision. For a fixed number of decimals, e.g. for display, use ``String(x, "%.2f")``.
+
+::
+
+    Format("{}", 1.5)        # "1.5"
+    Format("{}", 1.0)        # "1.0"
+    Format("{}", 1.0/3)      # "0.3333333333333333"
+    Format("{}", 0.0001)     # "0.0001"
+    Format("{}", 1.0/65535)  # "1.5259021896696422e-05"
+    Format("{}", Pow(2.0,70)) # "1.1805916207174113e+21"
+    Format("{}", 255)        # "255"
+    Expr(Format("x {} *", 1.0/65535)) # exact constant in the expression
+
 *Examples:*
 
 ::
@@ -446,6 +475,9 @@ Changelog
 +----------------+--------------------------------------------+
 | Version        | Changes                                    |
 +================+============================================+
+| 3.7.6          | | "Format": shortest round-trip floating   |
+|                |   point output (was 6 fixed decimals)      |
++----------------+--------------------------------------------+
 | Avisynth+      | | Added "Format"                           |
 |                | | Added "StrToUtf8"                        |
 |                | | Added "StrFromUtf8"                      |

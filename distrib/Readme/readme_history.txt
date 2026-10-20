@@ -23,6 +23,19 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   e or E, an optional + or - sign and the exponent digits, e.g. 1.5e-5, 2E+3, .5e1, 1e308.
   A number with an exponent is always floating point (2e3 is 2000.0, 64 bit double).
   Expr already accepted this form, so e.g. a constant can be written the same way in both.
+- Format: floating point values are inserted with the shortest representation which reads back to exactly
+  the same value, like Python's repr() (VapourSynth scripts build Expr strings the same way with f-strings).
+  Was: 6 fixed decimals ("%lf"), so Format("{}", 1.0/65535) gave "0.000015" (2 significant digits) and
+  Format("{}", 0.0000001) gave "0.000000". This made the usual use case, building an expression with Format,
+  e.g. Expr(Format("x {a} *")) or Eval(Format(...)), silently inaccurate or plain wrong, without any error:
+  a coefficient of 1.0/65535 became 0.000015 (1.7% off), and any value below 5e-7 became 0.
+  Rules: positional notation between 0.0001 and 1e16, otherwise scientific ("1e-07", "1.5e+16"); a whole
+  value keeps ".0" (read back as float); '.' decimal separator regardless of locale; a 32 bit float gets its
+  own shortest digits (Floatf(0.1) -> "0.1"); nan, inf, -inf.
+  Examples: 1.5 -> "1.5" (was "1.500000"), 1.0 -> "1.0", 1.0/3 -> "0.3333333333333333",
+  1.0/65535 -> "1.5259021896696422e-05", Pow(2.0,70) -> "1.1805916207174113e+21".
+  Note: scripts using Format("{}", x) for display now get more (or fewer) digits; use String(x, "%.2f")
+  for a fixed number of decimals. String() is unchanged. GetFilterProps() JSON uses the same output.
 - Fix: script floating point constants with many digits were parsed inexactly (up to a few units in the
   last place), e.g. 3.14159265358979324 gave 3.1415926535897927 instead of 3.1415926535897931 (Pi),
   0.49999999999999994 gave 0.5. Now they are parsed correctly rounded. Existed since classic Avisynth.
