@@ -6186,14 +6186,6 @@ const PVideoFrame ScriptEnvironment::propGetFrame(const AVSMap* map, const char*
   }
 }
 
-static inline bool isAlphaUnderscore(char c) {
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-}
-
-static inline bool isAlphaNumUnderscore(char c) {
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
-}
-
 static bool isValidVSMapKey(const std::string& s) {
   size_t len = s.length();
   if (!len)
