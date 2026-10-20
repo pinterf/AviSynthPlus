@@ -231,6 +231,7 @@ extern const AVSFunction Script_functions[] = {
   { "GetParity", BUILTIN_FUNC_PREFIX, "c[n]i", GetParity },
   { "String",    BUILTIN_FUNC_PREFIX, ".[]s", String },
   { "Hex",       BUILTIN_FUNC_PREFIX, "i[width]i", Hex }, // avs+ 20180222 new width parameter
+  { "Hex64",     BUILTIN_FUNC_PREFIX, "i[width]i", Hex64 }, // 3.7.6
   { "Func",    BUILTIN_FUNC_PREFIX, "n", Func },
   { "Format",  BUILTIN_FUNC_PREFIX, "s.*", FormatString },
 
@@ -1890,6 +1891,17 @@ AVSValue Hex(AVSValue args, void*, IScriptEnvironment* env)
   wid = (wid<0) ? 0 : (wid > 8) ? 8 : wid;
   char buf[8 + 1];
   sprintf_s(buf, "%0*X", wid, n); // uppercase, unlike <=r2580
+  return env->SaveString(buf);
+}
+
+// 64 bit pair of Hex, like HexValue64 for HexValue: Hex(-1) = "FFFFFFFF", Hex64(-1) = "FFFFFFFFFFFFFFFF"
+AVSValue Hex64(AVSValue args, void*, IScriptEnvironment* env)
+{
+  const int64_t n = args[0].AsLong();
+  int wid = args[1].AsInt(0); // 0..16 is the minimum width of the returned string
+  wid = (wid < 0) ? 0 : (wid > 16) ? 16 : wid;
+  char buf[16 + 1];
+  snprintf(buf, sizeof(buf), "%0*" PRIX64, wid, (uint64_t)n);
   return env->SaveString(buf);
 }
 

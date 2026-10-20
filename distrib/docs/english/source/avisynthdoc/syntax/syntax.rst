@@ -488,7 +488,7 @@ Numerical functions
 ~~~~~~~~~~~~~~~~~~~
 
 Except ``MulDiv``, ``Rand`` and ``Spline`` the calculations are 64-bit (int or double) compatible.
-``HexValue`` has a special ``HexValue64`` variant.
+``HexValue`` and ``Hex`` have special 64 bit variants: ``HexValue64`` and ``Hex64``.
 
 See :doc:`AviSynth Syntax - Numeric functions <syntax_internal_functions_numeric>`, and
 :doc:`AviSynth Syntax - Numeric functions <syntax_internal_functions_conversion>`.
@@ -1125,6 +1125,7 @@ Changelog
 | Version        | Changes                                                    |
 +================+============================================================+
 | Avisynth 3.7.6 | | Floating point constants in scientific notation          |
+|                | | Add Hex64 function                                       |
 +----------------+------------------------------------------------------------+
 | Avisynth 3.7.4 | | Added 64-bit types, integer long, floating point double  |
 |                | | Add "L" suffixed hexadecimal notation                    |

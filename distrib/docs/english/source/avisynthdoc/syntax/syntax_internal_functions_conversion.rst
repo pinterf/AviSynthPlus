@@ -69,10 +69,13 @@ more information on specifying colors.
 
 Function returns hex string in uppercase, instead of lowercase.
 
+The value is handled as 32 bit integer: a negative value gives 8 digits
+(``Hex(-1)`` = "FFFFFFFF"), a 64 bit value is cut to its lower 32 bits. For 64 bit values use ``Hex64``.
+
 .. describe:: int width (default 0)
 
-    Width is 0 to 16 the *minimum* width of the returned string. (8 hex digit is the
-    max of Avisynth 32 bit integer, 16 digits for 64 bit numbers)
+    Width is 0 to 8, the *minimum* width of the returned string (8 hex digits is the
+    max of an Avisynth 32 bit integer).
 
     Resulting string will be left-padded with zeroes as needed.
 
@@ -83,6 +86,31 @@ Function returns hex string in uppercase, instead of lowercase.
 
     Hex(10824234) # "A52A2A"
     Hex(255,4) # returns "00FF".
+
+Hex64
+~~~~~
+::
+
+    Hex64(int [, int "width"])
+
+64 bit version of ``Hex``, the pair of ``HexValue64``. Converts a 32 or 64 bit integer value
+to its hexadecimal value string (uppercase), handled as 64 bit: a negative value gives 16 digits.
+
+.. describe:: int width (default 0)
+
+    Width is 0 to 16, the *minimum* width of the returned string.
+    Resulting string will be left-padded with zeroes as needed.
+
+*Examples:*
+::
+
+    Hex64(255)          # "FF"
+    Hex64(255, 4)       # "00FF"
+    Hex64(-1)           # "FFFFFFFFFFFFFFFF" (Hex(-1) is "FFFFFFFF")
+    Hex64(4294967297)   # "100000001"        (Hex(4294967297) is "1")
+    HexValue64(Hex64(x)) == x # true for any integer x
+
+Since 3.7.6.
 
 String
 ~~~~~~
@@ -256,7 +284,8 @@ Changelog
 +-----------------+----------------------------------+
 | Version         | Changes                          |
 +=================+==================================+
-| 3.7.6           | | String: integer conversions    |
+| 3.7.6           | | Add Hex64                      |
+|                 | | String: integer conversions    |
 |                 |   (d i u o x X), more float ones,|
 |                 |   invalid format is an error     |
 +-----------------+----------------------------------+

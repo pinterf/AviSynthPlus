@@ -241,6 +241,9 @@ Additions, changes
   needed). Exactly one conversion is allowed, an invalid format string is an error.
   Was: the value was always passed as float, so integer conversions printed garbage
   (``String(5, "%d")`` = '0'), and ``%s``, ``%n``, ``%Lf`` crashed.
+- New script function ``Hex64(int [, int width])``: 64 bit version of ``Hex`` (pair of ``HexValue64``),
+  e.g. ``Hex64(-1)`` = "FFFFFFFFFFFFFFFF", ``Hex64(4294967297)`` = "100000001". Width is 0 to 16.
+  ``Hex`` documentation corrected: it is 32 bit, width 0 to 8.
 - ``propShow``: floating point property values in the same shortest exact form as ``Format`` (e.g. ``0.1``,
   ``1e-07``), instead of 6 fixed decimals (``0.100000``, ``0.000000``).
 - "Expr": relative pixel load border modes: ``x[dx,dy]:c`` (clamp, clone the edge pixel; default,

@@ -53,6 +53,11 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   - exactly one conversion; "%%" prints "%"; a format without conversion prints its text.
     Anything else (%s %c %p %n, '*' width/precision, a second conversion, a lone '%') is a script error.
   All 119 distinct format strings found in a large script collection (UniversalPluginsFolders) work as before.
+- New script function Hex64(int [, int width]): 64 bit pair of Hex, like HexValue64 for HexValue.
+  Hex is 32 bit (a negative value gives 8 digits, a 64 bit value is cut to 32 bits: Hex(4294967297) = "1"),
+  so 64 bit values had no hex string conversion. Hex64(-1) = "FFFFFFFFFFFFFFFF", Hex64(4294967297) = "100000001",
+  Hex64(255, 4) = "00FF". Width is 0 to 16. HexValue64(Hex64(x)) == x for any integer.
+  The Hex documentation said width 0 to 16 and "16 digits for 64 bit numbers"; corrected: 32 bit, width 0 to 8.
 - propShow: floating point property values in the same shortest exact form as Format: 0.1, 0.3333333333333333,
   1e-07, [1.5, 2.0, 1e+20] instead of 0.100000, 0.333333, 0.000000, [1.500000, 2.000000, 100000000000000000000.000000].
   Locale independent ('.' decimal separator).
