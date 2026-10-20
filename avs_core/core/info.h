@@ -137,7 +137,8 @@ public:
     const uint16_t* _src_font_bitmaps_internaluint16, 
     const uint8_t* _src_font_bitmaps, 
     const int _fontline_bytes, 
-    const uint32_t* _codepoints, // unicode codepoints, BDF fonts can have above U+FFFF
+    const uint16_t* _codepoints_internaluint16, // unicode codepoints of an internal, predefined font
+    const uint32_t* _codepoints, // unicode codepoints from external BDF, can be above U+FFFF
     const std::vector<BBX>* bbx_array_ptr,
     const BBX& _global_bbx,
     std::string _font_name, std::string _font_filename, bool _bold, bool debugSave) :
@@ -169,8 +170,10 @@ public:
 
     // We always display utf8 strings, so the reverse lookup must be utf8 character based,
     // which returns the index to the font bitmap and bbx array.
+    // Either the internal 16 bit or the external (BDF) 32 bit codepoint array is given, the other is nullptr.
     for (int i = 0; i < _number_of_chars; i++) {
-      std::string s_utf8 = U32_to_utf8(_codepoints[i]);
+      const uint32_t cp = _codepoints != nullptr ? _codepoints[i] : _codepoints_internaluint16[i];
+      std::string s_utf8 = U32_to_utf8(cp);
       if (!s_utf8.empty()) // not for an invalid codepoint, e.g. BDF ENCODING -1 (unencoded glyph)
         charReMapUtf8[s_utf8] = i;
     }
@@ -195,7 +198,7 @@ public:
       bbx_array.assign(_number_of_chars, global_bbx);
     }
 
-    if (debugSave)
+    if (debugSave && _codepoints != nullptr) // only for external BDF
       SaveAsC(_codepoints);
   }
 

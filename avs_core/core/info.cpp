@@ -2124,13 +2124,13 @@ std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char *name, bool bold,
     if (fi->height == size && fi->bold == bold && strequals_i(fi->fontname, name)) {
       BBX global_bbx = BBX{ fi->width, fi->height, fi->offset_x, fi->offset_y }; // BBX from FONTBOUNDINGBOX
       // max WIDTH, max HEIGHT, offset_x, offset_y
-      const std::vector<uint32_t> codepoints(font_codepoints[i], font_codepoints[i] + fi->charcount);
       current_font = new BitmapFont(
         fi->charcount,
         font_bitmaps[i], // internal one
         nullptr, // not a byte array from external BDF
         sizeof(uint16_t), // sizeof(*font_bitmaps) 2: uint16_t
-        codepoints.data(),
+        font_codepoints[i], // internal one
+        nullptr, // not a codepoint array from external BDF
         nullptr, // Individual BBX for each character. For our internal characters it comes from global bbx
         global_bbx,
         fi->fontname,
@@ -2164,13 +2164,13 @@ std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char *name, bool bold,
     if (found_index >= 0) {
       const FixedFont_info_t* fi = font_infos[found_index];
       BBX global_bbx = BBX{ fi->width, fi->height, fi->offset_x, fi->offset_y }; // BBX from FONTBOUNDINGBOX
-      const std::vector<uint32_t> codepoints(font_codepoints[found_index], font_codepoints[found_index] + fi->charcount);
       current_font = new BitmapFont(
         fi->charcount,
         font_bitmaps[found_index], // internal one
         nullptr, // not a byte array from external BDF
         sizeof(uint16_t), // sizeof(*font_bitmaps) 2: uint16_t
-        codepoints.data(),
+        font_codepoints[found_index], // internal one
+        nullptr, // not a codepoint array from external BDF
         nullptr,  // Individual BBX for each character. For our internal characters it comes from global bbx
         global_bbx,
         fi->fontname,
@@ -2193,6 +2193,7 @@ std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char *name, bool bold,
       nullptr, // not an internal one
       bdf.font_bitmaps.data(), // a byte array from external BDF
       bdf.font_info.fontline_bytes,
+      nullptr, // not an internal one
       bdf.codepoints_array.data(),
       &bdf.bbx_array, // Individual BBX for each character, nullptr if not available for our internal fonts
       bdf.font_info.bbx, // from FONTBOUNDINGBOX, max WIDTH, HEIGHT, offset_x, offset_y
