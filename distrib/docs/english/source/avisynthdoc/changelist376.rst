@@ -227,6 +227,12 @@ Additions, changes
   ``Spline(0.1, 0, 0, 1, 1, false)`` equals 0.1. Slight output change in the last digits.
 - Script: floating point constants in scientific notation, e.g. ``1.5e-5``, ``2E+3``, ``.5e1``.
   A number with an exponent is always floating point (``2e3`` is 2000.0).
+- "Expr": relative pixel load border modes: ``x[dx,dy]:c`` (clamp, clone the edge pixel; default,
+  same as without suffix), ``x[dx,dy]:m`` (mirror, edge pixel repeated; akarin.Expr compatible),
+  ``x[dx,dy]:r`` (mirror without repeating the edge pixel, like OpenCV ``BORDER_REFLECT_101``),
+  ``k x[dx,dy]:k`` (constant filler ``k`` from the stack, must be constant, e.g. ``range_half``;
+  like OpenCV ``BORDER_CONSTANT``) and ``x[dx,dy]:w`` (wrap around, like OpenCV ``BORDER_WRAP``).
+  All modes are JIT optimized (SSE2, AVX2).
 
 
 Build environment, Interface
@@ -313,13 +319,15 @@ Build environment, Interface
   Plus: wrap min/max/clamp in an anonymous namespace to prevent a theoretical translation unit mismatch across archs
   (e.g. when SSE2/AVX2/AVX512 specific ``.cpp`` files are built with different per-file compiler flags). 
   Part of our public headers, but no interface change was done.
-
-- "Expr": relative pixel load border modes: ``x[dx,dy]:c`` (clamp, clone the edge pixel; default,
-  same as without suffix), ``x[dx,dy]:m`` (mirror, edge pixel repeated; akarin.Expr compatible),
-  ``x[dx,dy]:r`` (mirror without repeating the edge pixel, like OpenCV ``BORDER_REFLECT_101``),
-  ``k x[dx,dy]:k`` (constant filler ``k`` from the stack, must be constant, e.g. ``range_half``;
-  like OpenCV ``BORDER_CONSTANT``) and ``x[dx,dy]:w`` (wrap around, like OpenCV ``BORDER_WRAP``).
-  All modes are JIT optimized (SSE2, AVX2).
+- Script parser, internal code correctness (no change in behavior, except the error message): the
+  identifier, number and name checks use ASCII-only tests instead of the C runtime character
+  classification functions, which are undefined for bytes >= 0x80 (UTF-8, or an ANSI code page national
+  character) and assert in debug builds. A non-ASCII character outside strings and comments now gives
+  an error showing its byte value.
+- Internal code correctness (no change in behavior): the same ASCII-only tests for other text parameters
+  and files: pixel type names, ``CombinePlanes`` plane strings, ``Expr`` ``scale_inputs``, ``ShowSMPTE``
+  ``offset``, ``AviSource`` fourCC, ``ConditionalReader`` files, ``SetMaxCPU``, ``SetFilterMTMode`` filter
+  names, ``Text`` font names, variable name hashing.
 
 Bugfixes
 ~~~~~~~~
@@ -484,10 +492,6 @@ Bugfixes
 - Fix: script floating point constants with many digits were parsed inexactly (e.g. ``3.14159265358979324``
   gave 3.1415926535897927 instead of 3.1415926535897931); now they are parsed correctly rounded.
   Existed since classic Avisynth.
-- Fix: script parser: a non-ASCII character (byte >= 0x80: UTF-8, or an ANSI code page national character)
-  outside strings and comments was passed to the C runtime character classification functions, which is
-  undefined behavior for these values (debug runtime assertion) and could depend on the locale.
-  Now only ASCII is checked; the error message shows the byte value. Existed since classic Avisynth.
 - Fix: ``Floor``, ``Ceil``, ``Round``, ``Int``, ``IntI``, ``Long``: values out of the 64 bit integer range,
   NaN and infinity returned garbage; now they are a script error. ``IntI`` of a floating-point value
   outside the 32 bit range wraps around like for integers. Existed since classic Avisynth.

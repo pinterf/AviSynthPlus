@@ -26,13 +26,18 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Fix: script floating point constants with many digits were parsed inexactly (up to a few units in the
   last place), e.g. 3.14159265358979324 gave 3.1415926535897927 instead of 3.1415926535897931 (Pi),
   0.49999999999999994 gave 0.5. Now they are parsed correctly rounded. Existed since classic Avisynth.
-- Fix: script parser: a non-ASCII character (byte >= 0x80: a byte of an UTF-8 sequence, or an ANSI code page
-  national character like á, ő, ü) outside strings and comments was passed to the C runtime isdigit/isalpha/
-  isalnum, which is undefined behavior for negative char values (debug runtime assertion) and could depend
-  on the locale. Identifiers, numbers and the variable name checks
-  (VarExist, function names) now use ASCII-only tests, the same as Expr and the frame property key check.
-  The error shows the byte value: "unexpected non-ASCII character (byte 0xC3), allowed only in strings and comments".
-  Existed since classic Avisynth.
+- Script parser, internal code correctness (no change in behavior, except the error message):
+  identifiers, numbers and the variable name checks (VarExist, function names) use ASCII-only tests,
+  the same as Expr and the frame property key check, instead of the C runtime isdigit/isalpha/isalnum.
+  Those are undefined for negative char values, i.e. bytes >= 0x80 (a byte of an UTF-8 sequence, or an
+  ANSI code page national character like á, ő, ü), assert in debug builds and depend on the locale.
+  A non-ASCII character outside strings and comments now gives
+  "unexpected non-ASCII character (byte 0xC3), allowed only in strings and comments".
+- Internal code correctness (no change in behavior): the same ASCII-only helpers instead of
+  isspace/isdigit/tolower/toupper for other text parameters and files: pixel type names (BlankClip pixel_type,
+  BuildPixelType), CombinePlanes plane strings, Expr scale_inputs, ShowSMPTE offset, AviSource fourCC,
+  ConditionalReader file whitespace, SetMaxCPU feature names, SetFilterMTMode filter names, Text font names
+  and the case-insensitive variable name hash.
 - Fix: Floor, Ceil, Round, Int, IntI, Long: values out of the 64 bit integer range, NaN and infinity
   returned garbage (e.g. Int(Pow(10.0, 30)) = -9223372036854775808); now they are a script error.
   IntI of a floating-point value outside the 32 bit range wraps around like for integers

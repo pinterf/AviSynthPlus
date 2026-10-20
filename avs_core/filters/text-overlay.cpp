@@ -1121,8 +1121,8 @@ ShowSMPTE::ShowSMPTE(PClip _child, double _rate, const char* offset, int _offset
   if (offset) {
   if (strlen(offset)!=11 || offset[2] != ':' || offset[5] != ':' || offset[8] != ':')
     env->ThrowError("ShowSMPTE:  offset should be of the form \"00:00:00:00\" ");
-  if (!isdigit(offset[0]) || !isdigit(offset[1]) || !isdigit(offset[3]) || !isdigit(offset[4])
-   || !isdigit(offset[6]) || !isdigit(offset[7]) || !isdigit(offset[9]) || !isdigit(offset[10]))
+  if (!isAsciiDigit(offset[0]) || !isAsciiDigit(offset[1]) || !isAsciiDigit(offset[3]) || !isAsciiDigit(offset[4])
+   || !isAsciiDigit(offset[6]) || !isAsciiDigit(offset[7]) || !isAsciiDigit(offset[9]) || !isAsciiDigit(offset[10]))
     env->ThrowError("ShowSMPTE:  offset should be of the form \"00:00:00:00\" ");
 
   off_hour = atoi(offset);

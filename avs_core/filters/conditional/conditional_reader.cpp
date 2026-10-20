@@ -20,6 +20,7 @@
 
 #include "conditional_reader.h"
 #include "../core/internal.h"
+#include "../core/strings.h"
 #include "../core/parser/scriptparser.h"
 #include <cstdlib>
 
@@ -120,7 +121,7 @@ skipspaces(char *string)
 
   while (*string != '\0') {
     /* Test against space chars */
-    if (!isspace(*string)) return(string);
+    if (!isAsciiSpace(*string)) return(string);
     string++;
   }
   return(string);
@@ -136,7 +137,7 @@ findspace(char *string)
 
   while (*string != '\0') {
     /* Test against space chars */
-    if (isspace(*string)) return(string);
+    if (isAsciiSpace(*string)) return(string);
     string++;
   }
   return(string);

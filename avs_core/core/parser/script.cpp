@@ -1714,7 +1714,7 @@ const char *GetPixelTypeName(const int pixel_type)
 int GetPixelTypeFromName(const char *pixeltypename)
 {
   std::string name_to_find = pixeltypename;
-  for (auto & c: name_to_find) c = toupper(c); // uppercase input string
+  for (auto & c: name_to_find) c = asciiToUpper(c); // uppercase input string
   for (auto it = pixel_format_table.begin(); it != pixel_format_table.end(); it++)
   {
     if ((it->second).compare(name_to_find) == 0)
@@ -2611,7 +2611,7 @@ AVSValue BuildPixelType(AVSValue args, void*, IScriptEnvironment* env)
   }
   else {
     family = args[0].AsString();
-    for (auto & c : family) c = toupper(c); // uppercase input string
+    for (auto & c : family) c = asciiToUpper(c); // uppercase input string
   }
 
   const bool isYUV = family == "YUV";

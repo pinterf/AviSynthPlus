@@ -27,7 +27,7 @@ char *_strupr(char *str)
         unsigned long nLength = strlen(str);
         for(unsigned long i = 0; i < nLength; i++)
         {
-            str[i] = toupper(str[i]);
+            str[i] = (char)toupper((unsigned char)str[i]);
         }
     }
 
@@ -41,7 +41,7 @@ char *_strlwr(char *str)
         unsigned long nLength = strlen(str);
         for(unsigned long i = 0; i < nLength; i++)
         {
-            str[i] = tolower(str[i]);
+            str[i] = (char)tolower((unsigned char)str[i]);
         }
     }
 

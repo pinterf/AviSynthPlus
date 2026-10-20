@@ -4058,7 +4058,7 @@ AVSValue __cdecl Exprfilter::Create(AVSValue args, void* , IScriptEnvironment* e
   next_paramindex++;
 
   std::string scale_inputs = args[next_paramindex].Defined() ? args[next_paramindex].AsString("none") : "none";
-  transform(scale_inputs.begin(), scale_inputs.end(), scale_inputs.begin(), ::tolower);
+  transform(scale_inputs.begin(), scale_inputs.end(), scale_inputs.begin(), asciiToLower);
   next_paramindex++;
 
   const bool clamp_float = args[next_paramindex].AsBool(false);

@@ -60,7 +60,7 @@ struct ihash_ascii
 
     size_t hash = 0;
     while (*s)
-      hash = hash * 101  +  tolower(*s++);
+      hash = hash * 101  +  asciiToLower(*s++); // case folding must match iequal_to_ascii (streqi): ASCII only
 
     return hash;
   }

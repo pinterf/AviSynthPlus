@@ -50,6 +50,7 @@
 #include "intel/planeswap_avx2.h"
 #endif
 #include "../core/internal.h"
+#include "../core/strings.h"
 #include <algorithm>
 #include <avs/alignment.h>
 #include "../convert/convert_planar.h"
@@ -816,7 +817,7 @@ CombinePlanes::CombinePlanes(PClip _child, PClip _clip2, PClip _clip3, PClip _cl
       bool allIsRGB = true;
       bool hasY = false, hasA = false;
       for (int i = 0; i < target_plane_count; i++) {
-        char ch = toupper(_target_planes_str[i]);
+        char ch = asciiToUpper(_target_planes_str[i]);
         if (ch == 'R' || ch == 'G' || ch == 'B') allIsYUV = false;
         if (ch == 'Y' || ch == 'U' || ch == 'V') allIsRGB = false;
         if (ch == 'Y') hasY = true;
@@ -867,7 +868,7 @@ CombinePlanes::CombinePlanes(PClip _child, PClip _clip2, PClip _clip3, PClip _cl
 
   int last_clip_index = 0;
   for (int i = 0; i < target_plane_count; i++) {
-    char ch = toupper(_target_planes_str[i]);
+    char ch = asciiToUpper(_target_planes_str[i]);
     bool isRGB = ch == 'R' || ch == 'G' || ch == 'B';
     bool isYUV = ch == 'Y' || ch == 'U' || ch == 'V';
     bool isAlpha = ch == 'A';
@@ -909,11 +910,11 @@ CombinePlanes::CombinePlanes(PClip _child, PClip _clip2, PClip _clip3, PClip _cl
     {
       char ch;
       if (source_plane_count > 0) // optinal! defaults are filled
-        ch = toupper(_source_planes_str[i]);
+        ch = asciiToUpper(_source_planes_str[i]);
       else if (sourceIsYUV)
-        ch = toupper(yuv_source_planes_str_def[i]);
+        ch = asciiToUpper(yuv_source_planes_str_def[i]);
       else // rgb
-        ch = toupper(rgb_source_planes_str_def[i]);
+        ch = asciiToUpper(rgb_source_planes_str_def[i]);
       bool isRGB = ch == 'R' || ch == 'G' || ch == 'B';
       bool isYUV = ch == 'Y' || ch == 'U' || ch == 'V';
       bool isAlpha = ch == 'A';

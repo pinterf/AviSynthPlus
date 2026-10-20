@@ -864,7 +864,7 @@ AVISource::AVISource(const char filename[], bool fAudio, const char pixel_type[]
             continue;
           }
           if (inBracket) {
-            if(!isdigit(ch))
+            if(!isAsciiDigit(ch))
               env->ThrowError("Avisource: fourCC parsing: only numbers allowed inside brackets");
             number = number * 10 + (ch - '0');
             if (number>255)

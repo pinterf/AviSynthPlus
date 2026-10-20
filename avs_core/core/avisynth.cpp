@@ -646,7 +646,7 @@ static std::string NormalizeString(const std::string& str)
   // lowercase
   std::string ret = str;
   for (size_t i = 0; i < ret.size(); ++i)
-    ret[i] = tolower(ret[i]);
+    ret[i] = asciiToLower(ret[i]);
 
   // trim trailing spaces
   size_t endpos = ret.find_last_not_of(" \t");
@@ -3079,7 +3079,7 @@ void ScriptEnvironment::SetMaxCPU(const char* features)
   const int len = (int)strlen(features);
   s.resize(len);
   for (int i = 0; i < len; i++)
-    s[i] = tolower(features[i]);
+    s[i] = asciiToLower(features[i]);
 
   int64_t cpu_flags = GetCPUFlagsEx();
 

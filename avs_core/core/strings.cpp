@@ -48,12 +48,6 @@
 #include <vector>
 
 
-static inline char tolower(char c)
-{
-  // Works for letters of the english alphabet in ASCII
-  return ((c >=65) && (c <=90)) ? c + 32 : c;
-}
-
 bool streqi(const char* s1, const char* s2)
 {
   // Why we dont use Windows's lstrcmpi? It is by multiple orders of magnitude slower and non-portable.
@@ -65,7 +59,7 @@ bool streqi(const char* s1, const char* s2)
     if ((*s1 == 0) && (*s2 == 0))
       return true;
 
-    if (tolower(*s1) != tolower(*s2))
+    if (asciiToLower(*s1) != asciiToLower(*s2))
       return false;
 
     ++s1;
@@ -124,8 +118,8 @@ const char* ws = " \t\n\r\f\v";
 
 std::string trim(const std::string& s)
 {
-  auto wsfront = std::find_if_not(s.begin(), s.end(), [](int c) {return isspace(c); });
-  auto wsback = std::find_if_not(s.rbegin(), s.rend(), [](int c) {return isspace(c); }).base();
+  auto wsfront = std::find_if_not(s.begin(), s.end(), [](char c) {return isAsciiSpace(c); });
+  auto wsback = std::find_if_not(s.rbegin(), s.rend(), [](char c) {return isAsciiSpace(c); }).base();
   return (wsback <= wsfront ? std::string() : std::string(wsfront, wsback));
 }
 

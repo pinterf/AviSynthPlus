@@ -57,6 +57,18 @@ static inline bool isAsciiAlnum(char c) {
   return isAsciiAlpha(c) || isAsciiDigit(c);
 }
 
+static inline bool isAsciiSpace(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+static inline char asciiToLower(char c) {
+  return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
+}
+
+static inline char asciiToUpper(char c) {
+  return (c >= 'a' && c <= 'z') ? c - ('a' - 'A') : c;
+}
+
 // identifier start and continuation characters
 static inline bool isAlphaUnderscore(char c) {
   return isAsciiAlpha(c) || c == '_';
