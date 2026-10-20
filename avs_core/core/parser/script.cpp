@@ -37,6 +37,7 @@
 #include <time.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cfloat>
 #include <cmath>
 #include <vector>
 #include <fstream>
@@ -1827,7 +1828,8 @@ AVSValue String(AVSValue args, void*, IScriptEnvironment* env)
       return env->SaveString(s);
     }
     if (args[0].IsFloat()) { // for double as well.
-      char s[50]; // safe size for double
+      // "%lf" prints all integer digits: up to 309 for DBL_MAX, plus sign, '.', 6 decimals and '\0'
+      char s[DBL_MAX_10_EXP + 1 + 1 + 1 + 6 + 1 + 16]; // was 50 (too small -> crash)
 #ifdef MSVC
       _locale_t locale = _create_locale(LC_NUMERIC, "C"); // decimal point: dot
       _sprintf_l(s, "%lf", locale, args[0].AsFloat());

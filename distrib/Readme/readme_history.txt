@@ -45,6 +45,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Fix: Format with a large floating point value overflowed an internal stack buffer: all integer digits are
   printed ("%lf"), e.g. Format("{}", 1e60) gives 67 characters into a 50 byte buffer, Format("{}", 1e308)
   crashed. Existed since 3.6.0 (Format was added; the buffer was 30 bytes then).
+- Fix: String (without format string) with a large floating point value overflowed an internal stack buffer,
+  the same way as Format: e.g. String(1e60) gives 67 characters into a 50 byte buffer, String(1e308) crashed.
+  Existed since classic Avisynth (30 byte buffer; String(3e38) was already 46 characters with 32 bit float).
 - Script parser, internal code correctness (no change in behavior, except the error message):
   identifiers, numbers and the variable name checks (VarExist, function names) use ASCII-only tests,
   the same as Expr and the frame property key check, instead of the C runtime isdigit/isalpha/isalnum.

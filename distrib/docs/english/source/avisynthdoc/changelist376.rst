@@ -502,6 +502,8 @@ Bugfixes
   Existed since classic Avisynth.
 - Fix: ``Format`` with a large floating point value (e.g. ``Format("{}", 1e308)``) overflowed an internal
   buffer and could crash. Existed since 3.6.0 (``Format`` was added).
+- Fix: ``String`` (without format string) with a large floating point value (e.g. ``String(1e308)``)
+  overflowed an internal buffer and could crash. Existed since classic Avisynth.
 - Fix: ``Floor``, ``Ceil``, ``Round``, ``Int``, ``IntI``, ``Long``: values out of the 64 bit integer range,
   NaN and infinity returned garbage; now they are a script error. ``IntI`` of a floating-point value
   outside the 32 bit range wraps around like for integers. Existed since classic Avisynth.
