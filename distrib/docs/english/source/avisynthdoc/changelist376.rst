@@ -351,6 +351,10 @@ Build environment, Interface
   and files: pixel type names, ``CombinePlanes`` plane strings, ``Expr`` ``scale_inputs``, ``ShowSMPTE``
   ``offset``, ``AviSource`` fourCC, ``ConditionalReader`` files, ``SetMaxCPU``, ``SetFilterMTMode`` filter
   names, ``Text`` font names, variable name hashing.
+- Internal code correctness (no change in behavior): 64 bit integer ``+``, ``-``, ``*``, unary minus
+  and ``Abs`` wrap around on overflow in a defined way (two's complement, computed as unsigned), instead
+  of relying on signed overflow, which is undefined behavior in C++. E.g. ``9223372036854775807 + 1``
+  is still -9223372036854775808.
 
 Bugfixes
 ~~~~~~~~
@@ -519,6 +523,10 @@ Bugfixes
   buffer and could crash. Existed since 3.6.0 (``Format`` was added).
 - Fix: ``String`` (without format string) with a large floating point value (e.g. ``String(1e308)``)
   overflowed an internal buffer and could crash. Existed since classic Avisynth.
+- Fix: ``for`` loop with a limit near the end of the 64 bit range (e.g.
+  ``for (i = 9223372036854775805, 9223372036854775807, 5)``) never ended: the loop variable overflowed
+  and wrapped around to a value within the limit again. Now the loop ends. Existed since ``for`` was
+  added (before 3.7.4 with a limit near 2147483647, when the loop variable was 32 bit).
 - Fix: ``Floor``, ``Ceil``, ``Round``, ``Int``, ``IntI``, ``Long``: values out of the 64 bit integer range,
   NaN and infinity returned garbage; now they are a script error. ``IntI`` of a floating-point value
   outside the 32 bit range wraps around like for integers. Existed since classic Avisynth.

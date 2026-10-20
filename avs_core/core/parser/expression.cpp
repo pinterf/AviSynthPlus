@@ -45,6 +45,8 @@
 #endif
 #include <cassert>
 #include <cfloat>
+#include <climits>
+#include <cstdint>
 #include <cmath>
 #include <vector>
 
@@ -56,6 +58,14 @@ class BreakStmtException
 class ContinueStmtException
 {
 };
+
+// 64 bit integer arithmetic with defined wrap-around on overflow (two's complement), through unsigned.
+// Signed overflow is undefined behavior in C++, the compiler may assume it never happens.
+// unsigned integer overflow is 100% well-defined
+static inline int64_t WrapAdd(int64_t a, int64_t b) { return (int64_t)((uint64_t)a + (uint64_t)b); }
+static inline int64_t WrapSub(int64_t a, int64_t b) { return (int64_t)((uint64_t)a - (uint64_t)b); }
+static inline int64_t WrapMul(int64_t a, int64_t b) { return (int64_t)((uint64_t)a * (uint64_t)b); }
+static inline int64_t WrapNeg(int64_t a) { return (int64_t)(0 - (uint64_t)a); }
 
 AVSValue ExpRootBlock::Evaluate(IScriptEnvironment* env)
 {
@@ -255,7 +265,12 @@ AVSValue ExpForLoop::Evaluate(IScriptEnvironment* env)
     AVSValue idVal = env->GetVar(id); // may have been updated in body
     if (!idVal.IsInt())
       env->ThrowError("for: loop variable '%s' has been assigned a non-int value", id);
-    i = idVal.AsLong() + iStep;
+    i = idVal.AsLong();
+    // the next value would overflow: it would be beyond any limit, the loop is finished
+    // (a wrapped-around value would be within the limit again: endless loop)
+    if (iStep > 0 ? i > INT64_MAX - iStep : i < INT64_MIN - iStep)
+      break;
+    i += iStep;
     // store back to smaller type
     if (i >= INT_MIN && i <= INT_MAX)
       env->SetVar(id, (int)i);
@@ -399,7 +414,7 @@ AVSValue ExpPlus::Evaluate(IScriptEnvironment* env)
     return env->Invoke("UnalignedSplice", AVSValue(arg, 3));
   }
   else if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
-    int64_t result = x.AsLong() + y.AsLong();
+    int64_t result = WrapAdd(x.AsLong(), y.AsLong());
     // keep the smaller type
     if (result >= INT_MIN && result <= INT_MAX)
       return (int)result;
@@ -438,7 +453,7 @@ AVSValue ExpMinus::Evaluate(IScriptEnvironment* env)
   AVSValue x = a->Evaluate(env);
   AVSValue y = b->Evaluate(env);
   if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
-    int64_t result = x.AsLong() - y.AsLong();
+    int64_t result = WrapSub(x.AsLong(), y.AsLong());
     // keep the smaller type
     if (result >= INT_MIN && result <= INT_MAX)
       return (int)result;
@@ -460,7 +475,7 @@ AVSValue ExpMult::Evaluate(IScriptEnvironment* env)
   AVSValue x = a->Evaluate(env);
   AVSValue y = b->Evaluate(env);
   if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
-    int64_t result = x.AsLong() * y.AsLong();
+    int64_t result = WrapMul(x.AsLong(), y.AsLong());
     // keep the smaller type
     if (result >= INT_MIN && result <= INT_MAX)
       return (int)result;
@@ -532,7 +547,7 @@ AVSValue ExpNegate::Evaluate(IScriptEnvironment* env)
     // Note: In the old 32-bit integer case, the special value -(INT_MIN) resulted in a negative value
     // instead of a positive number.
     // This change in version 11 is not 100% compatible with the old behavior.
-    int64_t result = -x.AsLong();
+    int64_t result = WrapNeg(x.AsLong()); // -INT64_MIN wraps to INT64_MIN
     // keep the smaller type
     if (result >= INT_MIN && result <= INT_MAX)
       return (int)result;

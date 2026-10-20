@@ -79,6 +79,16 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Fix: String (without format string) with a large floating point value overflowed an internal stack buffer,
   the same way as Format: e.g. String(1e60) gives 67 characters into a 50 byte buffer, String(1e308) crashed.
   Existed since classic Avisynth (30 byte buffer; String(3e38) was already 46 characters with 32 bit float).
+- Fix: for loop with a limit near the end of the 64 bit range never ended (host freeze), e.g.
+  for (i = 9223372036854775805, 9223372036854775807, 5) { ... } or any step going over INT64_MAX
+  (or below INT64_MIN for negative steps): the loop variable overflowed and wrapped around to a value
+  within the limit again. Now the loop ends when the next value would overflow. Existed since for was added
+  (before 3.7.4 with a limit near 2147483647, when the loop variable was 32 bit).
+- Internal code correctness (no change in behavior): 64 bit integer +, -, *, unary minus and Abs wrap
+  around on overflow in a defined way (two's complement, computed as unsigned), instead of relying on
+  signed overflow, which is undefined behavior in C++ (the compiler may assume it never happens).
+  The results are the same as before, e.g. 9223372036854775807 + 1 = -9223372036854775808,
+  Abs(-9223372036854775808) = -9223372036854775808.
 - Script parser, internal code correctness (no change in behavior, except the error message):
   identifiers, numbers and the variable name checks (VarExist, function names) use ASCII-only tests,
   the same as Expr and the frame property key check, instead of the C runtime isdigit/isalpha/isalnum.
