@@ -484,10 +484,10 @@ Bugfixes
 - Fix: script floating point constants with many digits were parsed inexactly (e.g. ``3.14159265358979324``
   gave 3.1415926535897927 instead of 3.1415926535897931); now they are parsed correctly rounded.
   Existed since classic Avisynth.
-- Fix: script parser: a non-ASCII character (e.g. UTF-8) outside strings and comments was passed to the
-  C runtime character classification functions, which is undefined behavior for these values (debug
-  runtime assertion) and could depend on the locale. Now only ASCII is checked; the error message
-  shows the byte value. Existed since classic Avisynth.
+- Fix: script parser: a non-ASCII character (byte >= 0x80: UTF-8, or an ANSI code page national character)
+  outside strings and comments was passed to the C runtime character classification functions, which is
+  undefined behavior for these values (debug runtime assertion) and could depend on the locale.
+  Now only ASCII is checked; the error message shows the byte value. Existed since classic Avisynth.
 - Fix: ``Floor``, ``Ceil``, ``Round``, ``Int``, ``IntI``, ``Long``: values out of the 64 bit integer range,
   NaN and infinity returned garbage; now they are a script error. ``IntI`` of a floating-point value
   outside the 32 bit range wraps around like for integers. Existed since classic Avisynth.

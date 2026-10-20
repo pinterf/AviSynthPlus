@@ -1962,12 +1962,12 @@ AVSValue FormatString(AVSValue args, void*, IScriptEnvironment* env)
       bool validName = true;
       // check for a valid identifier name
       auto ch = last_param_section[0];
-      if (ch != '_' && !isalpha(ch))
+      if (!isAlphaUnderscore(ch))
         validName = false;
       else {
         for (size_t i = 1; i < last_param_section.length(); i++) {
           const char ch = last_param_section[i];
-          if (!(ch == '_' || isalnum(ch))) {
+          if (!isAlphaNumUnderscore(ch)) {
             validName = false;
             break;
           }
@@ -2732,12 +2732,12 @@ AVSValue VarExist(AVSValue args, void*, IScriptEnvironment* env)
 
   bool validName = true;
   // check for a valid identifier name
-  if (*name != '_' && !isalpha(*name))
+  if (!isAlphaUnderscore(*name))
     validName = false;
   else {
     for (int i = 1; i < len; i++) {
       const char ch = name[i];
-      if (!(ch == '_' || isalnum(ch))) {
+      if (!isAlphaNumUnderscore(ch)) {
         validName = false;
         break;
       }

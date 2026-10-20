@@ -26,9 +26,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Fix: script floating point constants with many digits were parsed inexactly (up to a few units in the
   last place), e.g. 3.14159265358979324 gave 3.1415926535897927 instead of 3.1415926535897931 (Pi),
   0.49999999999999994 gave 0.5. Now they are parsed correctly rounded. Existed since classic Avisynth.
-- Fix: script parser: a non-ASCII character (e.g. a byte of an UTF-8 sequence) outside strings and comments
-  was passed to the C runtime isdigit/isalpha/isalnum, which is undefined behavior for negative char values
-  (debug runtime assertion) and could depend on the locale. Identifiers, numbers and the variable name checks
+- Fix: script parser: a non-ASCII character (byte >= 0x80: a byte of an UTF-8 sequence, or an ANSI code page
+  national character like á, ő, ü) outside strings and comments was passed to the C runtime isdigit/isalpha/
+  isalnum, which is undefined behavior for negative char values (debug runtime assertion) and could depend
+  on the locale. Identifiers, numbers and the variable name checks
   (VarExist, function names) now use ASCII-only tests, the same as Expr and the frame property key check.
   The error shows the byte value: "unexpected non-ASCII character (byte 0xC3), allowed only in strings and comments".
   Existed since classic Avisynth.
