@@ -63,41 +63,46 @@
 #include "../filters/overlay/blend_common.h" // chromaLocationToMaskPlacement
 
 // helper function for remapping an utf8 string to font index entry list
+// Invalid UTF-8 gives one empty character (index 0), then decoding goes on, so that a following valid
+// character is not lost (like the Unicode/WHATWG replacement recommendation): one for each stray
+// continuation byte or 0xF8..0xFF byte, and one for an incomplete sequence (a lead byte with fewer
+// continuation bytes than needed, also at the end of the string: no reading past it).
 std::vector<int> BitmapFont::remap(const std::string& s_utf8)
 {
   // new vector with characters remapped to font table indexes
   std::vector<int> s_remapped;
-  const size_t real_len = str_utf8_size(s_utf8);
-  s_remapped.resize(real_len);
+  s_remapped.reserve(str_utf8_size(s_utf8));
 
-  size_t index = 0;
   const char* p = s_utf8.data();
   const char* end = p + s_utf8.size();
   while (p < end) {
     // Get the lead byte of the current UTF-8 character
-    unsigned char lb = static_cast<unsigned char>(*p);
+    const unsigned char lb = static_cast<unsigned char>(*p);
     // Determine the number of bytes in the current UTF-8 character
     int n = 0;
     if ((lb & 0x80) == 0) n = 1; // 0xxxxxxx
     else if ((lb & 0xE0) == 0xC0) n = 2; // 110xxxxx
     else if ((lb & 0xF0) == 0xE0) n = 3; // 1110xxxx
     else if ((lb & 0xF8) == 0xF0) n = 4; // 11110xxx
-    else {
-      // Invalid lead byte, skip
+    // else: invalid lead byte (continuation byte 10xxxxxx or 0xF8..0xFF), n = 0
+    if (n == 0) {
+      s_remapped.push_back(0); // empty neutral character (space) for the bad byte
       ++p;
       continue;
     }
-    // Create a buffer to store the UTF-8 character code
-    char utf8_char_buf[5] = { 0 };
-    // Copy the bytes from the string to the buffer
-    std::memcpy(utf8_char_buf, p, n);
+    // the whole sequence must be within the string, with continuation bytes 10xxxxxx
+    int k = 1;
+    while (k < n && p + k < end && (static_cast<unsigned char>(p[k]) & 0xC0) == 0x80)
+      k++;
+    if (k < n) {
+      // incomplete sequence: one empty character for it (the lead byte and its continuation bytes)
+      s_remapped.push_back(0);
+      p += k;
+      continue;
+    }
     // finds by utf8 character sequence in font index table
-    auto it = charReMapUtf8.find(utf8_char_buf);
-    if (it != charReMapUtf8.end())
-      s_remapped[index] = it->second;
-    else
-      s_remapped[index] = 0; // empty neutral character (space)
-    index++;
+    auto it = charReMapUtf8.find(std::string(p, n));
+    s_remapped.push_back(it != charReMapUtf8.end() ? it->second : 0); // 0: empty neutral character (space)
     // Advance the pointer by the number of bytes
     p += n;
   }

@@ -84,6 +84,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   (or below INT64_MIN for negative steps): the loop variable overflowed and wrapped around to a value
   within the limit again. Now the loop ends when the next value would overflow. Existed since for was added
   (before 3.7.4 with a limit near 2147483647, when the loop variable was 32 bit).
+- Fix: text rendering with bitmap fonts (Text, Info, propShow...) on invalid UTF-8 text (e.g. ANSI text with
+  utf8=true): an incomplete multi-byte sequence at the end of the text was read past the end of the string,
+  and a lead byte followed by ASCII swallowed the next characters (byte 0xE9 then "xy" showed one box, "xy" was lost).
+  Now each invalid byte or incomplete sequence is one empty character and the text goes on. Existed since 3.7.4.
 - Internal code correctness (no change in behavior): 64 bit integer +, -, *, unary minus and Abs wrap
   around on overflow in a defined way (two's complement, computed as unsigned), instead of relying on
   signed overflow, which is undefined behavior in C++ (the compiler may assume it never happens).
