@@ -1672,6 +1672,7 @@ SimpleText::SimpleText(PClip _child, const char _text[], int _x, int _y, int _fi
 
   if (*font_filename) {
     // external font file
+    // developer utility: negative size saves the loaded BDF font as embeddable C++ source, see BitmapFont::SaveAsC
     bool debugSave = size < 0;
     current_font = GetBitmapFont(0, font_filename, false, debugSave); // 0: size n/a
     if (current_font == nullptr)

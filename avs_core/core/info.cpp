@@ -111,6 +111,12 @@ std::vector<int> BitmapFont::remap(const std::string& s_utf8)
 
 // Internal function! For creating source code from a previously LoadBDF'd font file
 // see fixedfonts.cpp
+// Developer utility to generate the embeddable C++ source of the built-in fonts from the Terminus
+// BDF font family (ter-u*.bdf). Triggered by the Text filter (class SimpleText) with an external font file
+// and a negative size, e.g. Text("x", font_filename="ter-u16n.bdf", size=-1); output: <font_filename>.cpp_sample
+// in the current directory, to be pasted into fixedfonts.cpp.
+// The built-in fonts are BMP-only: the generated codepoint array is uint16_t, codepoints above U+FFFF
+// would be truncated. Terminus has no such characters.
 void BitmapFont::SaveAsC(const uint32_t* _codepoints)
 {
   if (font_filename == "") return; // no GUS no sound :)
