@@ -259,8 +259,8 @@ The floating point conversions worked, only ``%f`` was documented:
    * - ``f F e E g G a A`` (e.g. ``"%.2f"``, ``"%lf"``)
      - correct
      - same result
-   * - ``d i u o x X`` (e.g. ``String(5, "%d")``, ``String(255, "%x")``)
-     - garbage (``0``, ``0``; ``String(2.7, "%d")`` = ``-1717986918``)
+   * - ``d i u o x X``, e.g. ``String(5, "%d")``, ``String(255, "%x")``, ``String(2.7, "%d")``
+     - garbage: ``0``, ``0``, ``-1717986918``
      - ``5``, ``ff``, ``2``
    * - 64 bit value, e.g. ``String(9007199254740993, "%d")``
      - garbage (``0``)
@@ -301,6 +301,6 @@ Changelog
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2025/03/06 16:00:00 $
+$Date: 2026/10/20 13:00:00 $
 
 .. _Colors: http://avisynth.nl/index.php/Colors

@@ -457,7 +457,7 @@ Changelog
 | 3.7.6           | | Spline: 64 bit double           |
 |                 | | Frac: double for double input   |
 |                 | | Floor, Ceil, Round, Int, IntI,  |
-|                 |   Long: out of range is an error |
+|                 |   Long: out of range is an error  |
 |                 | | Round: exact halves             |
 +-----------------+-----------------------------------+
 | 3.7.4           | | Changed Float, Int              |
@@ -472,7 +472,7 @@ Changelog
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2024/01/15 16:26:00 $
+$Date: 2026/10/20 13:00:00 $
 
 .. _wikipedia: http://en.wikipedia.org/wiki/Hyperbolic_function
 .. _floating-point: http://en.wikipedia.org/wiki/Floating_point
