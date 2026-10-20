@@ -348,6 +348,9 @@ quotation mark.
   optional + or -. For example, +1. is treated as a floating-point number.
   Since 3.7.4 64-bit double is supported. In general 'float' covers
   any 32 or 64-bit floating point number.
+  Since 3.7.6 scientific notation is accepted as well: ``e`` or ``E``, an optional
+  + or - sign and the exponent digits, e.g. ``1.5e-5``, ``2E+3`` or ``.5e1``.
+  A number with an exponent is always floating point: ``2e3`` is 2000.0.
 - *val*: as type of a function argument where it does not matter if it is int or
   float
 - *bool*: can be TRUE or FALSE
@@ -1121,6 +1124,8 @@ Changelog
 +----------------+------------------------------------------------------------+
 | Version        | Changes                                                    |
 +================+============================================================+
+| Avisynth 3.7.6 | | Floating point constants in scientific notation          |
++----------------+------------------------------------------------------------+
 | Avisynth 3.7.4 | | Added 64-bit types, integer long, floating point double  |
 |                | | Add "L" suffixed hexadecimal notation                    |
 |                | | Add HexValue64 function                                  |

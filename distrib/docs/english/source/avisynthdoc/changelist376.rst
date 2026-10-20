@@ -225,6 +225,8 @@ Additions, changes
   ``scenechange`` left an even number of frames).
 - ``Spline``: calculation and result in 64 bit double (were 32 bit float), e.g.
   ``Spline(0.1, 0, 0, 1, 1, false)`` equals 0.1. Slight output change in the last digits.
+- Script: floating point constants in scientific notation, e.g. ``1.5e-5``, ``2E+3``, ``.5e1``.
+  A number with an exponent is always floating point (``2e3`` is 2000.0).
 
 
 Build environment, Interface
@@ -482,6 +484,10 @@ Bugfixes
 - Fix: script floating point constants with many digits were parsed inexactly (e.g. ``3.14159265358979324``
   gave 3.1415926535897927 instead of 3.1415926535897931); now they are parsed correctly rounded.
   Existed since classic Avisynth.
+- Fix: script parser: a non-ASCII character (e.g. UTF-8) outside strings and comments was passed to the
+  C runtime character classification functions, which is undefined behavior for these values (debug
+  runtime assertion) and could depend on the locale. Now only ASCII is checked; the error message
+  shows the byte value. Existed since classic Avisynth.
 - Fix: ``Floor``, ``Ceil``, ``Round``, ``Int``, ``IntI``, ``Long``: values out of the 64 bit integer range,
   NaN and infinity returned garbage; now they are a script error. ``IntI`` of a floating-point value
   outside the 32 bit range wraps around like for integers. Existed since classic Avisynth.

@@ -35,6 +35,7 @@
 
 #include "tokenizer.h"
 #include "../InternalEnvironment.h"
+#include "../strings.h"
 #ifdef AVS_WINDOWS
 #include <avs/win.h>
 #else
@@ -173,7 +174,7 @@ void Tokenizer::NextToken() {
 
     case '.':
       // a '.' followed by a digit is a number, otherwise it's an operator
-      if (isdigit(pc[1])) {
+      if (isAsciiDigit(pc[1])) {
         GetNumber();
       } else {
         ++pc;
@@ -250,7 +251,7 @@ void Tokenizer::NextToken() {
         }
         else
           env->ThrowError("$ must be followed by a hexadecimal number");
-      } while (isalnum(*++pc));
+      } while (isAsciiAlnum(*++pc));
       if (!long64bit) {
         // Default is integer.
         // Thus we can avoid the color (like $FFFFFFFF) constants
@@ -312,19 +313,22 @@ void Tokenizer::NextToken() {
         }        type = 's';
         string = static_cast<InternalEnvironment*>(env)->SaveString(start, int(end-start), escape);
       }
-      else if (isdigit(*pc)) {
+      else if (isAsciiDigit(*pc)) {
         // number
         GetNumber();
-      } else if (*pc == '_' || isalpha(*pc)) {
+      } else if (isAlphaUnderscore(*pc)) {
         // identifier
         do {
           pc++;
-        } while (*pc == '_' || isalnum(*pc));
+        } while (isAlphaNumUnderscore(*pc));
         type = 'I';
         identifier = env->SaveString(token_start, int(pc - token_start));
         if (!lstrcmpi(identifier, "__END__")) {
           type = 0;
         }
+      } else if ((unsigned char)*pc >= 0x80) {
+        // e.g. a part of an UTF-8 sequence: printing a single byte of it would be garbage
+        env->ThrowError("unexpected non-ASCII character (byte 0x%02X), allowed only in strings and comments", (unsigned char)*pc);
       } else {
         env->ThrowError("unexpected character \"%c\"", *pc);
       }
@@ -375,7 +379,7 @@ void Tokenizer::GetNumber()
   type = 'l';
   longlong = 0;
   // For floating point: the digits without the decimal point, and the number of fractional digits.
-  // Parsed as "<digits>e-<fraction_digits>" by strtod: correctly rounded, and independent of the
+  // Parsed as "<digits>e<exponent - fraction_digits>" by strtod: correctly rounded, and independent of the
   // locale decimal point, which the host application may have changed.
   // The former d = d * 10 + digit, then d / 10^n method was exact only up to ~15 digits: above 2^53
   // each step rounds, and the final division rounds again, so long constants were off by a few ulps
@@ -387,7 +391,7 @@ void Tokenizer::GetNumber()
     if (*pc == '.') {
       type = 'f';
       ++pc;
-      while (isdigit(*pc)) {
+      while (isAsciiDigit(*pc)) {
         digits += *pc;
         fraction_digits++;
         ++pc;
@@ -405,10 +409,29 @@ void Tokenizer::GetNumber()
       digits += *pc; // gather always
     }
     ++pc;
-  } while (isdigit(*pc) || *pc == '.');
+  } while (isAsciiDigit(*pc) || *pc == '.');
+
+  // optional exponent (since 3.7.6): e or E, optional sign, at least one digit;
+  // the number is then floating point
+  int exponent = 0;
+  if ((*pc == 'e' || *pc == 'E') &&
+    (isAsciiDigit(pc[1]) || ((pc[1] == '+' || pc[1] == '-') && isAsciiDigit(pc[2])))) {
+    type = 'f';
+    ++pc;
+    const bool negative = *pc == '-';
+    if (*pc == '+' || *pc == '-')
+      ++pc;
+    while (isAsciiDigit(*pc)) {
+      if (exponent < 100000) // saturate, the result is 0 or inf way before that
+        exponent = exponent * 10 + (*pc - '0');
+      ++pc;
+    }
+    if (negative)
+      exponent = -exponent;
+  }
 
   if (type == 'f') {
-    const std::string number = digits + "e-" + std::to_string(fraction_digits);
+    const std::string number = digits + "e" + std::to_string(exponent - fraction_digits);
     const double d = std::strtod(number.c_str(), nullptr);
     if (d > DBL_MAX) // inf
       env->ThrowError("Tokenizer: Number is to big.");

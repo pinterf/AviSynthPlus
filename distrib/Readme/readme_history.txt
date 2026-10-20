@@ -19,9 +19,19 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   PlaneMinMaxStats) are real pixel values and stay 32 bit float. Existed since 3.7.4.
 - Spline: calculation and result in 64 bit double (were 32 bit float), e.g. Spline(0.1, 0, 0, 1, 1, false)
   equals 0.1, and integer x values above 2^24 are not rounded any more.
+- Script: floating point constants in scientific notation: digits with an optional decimal point, then
+  e or E, an optional + or - sign and the exponent digits, e.g. 1.5e-5, 2E+3, .5e1, 1e308.
+  A number with an exponent is always floating point (2e3 is 2000.0, 64 bit double).
+  Expr already accepted this form, so e.g. a constant can be written the same way in both.
 - Fix: script floating point constants with many digits were parsed inexactly (up to a few units in the
   last place), e.g. 3.14159265358979324 gave 3.1415926535897927 instead of 3.1415926535897931 (Pi),
   0.49999999999999994 gave 0.5. Now they are parsed correctly rounded. Existed since classic Avisynth.
+- Fix: script parser: a non-ASCII character (e.g. a byte of an UTF-8 sequence) outside strings and comments
+  was passed to the C runtime isdigit/isalpha/isalnum, which is undefined behavior for negative char values
+  (debug runtime assertion) and could depend on the locale. Identifiers, numbers and the variable name checks
+  (VarExist, function names) now use ASCII-only tests, the same as Expr and the frame property key check.
+  The error shows the byte value: "unexpected non-ASCII character (byte 0xC3), allowed only in strings and comments".
+  Existed since classic Avisynth.
 - Fix: Floor, Ceil, Round, Int, IntI, Long: values out of the 64 bit integer range, NaN and infinity
   returned garbage (e.g. Int(Pow(10.0, 30)) = -9223372036854775808); now they are a script error.
   IntI of a floating-point value outside the 32 bit range wraps around like for integers
