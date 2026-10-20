@@ -849,13 +849,19 @@ AVSValue BitNot64(AVSValue args, void*, IScriptEnvironment*) { return ~args[0].A
 AVSValue BitOr64(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() | args[1].AsLong(); }
 AVSValue BitXor64(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() ^ args[1].AsLong(); }
 
-AVSValue BitLShift(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsInt() << args[1].AsInt(); }
-AVSValue BitRShiftL(AVSValue args, void*, IScriptEnvironment* ) { return int(unsigned(args[0].AsInt()) >> unsigned(args[1].AsInt())); }
-AVSValue BitRShiftA(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsInt() >> args[1].AsInt(); }
+// Shift and bit index counts are masked to the bit width (0..31 or 0..63), like x86 does at runtime
+// (and like the rotate functions): a count >= the width or negative is undefined behavior in C++.
+// Left shifts are done unsigned, a signed left shift into or over the sign bit is undefined behavior as well.
+static inline unsigned Mask32(int n) { return unsigned(n) & 31; }
+static inline unsigned Mask64(int n) { return unsigned(n) & 63; }
 
-AVSValue BitLShift64(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() << args[1].AsInt(); }
-AVSValue BitRShift64L(AVSValue args, void*, IScriptEnvironment*) { return int64_t(uint64_t(args[0].AsLong()) >> unsigned(args[1].AsInt())); }
-AVSValue BitRShift64A(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() >> args[1].AsInt(); }
+AVSValue BitLShift(AVSValue args, void*, IScriptEnvironment* ) { return int(unsigned(args[0].AsInt()) << Mask32(args[1].AsInt())); }
+AVSValue BitRShiftL(AVSValue args, void*, IScriptEnvironment* ) { return int(unsigned(args[0].AsInt()) >> Mask32(args[1].AsInt())); }
+AVSValue BitRShiftA(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsInt() >> Mask32(args[1].AsInt()); }
+
+AVSValue BitLShift64(AVSValue args, void*, IScriptEnvironment*) { return int64_t(uint64_t(args[0].AsLong()) << Mask64(args[1].AsInt())); }
+AVSValue BitRShift64L(AVSValue args, void*, IScriptEnvironment*) { return int64_t(uint64_t(args[0].AsLong()) >> Mask64(args[1].AsInt())); }
+AVSValue BitRShift64A(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() >> Mask64(args[1].AsInt()); }
 
 static unsigned int a_rol(unsigned int value, int shift) {
   if ((shift &= sizeof(value)*8 - 1) == 0)
@@ -879,38 +885,33 @@ static uint64_t a_ror(uint64_t value, int shift) {
   return (value >> shift) | (value << (sizeof(value) * 8 - shift));
 }
 
+// bit index masked like the shift counts
 static int a_btc(int value, int bit) {
-  value ^= 1 << bit;
-  return value;
+  return int(unsigned(value) ^ (1u << Mask32(bit)));
 }
 static int64_t a_btc(int64_t value, int bit) {
-  value ^= static_cast<int64_t>(1) << bit;
-  return value;
+  return int64_t(uint64_t(value) ^ (uint64_t(1) << Mask64(bit)));
 }
 
 static int a_btr(int value, int bit) {
-  value &= ~(1 << bit);
-  return value;
+  return int(unsigned(value) & ~(1u << Mask32(bit)));
 }
 static int64_t a_btr(int64_t value, int bit) {
-  value &= ~(static_cast<int64_t>(1) << bit);
-  return value;
+  return int64_t(uint64_t(value) & ~(uint64_t(1) << Mask64(bit)));
 }
 
 static int a_bts(int value, int bit) {
-  value |= (1 << bit);
-  return value;
+  return int(unsigned(value) | (1u << Mask32(bit)));
 }
 static int64_t a_bts(int64_t value, int bit) {
-  value |= (static_cast<int64_t>(1) << bit);
-  return value;
+  return int64_t(uint64_t(value) | (uint64_t(1) << Mask64(bit)));
 }
 
 static bool a_bt(int value, int bit) {
-  return (value & (1 << bit)) ? true : false;
+  return (unsigned(value) & (1u << Mask32(bit))) != 0;
 }
 static bool a_bt(int64_t value, int bit) {
-  return (value & (static_cast<int64_t>(1)<< bit)) ? true : false;
+  return (uint64_t(value) & (uint64_t(1) << Mask64(bit))) != 0;
 }
 
 AVSValue BitRotateL(AVSValue args, void*, IScriptEnvironment* ) { return (int)a_rol((unsigned int)args[0].AsInt(), args[1].AsInt()); }

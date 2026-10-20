@@ -355,6 +355,11 @@ Build environment, Interface
   and ``Abs`` wrap around on overflow in a defined way (two's complement, computed as unsigned), instead
   of relying on signed overflow, which is undefined behavior in C++. E.g. ``9223372036854775807 + 1``
   is still -9223372036854775808.
+- Internal code correctness (no change in behavior): bit shift functions (``BitLShift``, ``BitRShiftL``,
+  ``BitRShiftA``, ``BitShl64``, ``BitShr64``, ``BitSar64`` and synonyms) and bit index functions (``BitSet``,
+  ``BitClr``, ``BitChg``, ``BitTst`` and 64 bit versions) take the count modulo the bit width (0..31, 0..63),
+  as x86 did at runtime anyway; a count out of range was undefined behavior in C++, as was a signed left
+  shift into the sign bit. Documented.
 
 Bugfixes
 ~~~~~~~~

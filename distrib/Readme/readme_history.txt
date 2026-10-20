@@ -89,6 +89,14 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   signed overflow, which is undefined behavior in C++ (the compiler may assume it never happens).
   The results are the same as before, e.g. 9223372036854775807 + 1 = -9223372036854775808,
   Abs(-9223372036854775808) = -9223372036854775808.
+- Internal code correctness (no change in behavior): the bit shift functions (BitLShift, BitRShiftL, BitRShiftA,
+  BitShl64, BitShr64, BitSar64 and their synonyms) and the bit index functions (BitSet, BitClr, BitChg, BitTst
+  and their 64 bit versions) take the shift count / bit index modulo the bit width: 0..31 for 32 bit, 0..63
+  for 64 bit, the same as the rotate functions already did. A count >= the bit width or negative was undefined
+  behavior in C++ (x86 masks the count at runtime, so the results were the same; a compiler could have folded
+  it differently), and so was a signed left shift into the sign bit (BitLShift(1, 31), BitSet(0, 31)); these
+  are done unsigned now. E.g. BitLShift(1, 32) = 1, BitLShift(1, 33) = 2, BitLShift(1, -1) = -2147483648,
+  BitSet64(0, 64) = 1. All 46 tested cases give the same result as before. Documented in the bit functions page.
 - Script parser, internal code correctness (no change in behavior, except the error message):
   identifiers, numbers and the variable name checks (VarExist, function names) use ASCII-only tests,
   the same as Expr and the frame property key check, instead of the C runtime isdigit/isalpha/isalnum.

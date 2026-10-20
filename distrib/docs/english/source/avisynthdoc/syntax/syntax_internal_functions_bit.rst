@@ -11,6 +11,12 @@ Old functions work and return with the lower 32 bits even if 64-bit data is pass
 
 64-bit versions work on full 64 bit data.
 
+The shift count of the shift and rotate functions and the bit index of the bit test, set, clear
+and change functions are taken modulo the bit width: 0..31 for the 32 bit, 0..63 for the 64 bit
+versions (only the lowest 5 or 6 bits of the count are used, like on x86 processors).
+E.g. ``BitLShift(1, 32) = 1``, ``BitLShift(1, 33) = 2``, ``BitLShift(1, -1) = BitLShift(1, 31)``,
+``BitSet64(0, 64) = 1``. Defined behavior since 3.7.6; before it was undefined in C++ (in practice the same results).
+
 BitAnd
 ~~~~~~
 BitAnd64
@@ -358,6 +364,9 @@ Changelog
 +-----------------+-----------------------------------------------------+
 | Version         | Changes                                             |
 +=================+=====================================================+
+| Avisynth 3.7.6  || Shift count and bit index are taken modulo the     |
+|                 |  bit width (defined behavior, same results)         |
++-----------------+-----------------------------------------------------+
 | Avisynth 3.7.4  || 64-bit versions of the bit functions.              |
 |                 || Add "BitAnd64", "BitNot64", "BitOr64", "BitXor64   |
 |                 || Add "BitShl64", "BitSal64"                         |
