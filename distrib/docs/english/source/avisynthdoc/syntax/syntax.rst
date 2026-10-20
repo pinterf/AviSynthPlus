@@ -491,7 +491,7 @@ Except ``MulDiv``, ``Rand`` and ``Spline`` the calculations are 64-bit (int or d
 ``HexValue`` and ``Hex`` have special 64 bit variants: ``HexValue64`` and ``Hex64``.
 
 See :doc:`AviSynth Syntax - Numeric functions <syntax_internal_functions_numeric>`, and
-:doc:`AviSynth Syntax - Numeric functions <syntax_internal_functions_conversion>`.
+:doc:`AviSynth Syntax - Type conversion functions <syntax_internal_functions_conversion>`.
 
 
 +----------------------------------------------------------+---------------------------------------------+
@@ -658,28 +658,15 @@ String functions
 Conversions
 ~~~~~~~~~~~
 
-+---------------------------------------------------------------+-------------------------------------------------------------------+
-| ``Value(string)``: Returns the value of an string.            | ``Value`` ( "-2.7" ) = -2.7                                       |
-+---------------------------------------------------------------+-------------------------------------------------------------------+
-| ``String(float / int / string, format_string)``:              || e.g. ``Subtitle`` ("Clip height is " + ``String`` (last.height) )|
-|   converts a number to a string. If the variable is           || ``String`` (1.23, "%f") = '1.23'                                 |
-|   float or integer, it converts it to a float and             || ``String`` (1.23, "%5.1f") = ' 1.2'                              |
-|   uses the format_string to convert it to a string.           || ``String`` (1.23, "%1.3f") = '1.230'                             |
-|                                                               |                                                                   |
-|   The syntax of the format_string is as follows:              |                                                                   |
-|                                                               |                                                                   |
-|   %[flags][width][.precision]f                                |                                                                   |
-|                                                               |                                                                   |
-||     width: the minimum width (the string is never truncated) |                                                                   |
-||     precision: the number of digits printed                  |                                                                   |
-||     flags:                                                   |                                                                   |
-||       ``-`` left align (instead right align)                 |                                                                   |
-||       ``+`` always print the +/- sign                        |                                                                   |
-||       ``0`` padding with leading zeros                       |                                                                   |
-||       ``' '`` print a blank instead of a "+"                 |                                                                   |
-||       ``#`` always print the decimal point                   |                                                                   |
-|                                                               |                                                                   |
-+---------------------------------------------------------------+-------------------------------------------------------------------+
+| ``Value(string)``, ``HexValue(string)``, ``HexValue64(string)``: string to number.
+| ``String(value [, format_string])``: number (or bool) to string, with an optional printf-like
+  format, e.g. ``String(1.23, "%5.1f")`` = ' 1.2', ``String(255, "%x")`` = 'ff'.
+| ``Hex(int [, width])``, ``Hex64(int [, width])``: integer to hexadecimal string, 32 or 64 bit.
+| ``Format(format_string, value1, ...)``: values inserted into a string, e.g.
+  ``Format("{} x {}", Width, Height)`` = '640 x 480'.
+
+See :doc:`AviSynth Syntax - Type conversion functions <syntax_internal_functions_conversion>` and
+:doc:`AviSynth Syntax - String functions <syntax_internal_functions_string>` (``Format``).
 
 Version checking functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
