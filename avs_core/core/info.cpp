@@ -67,7 +67,7 @@
 // character is not lost (like the Unicode/WHATWG replacement recommendation): one for each stray
 // continuation byte or 0xF8..0xFF byte, and one for an incomplete sequence (a lead byte with fewer
 // continuation bytes than needed, also at the end of the string: no reading past it).
-std::vector<int> BitmapFont::remap(const std::string& s_utf8)
+std::vector<int> BitmapFont::remap(const std::string& s_utf8) const
 {
   // new vector with characters remapped to font table indexes
   std::vector<int> s_remapped;
@@ -2116,7 +2116,7 @@ extern const uint16_t *font_bitmaps[];
 extern const uint16_t *font_codepoints[];
 extern const FixedFont_info_t *font_infos[];
 
-std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char *name, bool bold, bool debugSave) {
+std::unique_ptr<BitmapFont> CreateBitmapFont(int size, const char *name, bool bold, bool debugSave) {
 
   BitmapFont* current_font = nullptr;
 
@@ -2211,7 +2211,13 @@ std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char *name, bool bold,
   return std::unique_ptr<BitmapFont>(current_font);
 }
 
-static void DrawString_internal(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& dst, int x, int y, std::string& s_utf8,
+std::shared_ptr<const BitmapFont> GetBitmapFont(int size, const char* name, bool bold, bool debugSave, IScriptEnvironment* env)
+{
+  AVS_UNUSED(env); // for the font cache
+  return CreateBitmapFont(size, name, bold, debugSave);
+}
+
+static void DrawString_internal(const BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& dst, int x, int y, std::string& s_utf8,
   int color, int halocolor, bool useHalocolor, int align, bool fadeBackground, int chromalocation)
 {
   //static BitmapFont_10_20 infoFont1020; // constructor runs once, single instance
@@ -2374,14 +2380,14 @@ static void DrawString_internal(BitmapFont* current_font, const VideoInfo& vi, P
   }
 }
 
-void SimpleTextOutW(BitmapFont *current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
+void SimpleTextOutW(const BitmapFont *current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
   bool fadeBackground, int textcolor, int halocolor, bool useHaloColor, int align, int chromalocation)
 {
   DrawString_internal(current_font, vi, frame, real_x, real_y, text_utf8, textcolor, halocolor, useHaloColor, align, fadeBackground, chromalocation); // fully transparent background
 }
 
 // additional parameter: lsp line spacing
-void SimpleTextOutW_multi(BitmapFont *current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
+void SimpleTextOutW_multi(const BitmapFont *current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
   bool fadeBackground, int textcolor, int halocolor, bool useHaloColor,
   int align, int lsp, int chromalocation)
 {
@@ -2424,7 +2430,7 @@ void SimpleTextOutW_multi(BitmapFont *current_font, const VideoInfo& vi, PVideoF
 // Old legacy info.h functions, but with utf8 mode
 // w/o outline, originally with ASCII input, background fading
 // Despite name Planar, it works for all formats
-void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s)
+void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s, IScriptEnvironment* env)
 {
   int color;
   if (vi.IsRGB())
@@ -2438,7 +2444,7 @@ void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char*
 
   int halocolor = 0;
 
-  std::unique_ptr<BitmapFont> current_font = GetBitmapFont(20, "info_h", false, false); // 10x20
+  std::shared_ptr<const BitmapFont> current_font = GetBitmapFont(20, "info_h", false, false, env); // 10x20
 
   if (current_font == nullptr)
     return;
@@ -2454,19 +2460,19 @@ void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char*
 
 }
 
-void DrawStringYUY2(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s)
+void DrawStringYUY2(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s, IScriptEnvironment* env)
 {
-  DrawStringPlanar(vi, dst, x, y, s);
+  DrawStringPlanar(vi, dst, x, y, s, env);
 }
 
 // legacy function w/o outline, originally with ASCII input, background fading
-void DrawStringRGB24(VideoInfo &vi, PVideoFrame& dst, int x, int y, const char* s)
+void DrawStringRGB24(VideoInfo &vi, PVideoFrame& dst, int x, int y, const char* s, IScriptEnvironment* env)
 {
-  DrawStringPlanar(vi, dst, x, y, s);
+  DrawStringPlanar(vi, dst, x, y, s, env);
 }
 
 // legacy function w/o outline, originally with ASCII input, background fading
-void DrawStringRGB32(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s)
+void DrawStringRGB32(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s, IScriptEnvironment* env)
 {
-  DrawStringPlanar(vi, dst, x, y, s);
+  DrawStringPlanar(vi, dst, x, y, s, env);
 }

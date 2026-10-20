@@ -208,7 +208,7 @@ private:
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   std::unique_ptr<Antialiaser> antialiaser;
 #endif
-  std::unique_ptr<BitmapFont> current_font;
+  std::shared_ptr<const BitmapFont> current_font;
   int chromaplacement;
   const bool scroll;
   const int offset;
@@ -254,7 +254,7 @@ private:
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   std::unique_ptr<Antialiaser> antialiaser;
 #endif
-  std::unique_ptr<BitmapFont> current_font;
+  std::shared_ptr<const BitmapFont> current_font;
   int chromaplacement;
   const bool scroll;
   const int offset;
@@ -291,7 +291,7 @@ private:
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   std::unique_ptr<Antialiaser> antialiaser;
 #endif
-  std::unique_ptr<BitmapFont> current_font;
+  std::shared_ptr<const BitmapFont> current_font;
   int chromaplacement;
   int rate;
   int offset_f;
@@ -382,7 +382,7 @@ private:
   const bool utf8;
   const bool bold;
   const int chromalocation;
-  std::unique_ptr<BitmapFont> current_font;
+  std::shared_ptr<const BitmapFont> current_font;
 };
 
 class FilterInfo : public GenericVideoFilter
@@ -416,7 +416,7 @@ private:
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   std::unique_ptr<Antialiaser> antialiaser;
 #endif
-  std::unique_ptr<BitmapFont> current_font;
+  std::shared_ptr<const BitmapFont> current_font;
   int chromaplacement;
   [[maybe_unused]] const bool bold;
   [[maybe_unused]] const bool italic;
@@ -454,7 +454,7 @@ private:
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   std::unique_ptr<Antialiaser> antialiaser;
 #endif
-  std::unique_ptr<BitmapFont> current_font;
+  std::shared_ptr<const BitmapFont> current_font;
   int chromaplacement;
   PClip child2;
   uint32_t mask;
@@ -486,6 +486,6 @@ bool GetTextBoundingBox( const char* text, const char* fontname, int size, bool 
                          bool italic, int align, int* width, int* height );
 
 bool GetTextBoundingBoxFixed(const char* text, const char* fontname, int size, bool bold,
-  bool italic, int align, int& width, int& height, bool utf8);
+  bool italic, int align, int& width, int& height, bool utf8, IScriptEnvironment* env);
 
 #endif  // __Text_overlay_H__

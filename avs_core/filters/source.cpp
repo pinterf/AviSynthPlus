@@ -507,7 +507,7 @@ extern bool GetTextBoundingBox(const char* text, const char* fontname,
 #endif
 
 extern bool GetTextBoundingBoxFixed(const char* text, const char* fontname, int size, bool bold,
-  bool italic, int align, int& width, int& height, bool utf8);
+  bool italic, int align, int& width, int& height, bool utf8, IScriptEnvironment* env);
 
 
 PClip Create_MessageClip(const char* message, int width, int height, int pixel_type, bool shrink,
@@ -544,7 +544,7 @@ PClip Create_MessageClip(const char* message, int width, int height, int pixel_t
 #ifdef AVS_POSIX
     bool utf8 = true;
 #endif
-    GetTextBoundingBoxFixed(message, "Terminus", size, true, false, 0 /* align */, text_width, text_height, utf8);
+    GetTextBoundingBoxFixed(message, "Terminus", size, true, false, 0 /* align */, text_width, text_height, utf8, env);
     text_width = (text_width + 8 + 7) & ~7; // mod 8
     text_height = (text_height + 8 + 1) & ~1; // mod 2
     if (size <= MIN_SIZE || ((width <= 0 || text_width <= width) && (height <= 0 || text_height <= height))) {

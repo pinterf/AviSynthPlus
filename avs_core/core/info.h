@@ -44,6 +44,7 @@
 #include <array>
 #include <iomanip>
 #include <vector>
+#include <memory>
 #include <cstring>
 #include "strings.h"
 
@@ -203,20 +204,23 @@ public:
   }
 
   // helper function for remapping an utf8 string to font index entry list
-  std::vector<int> remap(const std::string& s_utf8);
+  std::vector<int> remap(const std::string& s_utf8) const;
 };
 
-std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char* name, bool bold, bool debugSave);
+// creates a new font instance (uncached)
+std::unique_ptr<BitmapFont> CreateBitmapFont(int size, const char* name, bool bold, bool debugSave);
+// Returns an immutable font, which can be shared. env: for the font cache.
+std::shared_ptr<const BitmapFont> GetBitmapFont(int size, const char* name, bool bold, bool debugSave, IScriptEnvironment* env);
 
-void SimpleTextOutW(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
+void SimpleTextOutW(const BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
   bool fadeBackground, int textcolor, int halocolor, bool useHaloColor, int align, int chromaplacement);
-void SimpleTextOutW_multi(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
+void SimpleTextOutW_multi(const BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
   bool fadeBackground, int textcolor, int halocolor, bool useHaloColor, int align, int lsp, int chromaplacement);
 
 // legacy function w/o outline, originally with ASCII input, background fading
-void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s);
-void DrawStringYUY2(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s);
-void DrawStringRGB32(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s);
-void DrawStringRGB24(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s);
+void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s, IScriptEnvironment* env);
+void DrawStringYUY2(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s, IScriptEnvironment* env);
+void DrawStringRGB32(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s, IScriptEnvironment* env);
+void DrawStringRGB24(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s, IScriptEnvironment* env);
 
 #endif  // __INFO_H__
