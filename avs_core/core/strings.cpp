@@ -346,29 +346,39 @@ size_t str_utf8_size(const std::string& s) {
   return len;
 }
 
-// converts a 16 bit unicode codepoint to its utf8 string representation
-std::string U16_to_utf8(uint16_t u16)
+// converts a unicode codepoint to its utf8 string representation
+// empty string for a value which is not a valid codepoint: surrogates D800-DFFF, above 10FFFF
+std::string U32_to_utf8(uint32_t cp)
 {
-  uint8_t bytes[3];
+  if ((cp >= 0xD800 && cp <= 0xDFFF) || cp > 0x10FFFF)
+    return std::string();
+  uint8_t bytes[4];
   int size = 0;
-  // check the range of the UTF-16 code point
-  if (u16 <= 0x007F) {
+  if (cp <= 0x007F) {
     // one byte, 0xxxxxxx
-    bytes[0] = static_cast<uint8_t>(u16);
+    bytes[0] = static_cast<uint8_t>(cp);
     size = 1;
   }
-  else if (u16 <= 0x07FF) {
+  else if (cp <= 0x07FF) {
     // two bytes, 110xxxxx 10xxxxxx
-    bytes[0] = static_cast<uint8_t>(0xC0 | ((u16 >> 6) & 0x1F));
-    bytes[1] = static_cast<uint8_t>(0x80 | (u16 & 0x3F));
+    bytes[0] = static_cast<uint8_t>(0xC0 | ((cp >> 6) & 0x1F));
+    bytes[1] = static_cast<uint8_t>(0x80 | (cp & 0x3F));
     size = 2;
   }
-  else {
+  else if (cp <= 0xFFFF) {
     // three bytes, 1110xxxx 10xxxxxx 10xxxxxx
-    bytes[0] = static_cast<uint8_t>(0xE0 | ((u16 >> 12) & 0x0F));
-    bytes[1] = static_cast<uint8_t>(0x80 | ((u16 >> 6) & 0x3F));
-    bytes[2] = static_cast<uint8_t>(0x80 | (u16 & 0x3F));
+    bytes[0] = static_cast<uint8_t>(0xE0 | ((cp >> 12) & 0x0F));
+    bytes[1] = static_cast<uint8_t>(0x80 | ((cp >> 6) & 0x3F));
+    bytes[2] = static_cast<uint8_t>(0x80 | (cp & 0x3F));
     size = 3;
+  }
+  else {
+    // four bytes, 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+    bytes[0] = static_cast<uint8_t>(0xF0 | ((cp >> 18) & 0x07));
+    bytes[1] = static_cast<uint8_t>(0x80 | ((cp >> 12) & 0x3F));
+    bytes[2] = static_cast<uint8_t>(0x80 | ((cp >> 6) & 0x3F));
+    bytes[3] = static_cast<uint8_t>(0x80 | (cp & 0x3F));
+    size = 4;
   }
   // convert the array of bytes to a string
   std::string u8str(bytes, bytes + size);

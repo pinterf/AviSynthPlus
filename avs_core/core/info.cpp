@@ -111,7 +111,7 @@ std::vector<int> BitmapFont::remap(const std::string& s_utf8)
 
 // Internal function! For creating source code from a previously LoadBDF'd font file
 // see fixedfonts.cpp
-void BitmapFont::SaveAsC(const uint16_t* _codepoints)
+void BitmapFont::SaveAsC(const uint32_t* _codepoints)
 {
   if (font_filename == "") return; // no GUS no sound :)
 
@@ -210,7 +210,7 @@ void BitmapFont::SaveAsC(const uint16_t* _codepoints)
 
 typedef struct CharInfo { // STARTCHAR charname
   std::string friendly_name;
-  uint16_t encoding;
+  int encoding; // unicode codepoint, can be above U+FFFF; -1: unencoded glyph
   int dwidth_x, dwidth_y;
   // DWIDTH not supported, same as main PIXELSIZE
   // font properties can be overridden.
@@ -245,7 +245,7 @@ public:
   std::string font_filename;
   FontInfo font_info;
   FontProperties font_properties;
-  std::vector<uint16_t> codepoints_array;
+  std::vector<uint32_t> codepoints_array; // -1 (unencoded) becomes 0xFFFFFFFF, not a valid codepoint
   std::vector<std::string> charnames_array;
   // each character can have different bounding box dimensions from global one
   std::vector<BBX> bbx_array;
@@ -597,7 +597,7 @@ static BdfFont LoadBMF(std::string name, bool bold) {
           0000
           ENDCHAR
         */
-        fnt.codepoints_array[char_counter] = current_char.encoding;
+        fnt.codepoints_array[char_counter] = static_cast<uint32_t>(current_char.encoding);
         fnt.charnames_array[char_counter] = current_char.friendly_name;
         fnt.bbx_array[char_counter] = current_char.bbx;
         char_counter++;
@@ -2124,12 +2124,13 @@ std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char *name, bool bold,
     if (fi->height == size && fi->bold == bold && strequals_i(fi->fontname, name)) {
       BBX global_bbx = BBX{ fi->width, fi->height, fi->offset_x, fi->offset_y }; // BBX from FONTBOUNDINGBOX
       // max WIDTH, max HEIGHT, offset_x, offset_y
+      const std::vector<uint32_t> codepoints(font_codepoints[i], font_codepoints[i] + fi->charcount);
       current_font = new BitmapFont(
         fi->charcount,
         font_bitmaps[i], // internal one
         nullptr, // not a byte array from external BDF
         sizeof(uint16_t), // sizeof(*font_bitmaps) 2: uint16_t
-        font_codepoints[i],
+        codepoints.data(),
         nullptr, // Individual BBX for each character. For our internal characters it comes from global bbx
         global_bbx,
         fi->fontname,
@@ -2163,12 +2164,13 @@ std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char *name, bool bold,
     if (found_index >= 0) {
       const FixedFont_info_t* fi = font_infos[found_index];
       BBX global_bbx = BBX{ fi->width, fi->height, fi->offset_x, fi->offset_y }; // BBX from FONTBOUNDINGBOX
+      const std::vector<uint32_t> codepoints(font_codepoints[found_index], font_codepoints[found_index] + fi->charcount);
       current_font = new BitmapFont(
         fi->charcount,
         font_bitmaps[found_index], // internal one
         nullptr, // not a byte array from external BDF
         sizeof(uint16_t), // sizeof(*font_bitmaps) 2: uint16_t
-        font_codepoints[found_index],
+        codepoints.data(),
         nullptr,  // Individual BBX for each character. For our internal characters it comes from global bbx
         global_bbx,
         fi->fontname,

@@ -535,6 +535,9 @@ Bugfixes
 - Fix: text rendering with bitmap fonts (``Text``, ``Info``, ``propShow``...) on invalid UTF-8: an incomplete
   sequence at the end of the text was read past the end of the string, and a valid character following
   an invalid byte was swallowed. Existed since 3.7.4.
+- Fix: external BDF fonts: characters above U+FFFF (e.g. emoji, unifont upper planes) were not displayed,
+  their codepoint was cut to 16 bits, so their glyph appeared for a wrong character instead (U+1F600 for
+  U+F600). Unencoded glyphs (``ENCODING -1``) are ignored. Existed since 3.5.1.
 - Fix: ``Floor``, ``Ceil``, ``Round``, ``Int``, ``IntI``, ``Long``: values out of the 64 bit integer range,
   NaN and infinity returned garbage; now they are a script error. ``IntI`` of a floating-point value
   outside the 32 bit range wraps around like for integers. Existed since classic Avisynth.

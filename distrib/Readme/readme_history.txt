@@ -88,6 +88,11 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   utf8=true): an incomplete multi-byte sequence at the end of the text was read past the end of the string,
   and a lead byte followed by ASCII swallowed the next characters (byte 0xE9 then "xy" showed one box, "xy" was lost).
   Now each invalid byte or incomplete sequence is one empty character and the text goes on. Existed since 3.7.4.
+- Fix: external BDF fonts (font="path/to/font.bdf"): characters above U+FFFF (e.g. emoji, unifont upper
+  planes, 4 byte UTF-8 sequences) were not displayed: the codepoint was stored as 16 bit, so U+1F600 became
+  U+F600 and its glyph appeared for that (private use) character instead, possibly replacing a real one.
+  Now codepoints are 32 bit. Glyphs with ENCODING -1 (unencoded, by BDF spec) are ignored; before they
+  were all mapped to U+FFFF. Built-in fonts (Terminus, info_h) are not affected. Existed since 3.5.1.
 - Internal code correctness (no change in behavior): 64 bit integer +, -, *, unary minus and Abs wrap
   around on overflow in a defined way (two's complement, computed as unsigned), instead of relying on
   signed overflow, which is undefined behavior in C++ (the compiler may assume it never happens).
