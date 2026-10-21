@@ -2246,7 +2246,7 @@ AVSValue Floatf(AVSValue args, void*, IScriptEnvironment*) {
   return args[0].AsFloatf();
 }
 
-AVSValue Value(AVSValue args, void*, IScriptEnvironment*) {  char *stopstring; return strtod(args[0].AsString(),&stopstring); }
+AVSValue Value(AVSValue args, void*, IScriptEnvironment*) { return strtod_c(args[0].AsString()); } // '.' regardless of the locale
 
 AVSValue HexValue(AVSValue args, void*, IScriptEnvironment*)
 {

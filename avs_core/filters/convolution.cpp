@@ -44,6 +44,7 @@
 
 #include "convolution.h"
 #include "../core/internal.h"
+#include "../core/strings.h"
 
 #include <regex>
 #include <iostream>
@@ -545,7 +546,7 @@ void GeneralConvolution::setMatrix(const char * _matrix, bool _isInteger, IScrip
         fMatrix.resize(maxsize);
     }
     if (_isInteger) {
-      const double val = atof(s.c_str());
+      const double val = strtod_c(s.c_str()); // '.' regardless of the locale
       const int ival = (int)std::lround(val);
       iNormalizeSum += ival;
       iMatrix[nSize++] = ival;
@@ -555,7 +556,7 @@ void GeneralConvolution::setMatrix(const char * _matrix, bool _isInteger, IScrip
         iWeightSumNegatives += ival;
     }
     else {
-      const float val = (float)atof(s.c_str());
+      const float val = (float)strtod_c(s.c_str());
       fNormalizeSum += val;
       fMatrix[nSize++] = val;
     }

@@ -372,6 +372,10 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: ``Value``, "ConditionalReader" float values, "GeneralConvolution" ``matrix``: the decimal point
+  is always ``.``. When a host or plugin switched the process locale to a decimal comma one
+  (``setlocale``), ``Value("3.5")`` gave 3. See :doc:`Value <./syntax/syntax_internal_functions_conversion>`.
+  Existed since classic AviSynth.
 - Fix: C plugins without ``avisynth_c_plugin_init2`` (pre-V11): ``avs_invoke`` inside
   ``avisynth_c_plugin_init`` returned unconverted double and 64 bit int values. Existed since 3.7.4.
 - Fix: C plugins without ``avisynth_c_plugin_init2`` (pre-V11) got unconverted double and 64 bit int

@@ -362,6 +362,37 @@ const char* scan_decimal(const char* p, double* value)
   return p;
 }
 
+double strtod_c(const char* s, const char** end)
+{
+  const char* p = s;
+  while (isAsciiSpace(*p))
+    p++;
+  const char* const number_start = p;
+  const bool negative = *p == '-';
+  if (*p == '+' || *p == '-')
+    p++;
+
+  // hex, inf, nan: no decimal point issue (hex fraction aside), keep the strtod behavior
+  if ((p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) || asciiToLower(*p) == 'i' || asciiToLower(*p) == 'n') {
+    char* e;
+    const double d = std::strtod(number_start, &e);
+    if (end)
+      *end = e == number_start ? s : e;
+    return d;
+  }
+
+  double d;
+  const char* const number_end = scan_decimal(p, &d);
+  if (number_end == p) { // no digits: nothing used, 0 (not -0 for a lone '-'), like strtod
+    if (end)
+      *end = s;
+    return 0.0;
+  }
+  if (end)
+    *end = number_end;
+  return negative ? -d : d;
+}
+
 std::string GetFullPathNameWrapUtf8(const std::string& f)
 {
 #ifdef AVS_WINDOWS

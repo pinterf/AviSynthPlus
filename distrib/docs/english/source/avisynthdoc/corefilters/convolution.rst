@@ -26,7 +26,9 @@ Syntax and Parameters
 
     A 3×3, 5×5, 7×7 or 9×9 matrix with 3\ :sup:`2` (9), 5\ :sup:`2` (25),
     7\ :sup:`2` (49), 9\ :sup:`2` (81) float or integer values. Float values are
-    converted to integers for 8-16 bit clips.
+    converted to integers for 8-16 bit clips. The decimal point is ``.``, independent of
+    the locale of the process (since 3.7.6, before: a host or plugin which switched the
+    locale to a decimal comma one made e.g. ``0.5`` read as ``0``).
 
     Default: "0 0 0 0 1 0 0 0 0"
 
@@ -148,6 +150,8 @@ Changelog
 +------------------+--------------------------------------------------------------------------+
 | Version          | Changes                                                                  |
 +==================+==========================================================================+
+| AviSynth+ 3.7.6  | ``matrix``: ``.`` decimal point regardless of the process locale.        |
++------------------+--------------------------------------------------------------------------+
 | AviSynth+ r2768  || Allow 7x7 and 9x9 matrices (was: 3x3 and 5x5).                          |
 |                  || All 8-32 bit formats supported (was: RGB32 only): YUY2 is converted     |
 |                  |  to/from YV16, RGB24/32/48/64 are treated as planar RGB internally.      |

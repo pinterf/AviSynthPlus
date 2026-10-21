@@ -373,6 +373,8 @@ Changelog
 +================+==================================+
 | Avisynth 3.7.6 | float type: 64-bit double values |
 |                | (were 32-bit float)              |
+|                | float type: ``.`` decimal point  |
+|                | regardless of the process locale |
 +----------------+----------------------------------+
 | Avisynth 3.6.0 | Added "local"                    |
 +----------------+----------------------------------+

@@ -362,13 +362,14 @@ AVSValue ConditionalReader::ConvertType(const char* content, int line, IScriptEn
 
       return AVSValue(ival);
 
-    case MODE_FLOAT:
-      double fval;
-      fields = sscanf(content, "%le", &fval);
-      if (fields != 1)
+    case MODE_FLOAT: {
+      const char* end;
+      const double fval = strtod_c(content, &end); // '.' regardless of the locale, unlike sscanf
+      if (end == content)
         ThrowLine("ConditionalReader: Could not find an expected float at line %d!", line, env);
 
       return AVSValue(fval);
+    }
 
     case MODE_BOOL:
       char bval[8];

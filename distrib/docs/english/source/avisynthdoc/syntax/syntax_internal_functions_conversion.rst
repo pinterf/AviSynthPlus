@@ -17,6 +17,24 @@ Value
 
 Converts a decimal string to its associated numeric value.
 
+The decimal point is always ``.``, independent of the locale of the process (since 3.7.6).
+Before, it followed the C locale: with the default "C" locale (almost all hosts) the result
+was the same, but when a host or plugin switched the process locale to one with a decimal
+comma (``setlocale``, e.g. Qt or GTK hosts on Linux), ``Value`` stopped at the ``.``.
+Results under such a decimal comma locale:
+
++------------------------+----------------+----------+
+| Expression             | Before 3.7.6   | 3.7.6    |
++========================+================+==========+
+| ``Value("3.5")``       | 3              | 3.5      |
++------------------------+----------------+----------+
+| ``Value("-2.7")``      | -2             | -2.7     |
++------------------------+----------------+----------+
+| ``Value("-1.25e2")``   | -1             | -125     |
++------------------------+----------------+----------+
+| ``Value("3,5")``       | 3.5            | 3        |
++------------------------+----------------+----------+
+
 *Examples:*
 ::
 

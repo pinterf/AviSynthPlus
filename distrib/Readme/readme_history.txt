@@ -11,6 +11,14 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261021 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: Value(), ConditionalReader float values, GeneralConvolution matrix: the decimal point is always '.'.
+  They followed the C locale of the process (strtod, sscanf, atof): with the default "C" locale no
+  difference, but when a host or plugin switched it to a decimal comma one (setlocale, e.g. Qt or GTK
+  hosts on Linux), the '.' stopped the number. Under such a locale (all releases, tested r2294 .. 3.7.5):
+  Value("3.5") gave 3, Value("-1.25e2") gave -1, a ConditionalReader float 1.75 gave 1,
+  GeneralConvolution(matrix="0 0 0 0 0.5 0 0 0 0") on a 32 bit float clip gave black.
+  Now parsed like the script tokenizer, independent of the locale. Hex, inf, nan as before.
+  Existed since classic AviSynth.
 - C API avs_create_script_environment: a refused request (version newer than the AviSynth, e.g. 15 on
   V14) is reported by avs_get_error: "avs_create_script_environment: requested interface version is
   newer than this AviSynth". Until now the wrapper held no environment and no error, any call through
