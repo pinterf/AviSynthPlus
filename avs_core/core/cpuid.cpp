@@ -627,10 +627,6 @@ public:
     return lCPUExtensionsAvailable;
   }
 
-  void SetCPUFlags(int64_t new_flags) {
-    lCPUExtensionsAvailable = new_flags;
-  }
-
   size_t GetL2CacheSize() {
     return L2CacheSize;
   }

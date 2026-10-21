@@ -11,6 +11,16 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261021 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
+  in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
+  the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.
+  Existed since 3.6.0.
+- SetMaxCPU: a limit only switches features off: "avx512fast" and "avx512base" keep the AVX-512
+  features of the group which are present (after an earlier "avx2" limit, or on a CPU without them,
+  none). ARM64: "neon" (NEON without extensions) and "none" switch off i8mm as well; i8mm stays
+  independent of the dotprod/sve2/sve2.1 limits (no strict ARM level hierarchy), use "i8mm-".
+  The error message lists i8mm and sve2.1.
+  Documented the environment lifetime and the '+' behavior.
 - Fix: String() and everything formatted by env->Sprintf on Linux, macOS, BSD and MinGW builds with
   UCRT: '.' decimal point regardless of the process locale. Windows MSVC builds did so since 2016
   (_l functions); the others used plain vsnprintf, so when a host or plugin switched the locale to a

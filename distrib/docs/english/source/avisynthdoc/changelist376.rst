@@ -67,7 +67,8 @@ Additions, changes
   * Add ArmV8-A cpu feature detection (NEON, DOTPROD, SVE2) on ARM64 Windows/Linux/macOS builds.
     On Windows, only up-to DOTPROD can be detected due to OS limitations.
   * New CPU flags in ``cpuid.h`` and ``avisynth_c.h``: CPUF_ARM_NEON, CPUF_ARM_DOTPROD, CPUF_ARM_SVE2
-  * "SetMaxCPU": add "neon", "dotprod", "sve2" options to enable/disable ARM64 (aarch64) features.
+  * "SetMaxCPU": add "neon", "dotprod", "sve2", "i8mm", "sve2.1" options to enable/disable ARM64
+    (aarch64) features.
 - "ConvertToPlanarRGB(A)": ``bits`` parameter: on-the-fly bit-depth conversions to YUV->RGB conversion.
   See :doc:`ConvertToPlanarRGB <./corefilters/convert>`.
 - ``ConvertToPlanarRGB(A)``: added ``quality`` parameter: forces 32-bit float
@@ -372,6 +373,9 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: ``SetMaxCPU`` limited the CPU flags of the whole process until the AviSynth DLL was unloaded, e.g. a
+  script reload in VirtualDub kept the earlier limit (#440). Now the limit belongs to the script environment.
+  See :ref:`SetMaxCPU <setmaxcpu>`. Existed since 3.6.0.
 - Fix: ``String`` and filter texts formatted by ``env->Sprintf`` on Linux, macOS, BSD and MinGW (UCRT)
   builds: the decimal point is always ``.``, also when a host or plugin switched the process locale to a
   decimal comma one. Windows MSVC builds did so since 2016. The new ``Format`` specifications use the same.

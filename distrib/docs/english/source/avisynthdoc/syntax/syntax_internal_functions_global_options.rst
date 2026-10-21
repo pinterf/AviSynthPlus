@@ -72,7 +72,7 @@ SetMaxCPU
 
     SetMaxCPU([string feature1, string feature2, ...])
 
-A debug control method. Intel processor specific.
+A debug control method. Processor specific (Intel/AMD x86 and ARM64).
 
 Limits the CPU capabilities which AviSynth reports to its core and thus for external plugins and filters
 through :ref:`env->GetCPUFlags <cplusplus_getcpuflags>` or :ref:`env->GetCPUFlagsEx <cplusplus_getcpuflags>`.
@@ -86,13 +86,30 @@ Available values (**Intel** CPU features):
 Available values (**ARM64** (aarch64) CPU features):
 
 *   ``""`` or ``"none"`` for zero SIMD support, no processor flags are reported
-*   ``"neon"``, ``"dotprod"``, ``"sve2"``
+*   ``"neon"``, ``"dotprod"``, ``"sve2"``, ``"i8mm"``, ``"sve2.1"``
+
+    ARM features do not form a strict level hierarchy like the x86 ones: e.g. i8mm may be present or
+    not at different architecture levels. As a limit, ``"dotprod"`` switches off sve2 and sve2.1,
+    ``"sve2"`` switches off sve2.1; i8mm is independent of them, only the ``"neon"`` (NEON without
+    extensions) and ``"none"`` limits switch it off. Use ``"i8mm-"`` or ``"i8mm+"`` to control it.
 
 Parameters are case insensitive. 
 
 * Processor options w/o any modifier will limit the CPU flag report to at most the processor level.
 * When "feature" is ended by '+', relevant processor feature flag will be switched on
-* When "feature" is ended by '-', relevant processor feature flag will be removed. 
+* When "feature" is ended by '-', relevant processor feature flag will be removed.
+* A limit only switches features off, it never adds one: e.g. ``SetMaxCPU("avx512fast")`` on a CPU
+  without the Ice Lake features keeps reporting what the CPU has.
+* '+' adds the flag unconditionally, also when the CPU does not report it (this is how
+  ``"avx512base+"`` enables AVX-512 on older CPUs). Use it only for features the processor really has,
+  or the SIMD code will crash with an illegal instruction.
+
+The limit applies to the current script environment until it is deleted. A new environment (e.g. a
+script reload in an editor or VirtualDub, when it creates a new one) starts from the real CPU flags again
+(since 3.7.6; before, the limit stayed until the AviSynth DLL was unloaded). Each SetMaxCPU call works on
+the flags as they are at that point, already limited by an earlier call: within the same environment a
+limit cannot be lifted by a higher limit (``SetMaxCPU("none")`` then ``SetMaxCPU("avx2")`` keeps plain C),
+only individual features can be added back with '+'. 
 
 Notes:
 * ``"avx2"`` triggers FMA3 flag as well.
@@ -132,7 +149,7 @@ The ``"avx512base"`` and ``"avx512fast"`` cover a group of feature flags. Intern
 ::
 
     SetMaxCPU("SSE2") #reports at most SSE2 processor (even if AVX2 is available)
-    SetMaxCPU("avx,sse4.1-") #limits to avx2 but explicitely removes reporting sse4.1 support
+    SetMaxCPU("avx,sse4.1-") #limits to avx but explicitely removes reporting sse4.1 support
     SetMaxCPU("none,avx2+") #limits to plain C, then switches on AVX2-only support
     SetMaxCPU("avx512base+") # Forcibly switches on AVX512 Base support, for users of old AVX512 CPU.
 

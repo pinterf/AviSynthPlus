@@ -3087,8 +3087,8 @@ void ScriptEnvironment::SetMaxCPU(const char* features)
     else if (streqi(t, "sve2")) cpulevel = CL_SVE2;
     else if (streqi(t, "i8mm")) cpulevel = CL_I8MM;
     else if (streqi(t, "sve2.1")) cpulevel = CL_SVE2_1;
-    // i8mm is just an optional level may not dependent on sve2 and vice versa
-    else ThrowError("SetMaxCPU error: cpu level must be empty or none, neon, dotprod or sve2 (%s)", t);
+    // i8mm is an optional feature, independent of sve2 and of the architecture level
+    else ThrowError("SetMaxCPU error: cpu level must be empty or none, neon, dotprod, sve2, i8mm or sve2.1 (%s)", t);
 #elif defined(X86_32) || defined(X86_64)
     else if (streqi(t, "mmx")) cpulevel = CL_MMX;
     else if (streqi(t, "sse")) cpulevel = CL_SSE;
@@ -3107,37 +3107,36 @@ void ScriptEnvironment::SetMaxCPU(const char* features)
 #endif
 
     if (0 == mode) { // limit
-      // always switch off the more advanced features compared to previous check if limiting
+      // A limit only switches off features, the ones above the given level; it never adds any.
 #if defined(ARM64)
-      if (cpulevel <= CL_SVE2_1) {
-        // already max level, nothing to do
+      // ARM features do not form a strict level hierarchy like x86: i8mm can be present or not
+      // at different architecture levels. So i8mm is independent of the dotprod/sve2 chain, only the
+      // "neon" (no extensions) and "none" limits switch it off; otherwise use "i8mm-".
+      if (cpulevel == CL_I8MM) {
+        // i8mm as a limit: no level meaning, nothing to switch off
       }
-      if (cpulevel <= CL_SVE2) {
-        cpu_flags &= ~CPUF_ARM_SVE2_1;
-      }
-      if (cpulevel <= CL_DOTPROD) {
-        cpu_flags &= ~CPUF_ARM_SVE2;
-      }
-      if (cpulevel <= CL_NEON) {
-        cpu_flags &= ~CPUF_ARM_DOTPROD;
-      }
-      if (cpulevel <= CL_NONE) {
-        cpu_flags &= ~CPUF_ARM_NEON; // switch off the most minimal feature
+      else {
+        if (cpulevel <= CL_SVE2) {
+          cpu_flags &= ~CPUF_ARM_SVE2_1;
+        }
+        if (cpulevel <= CL_DOTPROD) {
+          cpu_flags &= ~CPUF_ARM_SVE2;
+        }
+        if (cpulevel <= CL_NEON) {
+          cpu_flags &= ~(CPUF_ARM_DOTPROD | CPUF_ARM_I8MM);
+        }
+        if (cpulevel <= CL_NONE) {
+          cpu_flags &= ~CPUF_ARM_NEON; // switch off the most minimal feature
+        }
       }
 
 #elif defined(X86_32) || defined(X86_64)
-      // group feature
-      if (cpulevel <= CL_AVX512_FAST) {
-        // disable all avx512, re-enable the whole mask up to "fast"
-        cpu_flags &= ~CPUF_AVX512_MASK;
-        cpu_flags |= CPUF_AVX512_FAST_ALL;
-      }
-      // group feature
-      if (cpulevel <= CL_AVX512_BASE) {
-        // disable all avx512, re-enable the whole mask up to "base"
-        cpu_flags &= ~CPUF_AVX512_MASK;
-        cpu_flags |= CPUF_AVX512_BASE_ALL;
-      }
+      // group features: keep only the avx512 features of the group which are present
+      // (setting the group bits would report features the CPU or an earlier limit does not have)
+      if (cpulevel <= CL_AVX512_FAST)
+        cpu_flags &= ~(CPUF_AVX512_MASK & ~CPUF_AVX512_FAST_ALL);
+      if (cpulevel <= CL_AVX512_BASE)
+        cpu_flags &= ~(CPUF_AVX512_MASK & ~CPUF_AVX512_BASE_ALL);
       // individual features
       if (cpulevel <= CL_AVX2) // just disable all avx512
         cpu_flags &= ~CPUF_AVX512_MASK;
