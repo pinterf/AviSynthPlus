@@ -988,7 +988,23 @@ static void get_convert_uintN_to_uintN_ordered_dither_functions(int source_bitde
 #elif defined(NEON_INTRINSICS)
 #undef convert_uintN_to_uintN_ordered_dither_functions
 // dither has no "conv_function_a"
-#define convert_uintN_to_uintN_ordered_dither_functions(uint_X_t, uint_X_dest_t)       if (fulls && fulld) {         conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, true, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, true, true>;         conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, true, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, true, true>;       }       else if (fulls && !fulld) {         conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, true, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, true, false>;         conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, true, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, true, false>;       }       else if (!fulls && fulld) {         conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, false, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, false, true>;         conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, false, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, false, true>;       }       else if (!fulls && !fulld) {         conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, false, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, false, false>;         conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, false, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, false, false>;       }
+#define convert_uintN_to_uintN_ordered_dither_functions(uint_X_t, uint_X_dest_t) \
+      if (fulls && fulld) { \
+        conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, true, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, true, true>; \
+        conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, true, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, true, true>; \
+      } \
+      else if (fulls && !fulld) { \
+        conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, true, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, true, false>; \
+        conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, true, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, true, false>; \
+      } \
+      else if (!fulls && fulld) { \
+        conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, false, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, false, true>; \
+        conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, false, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, false, true>; \
+      } \
+      else if (!fulls && !fulld) { \
+        conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, false, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, false, false>; \
+        conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, false, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, false, false>; \
+      }
 #endif
   // all variations of fulls fulld byte/word source/target
   switch (target_bitdepth)
