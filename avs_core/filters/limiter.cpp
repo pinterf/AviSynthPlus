@@ -36,6 +36,8 @@
 #include "limiter.h"
 #ifdef INTEL_INTRINSICS
 #include "intel/limiter_sse.h"
+#elif defined(NEON_INTRINSICS)
+#include "aarch64/limiter_neon.h"
 #endif
 #include <avs/alignment.h>
 
@@ -823,6 +825,30 @@ PVideoFrame __stdcall Limiter::GetFrame(int n, IScriptEnvironment* env) {
 
         return frame;
       }
+    }
+#elif defined(NEON_INTRINSICS)
+    if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+      // any width: the NEON functions do the rest of the row per pixel
+      if (pixelsize == 1)
+        limit_plane_neon<uint8_t>(srcp, pitch, min_luma, max_luma, width, height);
+      else if (pixelsize == 2)
+        limit_plane_neon<uint16_t>(srcp, pitch, min_luma, max_luma, width, height);
+      else
+        limit_plane_f_neon(srcp, pitch, min_luma_f, max_luma_f, width, height);
+      const int pitchUV = frame->GetPitch(PLANAR_U);
+      if (!pitchUV)
+        return frame;
+      const int widthUV = frame->GetRowSize(PLANAR_U) / pixelsize;
+      const int heightUV = frame->GetHeight(PLANAR_U);
+      for (BYTE* srcpUV : { frame->GetWritePtr(PLANAR_U), frame->GetWritePtr(PLANAR_V) }) {
+        if (pixelsize == 1)
+          limit_plane_neon<uint8_t>(srcpUV, pitchUV, min_chroma, max_chroma, widthUV, heightUV);
+        else if (pixelsize == 2)
+          limit_plane_neon<uint16_t>(srcpUV, pitchUV, min_chroma, max_chroma, widthUV, heightUV);
+        else
+          limit_plane_f_neon(srcpUV, pitchUV, min_chroma_f, max_chroma_f, widthUV, heightUV);
+      }
+      return frame;
     }
 #endif
     // C

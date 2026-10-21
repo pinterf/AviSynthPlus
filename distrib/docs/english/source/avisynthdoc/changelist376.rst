@@ -670,6 +670,7 @@ Optimizations
 - add NEON optimizations for ``Blur``/``Sharpen`` horizontal pass, planar 8-16 bit and 32 bit float
 - add NEON optimizations for ``TemporalSoften``, 8-16 bit and 32 bit float
 - add NEON optimizations for ``ConvertBits`` ordered dither (``dither=0``), 8-16 bit to 8-16 bit
+- add NEON optimizations for ``Limiter``, planar 8-16 bit and 32 bit float
 - (filter graph) avoid MTGuard and CacheGuard creation if a filter returns one of its clip parameter unaltered.
 - Add some avx2 stuff to Invert (no really gain, filter is too simple) and some Layer subfilter.
 - "Layer", "Overlay", "Merge": unify three separate masked-merge kernel families into shared
