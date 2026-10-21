@@ -198,6 +198,8 @@ ConvertRGBToYUV444::ConvertRGBToYUV444(PClip src, const char *matrix_name, bool 
       const int dither_mode = -1;
 #ifdef INTEL_INTRINSICS
       get_convert_any_bits_functions(dither_mode, source_bit_depth, target_bit_depth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
+#elif defined(NEON_INTRINSICS)
+      get_convert_any_bits_functions(dither_mode, source_bit_depth, target_bit_depth, fulls, fulld, !!(env->GetCPUFlags() & CPUF_ARM_NEON), conv_function, conv_function_chroma, conv_function_a);
 #else
       get_convert_any_bits_functions(dither_mode, source_bit_depth, target_bit_depth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
 #endif
@@ -511,6 +513,8 @@ ConvertYUV444ToRGB::ConvertYUV444ToRGB(PClip src, const char *matrix_name, int _
     const int dither_mode = -1;
 #ifdef INTEL_INTRINSICS
     get_convert_any_bits_functions(dither_mode, source_bit_depth, target_bit_depth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
+#elif defined(NEON_INTRINSICS)
+    get_convert_any_bits_functions(dither_mode, source_bit_depth, target_bit_depth, fulls, fulld, !!(env->GetCPUFlags() & CPUF_ARM_NEON), conv_function, conv_function_chroma, conv_function_a);
 #else
     get_convert_any_bits_functions(dither_mode, source_bit_depth, target_bit_depth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
 #endif

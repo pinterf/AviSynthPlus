@@ -23,6 +23,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   reloads), and the last full block is SIMD at any width, only width % vector size remains per pixel.
 - Optimization: aarch64 NEON TemporalSoften, planar and packed RGB32/64, 8, 10-16 bit and 32 bit float (no float
   SIMD on x86). Bit-identical to C. The scene change SAD was already vectorized by GCC -O3.
+- Optimization: aarch64 NEON ConvertBits ordered dither (dither=0), 8-16 bit to 8-16 bit, any dither_bits,
+  fulls/fulld range conversion, any width. Bit-identical to C.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.

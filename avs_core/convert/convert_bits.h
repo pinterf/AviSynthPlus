@@ -111,6 +111,8 @@ private:
 void get_convert_any_bits_functions(int dither_mode, int source_bitdepth, int target_bitdepth, bool fulls, bool fulld,
 #ifdef INTEL_INTRINSICS
   bool sse2, bool sse4, bool avx2,
+#elif defined(NEON_INTRINSICS)
+  bool neon,
 #endif
   BitDepthConvFuncPtr& conv_function, BitDepthConvFuncPtr& conv_function_chroma, BitDepthConvFuncPtr& conv_function_a);
 

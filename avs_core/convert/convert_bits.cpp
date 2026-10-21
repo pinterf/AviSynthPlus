@@ -36,6 +36,8 @@
 #ifdef INTEL_INTRINSICS
 #include "intel/convert_bits_sse.h"
 #include "intel/convert_bits_avx2.h"
+#elif defined(NEON_INTRINSICS)
+#include "aarch64/convert_bits_neon.h"
 #endif
 #include "convert_helper.h"
 
@@ -937,6 +939,8 @@ static void get_convert_uintN_to_float_functions(int bits_per_pixel, bool fulls,
 static void get_convert_uintN_to_uintN_ordered_dither_functions(int source_bitdepth, int target_bitdepth, bool fulls, bool fulld,
 #ifdef INTEL_INTRINSICS
   bool sse2, bool sse4, bool avx2,
+#elif defined(NEON_INTRINSICS)
+  bool neon,
 #endif
   BitDepthConvFuncPtr& conv_function, BitDepthConvFuncPtr& conv_function_chroma)
 {
@@ -981,6 +985,10 @@ static void get_convert_uintN_to_uintN_ordered_dither_functions(int source_bitde
        conv_function = avx2 ? convert_ordered_dither_uint_avx2<uint_X_t, uint_X_dest_t, false, false, false> : sse4 ? convert_ordered_dither_uint_sse41<uint_X_t, uint_X_dest_t, false, false, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, false, false>; \
        conv_function_chroma = avx2 ? convert_ordered_dither_uint_avx2<uint_X_t, uint_X_dest_t, true, false, false> : sse4 ? convert_ordered_dither_uint_sse41<uint_X_t, uint_X_dest_t, true, false, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, false, false>; \
       }
+#elif defined(NEON_INTRINSICS)
+#undef convert_uintN_to_uintN_ordered_dither_functions
+// dither has no "conv_function_a"
+#define convert_uintN_to_uintN_ordered_dither_functions(uint_X_t, uint_X_dest_t)       if (fulls && fulld) {         conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, true, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, true, true>;         conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, true, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, true, true>;       }       else if (fulls && !fulld) {         conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, true, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, true, false>;         conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, true, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, true, false>;       }       else if (!fulls && fulld) {         conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, false, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, false, true>;         conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, false, true> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, false, true>;       }       else if (!fulls && !fulld) {         conv_function = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, false, false, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, false, false, false>;         conv_function_chroma = neon ? convert_ordered_dither_uint_neon<uint_X_t, uint_X_dest_t, true, false, false> : convert_ordered_dither_uint_c<uint_X_t, uint_X_dest_t, true, false, false>;       }
 #endif
   // all variations of fulls fulld byte/word source/target
   switch (target_bitdepth)
@@ -1126,6 +1134,8 @@ static void get_convert_uintN_to_uintN_functions(int source_bitdepth, int target
 void get_convert_any_bits_functions(int dither_mode, int source_bitdepth, int target_bitdepth, bool fulls, bool fulld,
 #ifdef INTEL_INTRINSICS
   bool sse2, bool sse4, bool avx2,
+#elif defined(NEON_INTRINSICS)
+  bool neon,
 #endif
   BitDepthConvFuncPtr& conv_function, BitDepthConvFuncPtr& conv_function_chroma, BitDepthConvFuncPtr& conv_function_a)
 {
@@ -1144,6 +1154,8 @@ void get_convert_any_bits_functions(int dither_mode, int source_bitdepth, int ta
         // ordered dither
 #ifdef INTEL_INTRINSICS
         get_convert_uintN_to_uintN_ordered_dither_functions(source_bitdepth, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma);
+#elif defined(NEON_INTRINSICS)
+        get_convert_uintN_to_uintN_ordered_dither_functions(source_bitdepth, target_bitdepth, fulls, fulld, neon, conv_function, conv_function_chroma);
 #else
         get_convert_uintN_to_uintN_ordered_dither_functions(source_bitdepth, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma);
 #endif
@@ -1198,6 +1210,8 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
   const bool sse2 = !!(env->GetCPUFlags() & CPUF_SSE2);
   const bool sse4 = !!(env->GetCPUFlags() & CPUF_SSE4_1);
   const bool avx2 = !!(env->GetCPUFlags() & CPUF_AVX2);
+#elif defined(NEON_INTRINSICS)
+  const bool neon = !!(env->GetCPUFlags() & CPUF_ARM_NEON);
 #endif
 
   if (!dynamic_range) {
@@ -1236,6 +1250,8 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
   if (!dynamic_range) {
 #ifdef INTEL_INTRINSICS
     get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
+#elif defined(NEON_INTRINSICS)
+    get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, neon, conv_function, conv_function_chroma, conv_function_a);
 #else
     get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
 #endif
@@ -1246,6 +1262,9 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
       for (int fd = 0; fd < 2; ++fd) {
 #ifdef INTEL_INTRINSICS
         get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fs != 0, fd != 0, sse2, sse4, avx2,
+          conv_function_table[fs][fd], conv_function_chroma_table[fs][fd], conv_function_a_table[fs][fd]);
+#elif defined(NEON_INTRINSICS)
+        get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fs != 0, fd != 0, neon,
           conv_function_table[fs][fd], conv_function_chroma_table[fs][fd], conv_function_a_table[fs][fd]);
 #else
         get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fs != 0, fd != 0,
