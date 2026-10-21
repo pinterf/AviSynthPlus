@@ -700,6 +700,8 @@ Optimizations
 
 Documentation
 ~~~~~~~~~~~~~
+- :ref:`Global lock <cplusplus_acquiregloballock>`: warning on the local mutex fallback, destructor
+  examples (C++ with a saved ``env``, C ``free_filter`` with ``fi->env``), example fixes.
 - Build on Raspbian, Raspberry Pi 5 and llvm/gcc :doc:`This page <./contributing/posix>` 
   describes linux builds process.
 - Add to :ref:`SIMD in ARM64 (aarch64) section <aarch64_simd_tiers>`

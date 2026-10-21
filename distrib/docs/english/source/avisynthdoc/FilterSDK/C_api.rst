@@ -1156,6 +1156,10 @@ can be set. Yes, ``avs_new_c_filter`` passes a pointer to pointer of ``AVS_Filte
 ``free_filter`` is a callback, practically serves as the desctructor, like the desctructor of C++ IClip descendant).
 Resources allocated at filter creation can be released in there.
 
+Use ``fi->env`` in the callbacks, also in ``free_filter``: it lives as long as the filter. The ``env`` received by
+the create function (and by ``avisynth_c_plugin_init``) is temporary, valid only during that call: do not store it
+for later use. Example with the global lock: :ref:`cplusplus_acquiregloballock`.
+
 Errors during APPLYFUNC/APPYFUNCR must be signed with a filled ``const char* error`` field in ``AVS_FilterInfo``
 
 C++ equivalent: no. It's much different. C++ works with ``IClip`` descendants, like ``GenericVideoFilter`` or

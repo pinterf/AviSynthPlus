@@ -2058,6 +2058,19 @@ For FFTW, the recommended name is "fftw".
 
 For safe use, set and check ``has_at_least_v12``, see interface version check methods above.
 
+.. warning::
+
+    **A local mutex is no replacement for the global lock.**
+
+    - Pre-V12 fallback: a ``static std::mutex`` exists once per plugin DLL. It keeps the threads of
+      that plugin apart, but two different FFTW plugins (e.g. FFT3DFilter and DFTTest) can still
+      run the FFTW planner at the same time. On AviSynth V12 and above use the global lock only.
+    - Do not fall back to the local mutex when ``AcquireGlobalLock`` fails on V12 and above. It fails
+      only on invalid input (e.g. a NULL lock name): throw an error (``ThrowError``) instead. A silent
+      fallback looks protected, but the cross-plugin race remains, showing up as rare crashes inside FFTW.
+    - Exception: in a destructor do not throw (``ThrowError`` there ends in ``std::terminate``),
+      see the destructor example below.
+
 **Example#1 RAII for C++ interface plugins**
 
 C++ plugins, which operate with the IScriptEnvironment* interface, should use a 
@@ -2080,7 +2093,8 @@ as C++ plugins will have access to this pointer.
     public:
       // env_ptr should be the IScriptEnvironment* received by the plugin's function.
       // lock_name is the name of the lock (e.g., "fftw").
-      // use_v12_if_available: If true, tries V12. If false or V12 not available, falls back to legacy mutex.
+      // use_v12_global_lock: true on AviSynth V12 and above (has_at_least_v12), uses the global lock.
+      // false: older AviSynth, falls back to the plugin-local legacy mutex.
       GlobalLockGuard(IScriptEnvironment* env_ptr, const char* lock_name, bool use_v12_global_lock)
         : m_env_ptr(env_ptr), m_lockName(lock_name), m_acquired(false), m_is_legacy_lock(false)
       {
@@ -2168,8 +2182,58 @@ as C++ plugins will have access to this pointer.
     } // `fftw_lock` goes out of scope here, automatically releasing the lock.
 
 
-Note that when the lock is used in plan destroying, in a class destructror, we don't have
-``env`` as a parameter, so we must use an an ``env_saved`` pointer stored earlier.
+**Example for lock in a C++ filter destructor**
+
+Destroying an FFTW plan needs the lock as well, but a destructor has no ``env`` parameter.
+Save the ``env`` received by the constructor, as FFT3DFilter does.
+
+Why the saved pointer is valid in the destructor: the ``env`` a filter constructor receives (when
+the filter is created by the script, the usual case) lives until the end of the ScriptEnvironment's
+destruction. AviSynth releases the clips (that runs the
+filter destructors) before it deletes this environment, also when the clips are only released at
+the environment's deletion. The global lock is usable there as well. The host must release its
+clips before deleting the environment; using a clip after that is a host bug anyway.
+
+A destructor must not throw: ``ThrowError``, and so the ``GlobalLockGuard`` above, ends in
+``std::terminate`` there. Lock and unlock directly instead:
+
+::
+
+    class MyFFTFilter : public GenericVideoFilter
+    {
+      IScriptEnvironment* env_saved; // for the destructor (global lock)
+      bool has_at_least_v12;
+      fftwf_plan plan;
+      ...
+    public:
+      MyFFTFilter(PClip _child, ..., IScriptEnvironment* env)
+        : GenericVideoFilter(_child), env_saved(env)
+      {
+        has_at_least_v12 = true;
+        try { env->CheckVersion(12); }
+        catch (const AvisynthError&) { has_at_least_v12 = false; }
+        {
+          GlobalLockGuard fftw_lock(env, "fftw", has_at_least_v12); // constructor: may throw
+          plan = fftwf_plan_dft_r2c_2d(...);
+        }
+      }
+
+      ~MyFFTFilter()
+      {
+        // No env parameter: env_saved. No exceptions: no GlobalLockGuard, no ThrowError.
+        if (has_at_least_v12) {
+          // fails only on a NULL name (cannot happen with a literal): then destroy unprotected
+          const bool locked = env_saved->AcquireGlobalLock("fftw");
+          fftwf_destroy_plan(plan);
+          if (locked)
+            env_saved->ReleaseGlobalLock("fftw");
+        }
+        else {
+          std::lock_guard<std::mutex> lock(fftw_legacy_mutex); // pre-V12 fallback
+          fftwf_destroy_plan(plan);
+        }
+      }
+    };
 
 **Example#2 RAII for C++ plugins using C-Compatible interface**
 
@@ -2218,7 +2282,7 @@ the ``avs_`` C functions for acquiring and releasing the lock.
 
 
 
-**Example for lock, C++ interface, with above RAII**
+**Example for lock, C interface, with above RAII**
 ::
 
     // In a C-compatible plugin's source file (e.g., myfilter.cpp that uses C++ features)
@@ -2236,8 +2300,11 @@ the ``avs_`` C functions for acquiring and releasing the lock.
 
             // avs_acquire_global_lock blocks until the lock is available.
             // It fails only on invalid input => we return an error AVS_Value
-            if (!fftw_lock.is_acquired())
-                return avs_new_value_error("MyFilter: failed to acquire global lock 'fftw'");
+            if (!fftw_lock.is_acquired()) {
+                AVS_Value err;
+                avs_set_to_error(&err, "MyFilter: failed to acquire global lock 'fftw'");
+                return err;
+            }
 
             // --- CRITICAL SECTION START ---
             // Code here is protected by the global "fftw" lock.
@@ -2247,6 +2314,30 @@ the ``avs_`` C functions for acquiring and releasing the lock.
         } // `fftw_lock` goes out of scope here, automatically releasing the lock.
 
         // ... rest of the plugin logic ...
+    }
+
+**Example for lock in free_filter (C interface filters)**
+
+A filter created through the C interface (``avs_new_c_filter``) has no ``IClip`` class of its own,
+also when the plugin is written in C++: the ``free_filter`` callback serves as its destructor.
+Use ``fi->env`` there: it lives as long as the filter. Do not store the ``env`` received by the
+create function (``AVS_ApplyFunc``) or by ``avisynth_c_plugin_init`` for later use: those are
+temporary, valid only during that call.
+
+A C++ plugin can use RAII in the callback, ``GlobalLockGuardC fftw_lock(fi->env, "fftw");`` (it
+does not throw). In pure C the lock is acquired and released manually:
+
+::
+
+    static void AVSC_CC free_my_filter(AVS_FilterInfo* fi)
+    {
+        MyFilterData* data = (MyFilterData*)fi->user_data;
+        // fi->env, not an env saved in the create function
+        int locked = avs_acquire_global_lock(fi->env, "fftw");
+        fftwf_destroy_plan(data->plan);
+        if (locked)
+            avs_release_global_lock(fi->env, "fftw");
+        free(data);
     }
 
 
@@ -2264,7 +2355,9 @@ and ``avs_release_global_lock``, ensuring that every acquisition has a correspon
     lock_acquired = avs_acquire_global_lock(env, "fftw");
     if (!lock_acquired) {
         // Handle error: Return an error AVS_Value.
-        return avs_new_error(clip, "MyCFilter: Failed to acquire global FFTW planner lock!");
+        AVS_Value err;
+        avs_set_to_error(&err, "MyCFilter: Failed to acquire global FFTW planner lock!");
+        return err;
     }
 
     // --- CRITICAL SECTION START ---
