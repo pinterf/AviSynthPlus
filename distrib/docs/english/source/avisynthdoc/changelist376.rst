@@ -664,6 +664,8 @@ Optimizations
 - add NEON optimizations for ARM64 (aarch64) for TurnLeft/TurnRight/Turn180.
   (First aarch64 code in Avisynth)
 - add NEON optimizatons for Overlay blend
+- add NEON optimizations for packed RGB24 <-> RGB32 and RGB48 <-> RGB64 conversion
+  (``ConvertToRGB32``, ``ConvertToRGB24`` and the 16 bit pairs)
 - (filter graph) avoid MTGuard and CacheGuard creation if a filter returns one of its clip parameter unaltered.
 - Add some avx2 stuff to Invert (no really gain, filter is too simple) and some Layer subfilter.
 - "Layer", "Overlay", "Merge": unify three separate masked-merge kernel families into shared

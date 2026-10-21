@@ -40,6 +40,8 @@
 #ifdef INTEL_INTRINSICS_AVX512
 #include "intel/convert_rgb_avx512.h"
 #endif
+#elif defined(NEON_INTRINSICS)
+#include "aarch64/convert_rgb_neon.h"
 #endif
 #include <avs/alignment.h>
 
@@ -91,6 +93,10 @@ PVideoFrame __stdcall RGBtoRGBA::GetFrame(int n, IScriptEnvironment* env)
 #ifdef INTEL_INTRINSICS
   if (env->GetCPUFlags() & CPUF_SSSE3)
     fn = (pixelsize == 1) ? convert_rgb24_to_rgb32_ssse3 : convert_rgb48_to_rgb64_ssse3;
+  else
+#elif defined(NEON_INTRINSICS)
+  if (env->GetCPUFlags() & CPUF_ARM_NEON)
+    fn = (pixelsize == 1) ? convert_rgb24_to_rgb32_neon : convert_rgb48_to_rgb64_neon;
   else
 #endif
     fn = (pixelsize == 1) ? convert_rgb24_to_rgb32_c : convert_rgb48_to_rgb64_c;
@@ -159,6 +165,10 @@ PVideoFrame __stdcall RGBAtoRGB::GetFrame(int n, IScriptEnvironment* env)
     fn = (pixelsize == 1) ? convert_rgb32_to_rgb24_ssse3 : convert_rgb64_to_rgb48_ssse3;
   else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
     fn = convert_rgb32_to_rgb24_sse2;
+  else
+#elif defined(NEON_INTRINSICS)
+  if (env->GetCPUFlags() & CPUF_ARM_NEON)
+    fn = (pixelsize == 1) ? convert_rgb32_to_rgb24_neon : convert_rgb64_to_rgb48_neon;
   else
 #endif
     fn = (pixelsize == 1) ? convert_rgb32_to_rgb24_c : convert_rgb64_to_rgb48_c;

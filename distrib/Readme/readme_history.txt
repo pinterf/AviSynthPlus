@@ -11,6 +11,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261021 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Optimization: aarch64 NEON packed RGB24 <-> RGB32 and RGB48 <-> RGB64 conversion (vld3/vst4 and
+  vld4/vst3 de-interleaving), the C versions stayed scalar with GCC -O3. Bit-identical to C.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.
