@@ -243,8 +243,9 @@ How it works (3.7.4+, V11+): a non-C++ plugin is probed for ``avisynth_c_plugin_
 (Win32: also ``_avisynth_c_plugin_init2@4``). If exported, the plugin is 64 bit aware.
 Otherwise ``avisynth_c_plugin_init`` is called and the plugin is marked pre-V11.
 
-- Both init functions get the same, full environment. The mark is stored with every function the
-  plugin registers in its init (``avs_add_function``).
+- ``avisynth_c_plugin_init2`` gets the full environment, ``avisynth_c_plugin_init`` the camouflaged
+  pre-V11 one (before 3.7.6 the full one as well). The mark is stored with every function the plugin
+  registers in its init (``avs_add_function``).
 - When such a function is called:
 
   - 64 bit aware plugin: the full environment, double and long values are passed as they are.

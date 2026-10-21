@@ -11,6 +11,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261021 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: C plugins without avisynth_c_plugin_init2 (pre-V11): avs_invoke called inside
+  avisynth_c_plugin_init returned unconverted double and long (int64) values, e.g. Eval("Pi()") gave
+  'd' 3.1415926535897931, now 'f' 3.1415927410125732. The init gets the same pre-V11 environment as
+  the plugin's functions. Existed since 3.7.4.
 - Fix: C plugins without avisynth_c_plugin_init2 (pre-V11) got unconverted double and long (int64)
   values in three cases; an old avisynth_c.h does not know these types (its inline avs_is_float sees
   'i' and 'f' only). Now converted to float and 32 bit int, like the top-level filter arguments were:

@@ -1348,7 +1348,12 @@ bool PluginManager::TryAsAvsPreV11C(PluginFile& plugin, AVSValue* result)
     plugin.isPluginPreV11C = true; // no array deep copy/free when NEW_AVSVALUE
     {
       AVS_ScriptEnvironment e;
-      e.env = Env;
+      // Only for a plugin with avisynth_c_plugin_init and no avisynth_c_plugin_init2 (TryAsAvsC
+      // found no init2, it gets the full Env there). Pass the pre-V11 variant (like its functions
+      // get it later): avs_invoke results inside init are converted to 32 bit as well, e.g. Pi()
+      // is float, not double.
+      // avs_add_function goes through AddFunctionPreV11C, marks the function the same way.
+      e.env = reinterpret_cast<IScriptEnvironment*>(Env->GetEnvPreV11C());
       AVS_ScriptEnvironment* pe;
       pe = &e;
       const char* s = NULL;

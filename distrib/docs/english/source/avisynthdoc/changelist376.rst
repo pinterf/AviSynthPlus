@@ -370,6 +370,8 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: C plugins without ``avisynth_c_plugin_init2`` (pre-V11): ``avs_invoke`` inside
+  ``avisynth_c_plugin_init`` returned unconverted double and 64 bit int values. Existed since 3.7.4.
 - Fix: C plugins without ``avisynth_c_plugin_init2`` (pre-V11) got unconverted double and 64 bit int
   values when their function was called at runtime (e.g. from ScriptClip), in array arguments, and in
   array results of ``avs_invoke``; such plugins cannot read them. Now converted to float and 32 bit int
