@@ -99,6 +99,11 @@ std::string GetFullPathNameWrapUtf8(const std::string& f);
 std::string double_to_string(double d);
 std::string float_to_string(float f);
 
+// Decimal number: digits [. digits] [e|E [+|-] digits], correctly rounded, '.' as the decimal point
+// whatever the process locale. No whitespace, sign, hex, inf, nan (script parser).
+// Returns the end of the number; p itself if there were no digits (value 0).
+const char* scan_decimal(const char* p, double* value);
+
 size_t str_utf8_size(const std::string& s);
 std::string U32_to_utf8(uint32_t cp); // empty for surrogates and above 10FFFF
 std::string charToUtf8(const char* text, bool utf8);

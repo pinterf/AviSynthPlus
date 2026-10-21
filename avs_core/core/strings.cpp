@@ -317,6 +317,51 @@ std::string float_to_string(float f)
   return shortest_to_string(f, FLT_DIG, 9, true);
 }
 
+// The digits are passed to strtod as "<digits>e<exponent - fraction_digits>", without a decimal point,
+// so the result is correctly rounded and does not depend on the locale.
+// The former d = d * 10 + digit, then d / 10^n method of the script parser was exact only up to ~15 digits:
+// above 2^53 each step rounds, and the final division rounds again.
+const char* scan_decimal(const char* p, double* value)
+{
+  const char* const start = p;
+  std::string digits;
+  int fraction_digits = 0;
+  while (isAsciiDigit(*p))
+    digits += *p++;
+  if (*p == '.') {
+    p++;
+    while (isAsciiDigit(*p)) {
+      digits += *p++;
+      fraction_digits++;
+    }
+  }
+  if (digits.empty()) { // no number (a lone '.' is not one)
+    *value = 0.0;
+    return start;
+  }
+
+  // optional exponent: e or E, optional sign, at least one digit
+  int exponent = 0;
+  if ((*p == 'e' || *p == 'E') &&
+    (isAsciiDigit(p[1]) || ((p[1] == '+' || p[1] == '-') && isAsciiDigit(p[2])))) {
+    p++;
+    const bool negative_exponent = *p == '-';
+    if (*p == '+' || *p == '-')
+      p++;
+    while (isAsciiDigit(*p)) {
+      if (exponent < 100000) // saturate, the result is 0 or inf way before that
+        exponent = exponent * 10 + (*p - '0');
+      p++;
+    }
+    if (negative_exponent)
+      exponent = -exponent;
+  }
+
+  const std::string number = digits + "e" + std::to_string(exponent - fraction_digits);
+  *value = std::strtod(number.c_str(), nullptr);
+  return p;
+}
+
 std::string GetFullPathNameWrapUtf8(const std::string& f)
 {
 #ifdef AVS_WINDOWS

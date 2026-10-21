@@ -376,63 +376,27 @@ void Tokenizer::GetNumber()
   //      start by assuming long and switch to double if necessary
   constexpr int64_t INT64_MAX_DIV_10 = INT64_MAX / 10;
   constexpr int64_t INT64_MAX_MOD_10 = INT64_MAX % 10;
+  const char* const start = pc;
   type = 'l';
   longlong = 0;
-  // For floating point: the digits without the decimal point, and the number of fractional digits.
-  // Parsed as "<digits>e<exponent - fraction_digits>" by strtod: correctly rounded, and independent of the
-  // locale decimal point, which the host application may have changed.
-  // The former d = d * 10 + digit, then d / 10^n method was exact only up to ~15 digits: above 2^53
-  // each step rounds, and the final division rounds again, so long constants were off by a few ulps
-  // (e.g. 3.14159265358979324 gave 3.1415926535897927 instead of 3.1415926535897931).
-  std::string digits;
-  int fraction_digits = 0;
-
-  do {
-    if (*pc == '.') {
-      type = 'f';
-      ++pc;
-      while (isAsciiDigit(*pc)) {
-        digits += *pc;
-        fraction_digits++;
-        ++pc;
-      }
-      break;
-    }
-    else {
-      if (type != 'f') {
-        // Check for potential overflow before performing the operation, but go on anyway
-        if (longlong > INT64_MAX_DIV_10 || (longlong == INT64_MAX_DIV_10 && (*pc - '0') > INT64_MAX_MOD_10))
-          type = 'f';
-        else
-          longlong = longlong * 10 + (*pc - '0');
-      }
-      digits += *pc; // gather always
-    }
+  bool overflow = false;
+  while (isAsciiDigit(*pc)) {
+    // Check for potential overflow before performing the operation, but go on anyway
+    if (overflow || longlong > INT64_MAX_DIV_10 || (longlong == INT64_MAX_DIV_10 && (*pc - '0') > INT64_MAX_MOD_10))
+      overflow = true;
+    else
+      longlong = longlong * 10 + (*pc - '0');
     ++pc;
-  } while (isAsciiDigit(*pc) || *pc == '.');
-
-  // optional exponent (since 3.7.6): e or E, optional sign, at least one digit;
-  // the number is then floating point
-  int exponent = 0;
-  if ((*pc == 'e' || *pc == 'E') &&
-    (isAsciiDigit(pc[1]) || ((pc[1] == '+' || pc[1] == '-') && isAsciiDigit(pc[2])))) {
-    type = 'f';
-    ++pc;
-    const bool negative = *pc == '-';
-    if (*pc == '+' || *pc == '-')
-      ++pc;
-    while (isAsciiDigit(*pc)) {
-      if (exponent < 100000) // saturate, the result is 0 or inf way before that
-        exponent = exponent * 10 + (*pc - '0');
-      ++pc;
-    }
-    if (negative)
-      exponent = -exponent;
   }
 
-  if (type == 'f') {
-    const std::string number = digits + "e" + std::to_string(exponent - fraction_digits);
-    const double d = std::strtod(number.c_str(), nullptr);
+  // Floating point: a decimal point, an exponent (since 3.7.6: e or E, optional sign, at least one
+  // digit), or an integer too big for 64 bits. scan_decimal reads the whole number again, correctly
+  // rounded and independent of the locale decimal point, which the host application may have changed.
+  double d;
+  const char* const end = scan_decimal(start, &d);
+  if (end != pc || overflow) {
+    type = 'f';
+    pc = end;
     if (d > DBL_MAX) // inf
       env->ThrowError("Tokenizer: Number is to big.");
     double_pt = d; // v11: type name remained 'f' but content is double
