@@ -286,9 +286,12 @@ static std::string shortest_to_string(double d, int min_digits, int max_digits, 
       s += '.';
       s += digits.substr(1);
     }
-    char e[8];
-    snprintf(e, sizeof(e), "e%c%02d", exponent < 0 ? '-' : '+', std::abs(exponent));
-    s += e;
+    // "e", sign, at least two digits (like printf %e)
+    const int abs_exponent = std::abs(exponent);
+    s += exponent < 0 ? "e-" : "e+";
+    if (abs_exponent < 10)
+      s += '0';
+    s += std::to_string(abs_exponent);
   }
   else if (exponent < 0) {
     // 0.0001, 0.015
