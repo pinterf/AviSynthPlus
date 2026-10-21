@@ -21,7 +21,11 @@
 
 // C template dispatcher: get_layer_yuv_add_functions / get_layer_planarrgb_add_functions.
 // static functions — this TU's copy gets -march=armv8-a auto-vectorization (GCC/Clang).
+// Integer mask rows: NEON rowprep variant (like LAYER_ROWPREP_FN at SSE4.1/AVX2).
+#include "masked_rowprep_neon.h"
+#define LAYER_ROWPREP_FN       prepare_effective_mask_for_row_neon
 #include "../../layer.hpp"
+#undef LAYER_ROWPREP_FN
 
 // ---------------------------------------------------------------------------
 // Planar RGB add — NEON per-plane wrappers (mirrors SSE4.1/AVX2 counterparts).

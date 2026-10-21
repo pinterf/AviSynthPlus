@@ -35,6 +35,7 @@
 #include <avisynth.h>
 #include "../blend_common.h"
 #include "blend_common_neon.h"
+#include "masked_rowprep_neon.h"
 #include <arm_neon.h>
 #include <cstdint>
 #include <type_traits>
@@ -212,7 +213,7 @@ static void masked_merge_neon_impl(
     const int vec_width = (width / 8) * 8;
     for (int y = 0; y < height; y++) {
       // Pre-compute effective mask row (no-op for MASK444: returns original pointer)
-      const pixel_t* eff_maskp = prepare_effective_mask_for_row<maskMode, pixel_t>(
+      const pixel_t* eff_maskp = prepare_effective_mask_for_row_neon<maskMode, pixel_t>(
         maskp, mask_pitch_px, width, eff_mask_buf);
 
       const uint8_t* eff_mask = reinterpret_cast<const uint8_t*>(eff_maskp);
@@ -292,7 +293,7 @@ static void masked_merge_neon_impl(
 
     const int vec_width = (width / 4) * 4;
     for (int y = 0; y < height; y++) {
-      const pixel_t* eff_maskp = prepare_effective_mask_for_row<maskMode, pixel_t>(
+      const pixel_t* eff_maskp = prepare_effective_mask_for_row_neon<maskMode, pixel_t>(
         maskp, mask_pitch_px, width, eff_mask_buf);
 
       const uint16_t* eff_mask = reinterpret_cast<const uint16_t*>(eff_maskp);
@@ -587,9 +588,9 @@ static void fill_mask420_float_neon(
   for (; x <= width - 4; x += 4) {
     float32x4x2_t v0 = vld2q_f32(row0 + x * 2);
     float32x4x2_t v1 = vld2q_f32(row1 + x * 2);
-    float32x4_t even = vaddq_f32(v0.val[0], v1.val[0]);
-    float32x4_t odd  = vaddq_f32(v0.val[1], v1.val[1]);
-    float32x4_t avg  = vmulq_n_f32(vaddq_f32(even, odd), 0.25f);
+    // C order: ((row0 even + row0 odd) + row1 even) + row1 odd (float sums are order dependent)
+    float32x4_t sum  = vaddq_f32(vaddq_f32(vaddq_f32(v0.val[0], v0.val[1]), v1.val[0]), v1.val[1]);
+    float32x4_t avg  = vmulq_n_f32(sum, 0.25f);
     if constexpr (!full_opacity)
       avg = vmulq_n_f32(avg, opacity);
     vst1q_f32(dst + x, avg);
@@ -672,8 +673,8 @@ static void fill_mask411_float_neon(
   int x = 0;
   for (; x <= width - 4; x += 4) {
     float32x4x4_t v  = vld4q_f32(src + x * 4);
-    float32x4_t sum  = vaddq_f32(vaddq_f32(v.val[0], v.val[1]),
-                                  vaddq_f32(v.val[2], v.val[3]));
+    // C order: ((a + b) + c) + d (float sums are order dependent)
+    float32x4_t sum  = vaddq_f32(vaddq_f32(vaddq_f32(v.val[0], v.val[1]), v.val[2]), v.val[3]);
     float32x4_t avg  = vmulq_n_f32(sum, 0.25f);
     if constexpr (!full_opacity)
       avg = vmulq_n_f32(avg, opacity);
@@ -843,7 +844,7 @@ masked_merge_float_fn_t* get_overlay_blend_masked_float_fn_neon(bool is_chroma, 
 
 // ---------------------------------------------------------------------------
 // Per-row chroma mask preparation (scratch path for OF_blend.cpp).
-// Integer: delegates to the C prepare_effective_mask_for_row template.
+// Integer: NEON rowprep (masked_rowprep_neon.cpp).
 // Float:   uses NEON fill_mask helpers via prepare_effective_mask_for_row_float_neon.
 // full_opacity=true:  spatial averaging only.
 // full_opacity=false: opacity baked in after averaging.
@@ -856,29 +857,29 @@ void do_fill_chroma_row_neon(
 {
   switch (mode) {
   case MASK411:
-    prepare_effective_mask_for_row<MASK411,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK411,         pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK420:
-    prepare_effective_mask_for_row<MASK420,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK420,         pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK420_MPEG2:
-    prepare_effective_mask_for_row<MASK420_MPEG2,    pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK420_MPEG2,   pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK420_TOPLEFT:
-    prepare_effective_mask_for_row<MASK420_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK420_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK422:
-    prepare_effective_mask_for_row<MASK422,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK422,         pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK422_MPEG2:
-    prepare_effective_mask_for_row<MASK422_MPEG2,    pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK422_MPEG2,   pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK422_TOPLEFT:
-    prepare_effective_mask_for_row<MASK422_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK422_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK440:
-    prepare_effective_mask_for_row<MASK440,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK440,         pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK410:
-    prepare_effective_mask_for_row<MASK410,          pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK410,         pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK411_TOPLEFT:
-    prepare_effective_mask_for_row<MASK411_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK411_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK440_TOPLEFT:
-    prepare_effective_mask_for_row<MASK440_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK440_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   case MASK410_TOPLEFT:
-    prepare_effective_mask_for_row<MASK410_TOPLEFT,  pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
+    prepare_effective_mask_for_row_neon<MASK410_TOPLEFT, pixel_t, full_opacity>(luma_row, luma_pitch_pixels, chroma_w, buf, opacity_i, half, magic); break;
   default: break;
   }
 }

@@ -27,6 +27,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   fulls/fulld range conversion, any width. Bit-identical to C.
 - Optimization: aarch64 NEON Limiter, planar 8, 10-16 bit and 32 bit float, any width. Bit-identical to C,
   also for min > max and for -0.0 / NaN float pixels (compare + select where a min/max chain would differ).
+- Optimization: aarch64 NEON mask row preparation for subsampled chroma (Overlay/Layer/Merge masked blend, 8-16 bit):
+  all 13 mask placement kernels (4:2:0, 4:2:2, 4:1:1, 4:1:0, 4:4:0; center, MPEG2, top-left), with and
+  without baked opacity. Bit-identical to C. Float 4:2:0/4:1:1 center averages add in the C order (bit-identical).
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.
