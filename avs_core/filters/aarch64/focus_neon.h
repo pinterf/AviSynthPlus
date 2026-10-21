@@ -44,4 +44,8 @@ void af_horizontal_planar_neon(BYTE* dstp, size_t height, size_t pitch, size_t r
 void af_horizontal_planar_uint16_t_neon(BYTE* dstp, size_t height, size_t pitch, size_t row_size, size_t half_amount, int bits_per_pixel);
 void af_horizontal_planar_float_neon(BYTE* dstp, size_t height, size_t pitch, size_t row_size, float amount);
 
+// TemporalSoften: one row of the center frame averaged with the other frames, in-place. Same arithmetic as accumulate_line_c.
+template<typename pixel_t, bool maxThreshold>
+void accumulate_line_neon(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
+
 #endif // __Focus_NEON_H__

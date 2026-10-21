@@ -60,6 +60,7 @@
 #include "../../core/internal.h"
 #include <avs/config.h>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 
 #include <arm_neon.h>
@@ -260,3 +261,117 @@ void af_horizontal_planar_float_neon(BYTE* dstp8, size_t height, size_t pitch, s
     dstp8 += pitch;
   }
 }
+
+// --- TemporalSoften: accumulate_line ---
+// The NEON pair of accumulate_line_c, same arithmetic, bit-identical:
+// sum = current + for each other frame (p if |p - current| <= threshold, else current; maxThreshold: always p),
+// added in the C order (planes-1 .. 0, matters for float only), then
+//   8 bit:    (sum * div + 16384) >> 15, div = 32768 / (planes + 1); sum <= 15 * 255 fits int16:
+//             vqrdmulhq_s16 is exactly this ((a*b + 0x4000) >> 15)
+//   10-16 bit: (int)(sum * (1.0f / (planes + 1)) + 0.5f), fused like GCC contracts the C expression on aarch64.
+//             The x86 SIMD paths multiply and add separately: same result, for planes + 1 = 2..15 the float
+//             reciprocal is exact or slightly above 1/n, so no product is rounded across an x.5 boundary.
+//   float:    sum / (planes + 1)
+// Intel has no float path, the float C loop is not vectorized by GCC either (the plane loop is the inner one).
+// The rest of the row (width % 16, % 8, % 4 pixels) is done per pixel with the C formulas.
+
+template<typename pixel_t, bool maxThreshold>
+void accumulate_line_neon(BYTE* c_plane8, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold8, int div, int bits_per_pixel)
+{
+  pixel_t* c_plane = reinterpret_cast<pixel_t*>(c_plane8);
+  const size_t width = rowsize / sizeof(pixel_t);
+  size_t x = 0;
+
+  if constexpr (sizeof(pixel_t) == 1) {
+    const uint8x16_t th = vdupq_n_u8(threshold8);
+    const int16x8_t divv = vdupq_n_s16(static_cast<int16_t>(div));
+    for (; x + 16 <= width; x += 16) {
+      const uint8x16_t cur = vld1q_u8(c_plane + x);
+      uint16x8_t lo = vmovl_u8(vget_low_u8(cur));
+      uint16x8_t hi = vmovl_high_u8(cur);
+      for (int plane = planes - 1; plane >= 0; plane--) {
+        uint8x16_t p = vld1q_u8(planeP[plane] + x);
+        if constexpr (!maxThreshold)
+          p = vbslq_u8(vcleq_u8(vabdq_u8(p, cur), th), p, cur);
+        lo = vaddw_u8(lo, vget_low_u8(p));
+        hi = vaddw_high_u8(hi, p);
+      }
+      const int16x8_t r_lo = vqrdmulhq_s16(vreinterpretq_s16_u16(lo), divv);
+      const int16x8_t r_hi = vqrdmulhq_s16(vreinterpretq_s16_u16(hi), divv);
+      vst1q_u8(c_plane + x, vcombine_u8(vqmovun_s16(r_lo), vqmovun_s16(r_hi)));
+    }
+    for (; x < width; x++) {
+      const int current = c_plane[x];
+      int sum = current;
+      for (int plane = planes - 1; plane >= 0; plane--) {
+        const int p = planeP[plane][x];
+        sum += (maxThreshold || std::abs(current - p) <= threshold8) ? p : current;
+      }
+      c_plane[x] = static_cast<uint8_t>((sum * div + 16384) >> 15);
+    }
+  }
+  else if constexpr (sizeof(pixel_t) == 2) {
+    const int threshold = threshold8 * (1 << (bits_per_pixel - 8));
+    const float average_multiplier = 1.0f / static_cast<float>(planes + 1);
+    const uint16x8_t th = vdupq_n_u16(static_cast<uint16_t>(threshold));
+    const float32x4_t mul = vdupq_n_f32(average_multiplier);
+    const float32x4_t half = vdupq_n_f32(0.5f);
+    for (; x + 8 <= width; x += 8) {
+      const uint16x8_t cur = vld1q_u16(c_plane + x);
+      uint32x4_t lo = vmovl_u16(vget_low_u16(cur));
+      uint32x4_t hi = vmovl_high_u16(cur);
+      for (int plane = planes - 1; plane >= 0; plane--) {
+        uint16x8_t p = vld1q_u16(reinterpret_cast<const uint16_t*>(planeP[plane]) + x);
+        if constexpr (!maxThreshold)
+          p = vbslq_u16(vcleq_u16(vabdq_u16(p, cur), th), p, cur);
+        lo = vaddw_u16(lo, vget_low_u16(p));
+        hi = vaddw_high_u16(hi, p);
+      }
+      const uint32x4_t r_lo = vcvtq_u32_f32(vfmaq_f32(half, vcvtq_f32_u32(lo), mul)); // truncate like (int)
+      const uint32x4_t r_hi = vcvtq_u32_f32(vfmaq_f32(half, vcvtq_f32_u32(hi), mul));
+      vst1q_u16(c_plane + x, vcombine_u16(vqmovn_u32(r_lo), vqmovn_u32(r_hi)));
+    }
+    for (; x < width; x++) {
+      const int current = c_plane[x];
+      int sum = current;
+      for (int plane = planes - 1; plane >= 0; plane--) {
+        const int p = reinterpret_cast<const uint16_t*>(planeP[plane])[x];
+        sum += (maxThreshold || std::abs(current - p) <= threshold) ? p : current;
+      }
+      c_plane[x] = static_cast<uint16_t>(static_cast<int>(std::fma(static_cast<float>(sum), average_multiplier, 0.5f)));
+    }
+  }
+  else {
+    const float threshold = threshold8 / 255.0f;
+    const float divisor = static_cast<float>(planes + 1);
+    const float32x4_t th = vdupq_n_f32(threshold);
+    const float32x4_t divisorv = vdupq_n_f32(divisor);
+    for (; x + 4 <= width; x += 4) {
+      const float32x4_t cur = vld1q_f32(c_plane + x);
+      float32x4_t sum = cur;
+      for (int plane = planes - 1; plane >= 0; plane--) {
+        float32x4_t p = vld1q_f32(reinterpret_cast<const float*>(planeP[plane]) + x);
+        if constexpr (!maxThreshold)
+          p = vbslq_f32(vcleq_f32(vabdq_f32(cur, p), th), p, cur);
+        sum = vaddq_f32(sum, p);
+      }
+      vst1q_f32(c_plane + x, vdivq_f32(sum, divisorv));
+    }
+    for (; x < width; x++) {
+      const float current = c_plane[x];
+      float sum = current;
+      for (int plane = planes - 1; plane >= 0; plane--) {
+        const float p = reinterpret_cast<const float*>(planeP[plane])[x];
+        sum += (maxThreshold || std::abs(current - p) <= threshold) ? p : current;
+      }
+      c_plane[x] = sum / divisor;
+    }
+  }
+}
+
+template void accumulate_line_neon<uint8_t, false>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
+template void accumulate_line_neon<uint8_t, true>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
+template void accumulate_line_neon<uint16_t, false>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
+template void accumulate_line_neon<uint16_t, true>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
+template void accumulate_line_neon<float, false>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
+template void accumulate_line_neon<float, true>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);

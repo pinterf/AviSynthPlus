@@ -668,6 +668,7 @@ Optimizations
   (``ConvertToRGB32``, ``ConvertToRGB24`` and the 16 bit pairs)
 - add NEON optimizations for the direct 8 bit YUV 4:4:4 to packed RGB24/RGB32 conversion
 - add NEON optimizations for ``Blur``/``Sharpen`` horizontal pass, planar 8-16 bit and 32 bit float
+- add NEON optimizations for ``TemporalSoften``, 8-16 bit and 32 bit float
 - (filter graph) avoid MTGuard and CacheGuard creation if a filter returns one of its clip parameter unaltered.
 - Add some avx2 stuff to Invert (no really gain, filter is too simple) and some Layer subfilter.
 - "Layer", "Overlay", "Merge": unify three separate masked-merge kernel families into shared

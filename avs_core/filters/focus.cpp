@@ -904,6 +904,25 @@ static void accumulate_line(BYTE* c_plane, const BYTE** planeP, int planes, size
     }
   } else
 #endif
+#elif defined(NEON_INTRINSICS)
+  // any width: the NEON function does the rest of the row per pixel
+  if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+    switch (pixelsize) {
+    case 1:
+      if (maxThreshold) accumulate_line_neon<uint8_t, true>(c_plane, planeP, planes, rowsize, threshold, div, bits_per_pixel);
+      else accumulate_line_neon<uint8_t, false>(c_plane, planeP, planes, rowsize, threshold, div, bits_per_pixel);
+      break;
+    case 2:
+      if (maxThreshold) accumulate_line_neon<uint16_t, true>(c_plane, planeP, planes, rowsize, threshold, div, bits_per_pixel);
+      else accumulate_line_neon<uint16_t, false>(c_plane, planeP, planes, rowsize, threshold, div, bits_per_pixel);
+      break;
+    case 4:
+      if (maxThreshold) accumulate_line_neon<float, true>(c_plane, planeP, planes, rowsize, threshold, div, bits_per_pixel);
+      else accumulate_line_neon<float, false>(c_plane, planeP, planes, rowsize, threshold, div, bits_per_pixel);
+      break;
+    }
+  }
+  else
 #endif
 
     {
