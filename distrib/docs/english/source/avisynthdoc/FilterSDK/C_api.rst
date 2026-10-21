@@ -37,9 +37,15 @@ The Avisynth library can be used in two ways:
 Dynamic loading
 ----------------
 
-- Dynamic loading ``AviSynth.dll``/``libavisynth.so``/``.dylib``.
+- Dynamic loading ``AviSynth.dll``/``libavisynth.so``/``.dylib``. Recommended.
 
   Advantage: independence of the actual AviSynth version.
+
+  With static linking (import library) every API function the plugin or host uses must exist
+  in the loaded AviSynth, or the plugin (or the program) does not load at all, even if that
+  function is never called. E.g. a plugin calling ``avs_acquire_global_lock`` (V12) with a
+  fallback for older versions does not load on an AviSynth older than V12; dynamically
+  loaded, the missing function is just NULL.
 
   AviSynth versions with different API levels can be supported, because we can detect 
   on loading the necessary API methods whether they exist or not. Earlier AviSynth 
