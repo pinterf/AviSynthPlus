@@ -42,6 +42,8 @@
 #ifdef INTEL_INTRINSICS
 #include "intel/convert_planar_sse.h"
 #include "intel/convert_planar_avx2.h"
+#elif defined(NEON_INTRINSICS)
+#include "aarch64/convert_planar_neon.h"
 #endif
 #include "convert_bits.h"
 #include "../filters/resample.h"
@@ -1055,6 +1057,19 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
       return dst;
     }
 #endif
+#elif defined(NEON_INTRINSICS)
+    if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+      if (pixel_step == 4) {
+        if (src_pitch_a) // move alpha channel from YUVA
+          convert_yv24_to_rgb_neon<4, true>(dstp, srcY, srcU, srcV, srcA, dst_pitch, src_pitch_y, src_pitch_uv, src_pitch_a, vi.width, vi.height, matrix);
+        else
+          convert_yv24_to_rgb_neon<4, false>(dstp, srcY, srcU, srcV, srcA, dst_pitch, src_pitch_y, src_pitch_uv, src_pitch_a, vi.width, vi.height, matrix);
+      }
+      else {
+        convert_yv24_to_rgb_neon<3, false>(dstp, srcY, srcU, srcV, srcA, dst_pitch, src_pitch_y, src_pitch_uv, src_pitch_a, vi.width, vi.height, matrix);
+      }
+      return dst;
+    }
 #endif
 
     // Unoptimized C-code.
