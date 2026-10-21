@@ -49,6 +49,14 @@
 #include <vector>
 #include "../core/info.h"
 
+// [[maybe_unused]] for data members: Clang needs it (-Wunused-private-field, the fields are n/a in
+// NO_WIN_GDI builds), GCC before 12 ignores it on data members with a -Wattributes warning.
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 12
+#define AVS_UNUSED_MEMBER
+#else
+#define AVS_UNUSED_MEMBER [[maybe_unused]]
+#endif
+
 
 /********************************************************************
 ********************************************************************/
@@ -214,9 +222,9 @@ private:
   const int offset;
   const int size, x, y;
   const int textcolor, halocolor;
-  [[maybe_unused]] const bool bold;
-  [[maybe_unused]] const bool italic; // n/a in NO_WIN_GDI
-  [[maybe_unused]] const bool noaa; // n/a in NO_WIN_GDI
+  AVS_UNUSED_MEMBER const bool bold;
+  AVS_UNUSED_MEMBER const bool italic; // n/a in NO_WIN_GDI
+  AVS_UNUSED_MEMBER const bool noaa; // n/a in NO_WIN_GDI
 };
 
 class ShowCRC32 : public GenericVideoFilter
@@ -260,9 +268,9 @@ private:
   const int offset;
   const int size, x, y;
   const int textcolor, halocolor;
-  [[maybe_unused]] const bool bold;
-  [[maybe_unused]] const bool italic; // n/a in NO_WIN_GDI
-  [[maybe_unused]] const bool noaa;   // n/a in NO_WIN_GDI
+  AVS_UNUSED_MEMBER const bool bold;
+  AVS_UNUSED_MEMBER const bool italic; // n/a in NO_WIN_GDI
+  AVS_UNUSED_MEMBER const bool noaa;   // n/a in NO_WIN_GDI
 };
 
 
@@ -298,9 +306,9 @@ private:
   const int x, y;
   bool dropframe;
   const int textcolor, halocolor;
-  [[maybe_unused]] const bool bold;
-  [[maybe_unused]] const bool italic; // n/a in NO_WIN_GDI
-  [[maybe_unused]] const bool noaa; // n/a in NO_WIN_GDI
+  AVS_UNUSED_MEMBER const bool bold;
+  AVS_UNUSED_MEMBER const bool italic; // n/a in NO_WIN_GDI
+  AVS_UNUSED_MEMBER const bool noaa; // n/a in NO_WIN_GDI
 };
 
 
@@ -418,9 +426,9 @@ private:
 #endif
   std::shared_ptr<const BitmapFont> current_font;
   int chromaplacement;
-  [[maybe_unused]] const bool bold;
-  [[maybe_unused]] const bool italic;
-  [[maybe_unused]] const bool noaa;
+  AVS_UNUSED_MEMBER const bool bold;
+  AVS_UNUSED_MEMBER const bool italic;
+  AVS_UNUSED_MEMBER const bool noaa;
   const bool cpu;
   const int x, y;
   const int align;
