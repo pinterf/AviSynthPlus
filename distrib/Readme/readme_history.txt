@@ -11,6 +11,12 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261021 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- C API avs_create_script_environment: a refused request (version newer than the AviSynth, e.g. 15 on
+  V14) is reported by avs_get_error: "avs_create_script_environment: requested interface version is
+  newer than this AviSynth". Until now the wrapper held no environment and no error, any call through
+  it crashed. The wrapper is still non-NULL, delete it with avs_delete_script_environment.
+  avisynth_c_loader.h's avs_library_env_failed checks avs_get_error first, the NULL core pointer for
+  older versions.
 - Fix: C plugins without avisynth_c_plugin_init2 (pre-V11): avs_invoke called inside
   avisynth_c_plugin_init returned unconverted double and long (int64) values, e.g. Eval("Pi()") gave
   'd' 3.1415926535897931, now 'f' 3.1415927410125732. The init gets the same pre-V11 environment as

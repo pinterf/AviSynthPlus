@@ -281,6 +281,8 @@ Build environment, Interface
   * ``AVS_CS_RGBP8``, ``AVS_CS_RGBAP8`` aliases
 
   See :ref:`API v14 changes<api_v14_whats_new>` for more details.
+- C API ``avs_create_script_environment``: a refused request (version newer than the AviSynth) is
+  reported by ``avs_get_error``. The returned wrapper holds no environment, as before.
 - C API dynamic loading: new header ``avisynth_c_loader.h`` for all platforms, replaces the Windows-only
   loader in ``avisynth_c.h`` (which had uninitialized entries and leaked the DLL on a failed load).
   Loads all C API functions (missing ones are NULL), creates or detects the environment with the

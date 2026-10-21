@@ -41,10 +41,11 @@
 // Creating the environment yourself: for a version newer than the loaded DLL's interface version
 // (the AVISYNTH_INTERFACE_VERSION compiled into that avisynth.dll/libavisynth, not the one of the
 // included avisynth_c.h), the core refuses the request (its CreateScriptEnvironment returns NULL),
-// but avs_create_script_environment still returns a non-NULL wrapper, holding a NULL core pointer
-// and no error message. Any call through it crashes; check it with avs_library_env_failed. A fixed
-// low version is no solution either: below 11 AviSynth converts double values to float and long
-// (int64) values to 32 bit int for the caller.
+// but avs_create_script_environment still returns a non-NULL wrapper, holding a NULL core pointer.
+// From 3.7.6 avs_get_error tells the refusal, older versions give no error message. Any call
+// through it crashes; check it with avs_library_env_failed. A fixed low version is no solution
+// either: below 11 AviSynth converts double values to float and long (int64) values to 32 bit int
+// for the caller.
 //
 // - avs_load_library returns NULL only if the library cannot be loaded.
 // - Every function missing from the loaded library (e.g. an older AviSynth) is NULL in the struct.
@@ -444,9 +445,11 @@ AVSC_INLINE int avs_library_detect_plugin_env(AVS_Library* library, AVS_ScriptEn
 // Returns nonzero if avs_create_script_environment failed. For a version newer than the loaded
 // DLL's interface version, the core refuses the request (its CreateScriptEnvironment returns NULL),
 // but the C wrapper returned by avs_create_script_environment is still non-NULL: it holds the NULL
-// core pointer and no error message (all versions up to 3.7.6); any call through it crashes. The
-// only sign of the refusal is that NULL core pointer, the first member of the opaque struct: its
-// layout { core, error } has been the same since the first C interface (2003).
+// core pointer; any call through it crashes.
+// - From 3.7.6 (V14) avs_get_error reports the refusal.
+// - Older versions give no error message, the only sign of the refusal is that NULL core pointer,
+//   the first member of the opaque struct: its layout { core, error } has been the same since the
+//   first C interface (2003).
 AVSC_INLINE int avs_library_env_failed(const AVS_Library* library, AVS_ScriptEnvironment* env)
 {
   if (env == NULL)

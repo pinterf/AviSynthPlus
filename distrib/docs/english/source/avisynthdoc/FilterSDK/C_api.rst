@@ -107,9 +107,10 @@ It replaces the Windows-only ``avs_load_library`` which was part of ``avisynth_c
 
   Nonzero if ``avs_create_script_environment`` failed. For a version newer than the loaded DLL's interface version, the core
   refuses the request (its ``CreateScriptEnvironment`` returns NULL), but the C wrapper returned by
-  ``avs_create_script_environment`` is still non-NULL: it holds the NULL core pointer and no error
-  message. The only sign of the refusal is that NULL core pointer, the first member of the opaque
-  struct. Its layout has been the same since the first C interface (2003).
+  ``avs_create_script_environment`` is still non-NULL: it holds the NULL core pointer. From 3.7.6
+  ``avs_get_error`` reports the refusal; older versions give no error message, there the only sign
+  is that NULL core pointer, the first member of the opaque struct. Its layout has been the same
+  since the first C interface (2003). Both are checked.
 
 - ``int avs_library_interface_version(const AVS_Library* library, AVS_ScriptEnvironment* env, int* bugfix)``
 
@@ -186,7 +187,9 @@ Notes:
 
   - A version newer than the loaded DLL's interface version is refused by the core (its ``CreateScriptEnvironment`` returns NULL),
     but ``avs_create_script_environment`` still returns a non-NULL wrapper, holding the NULL core
-    pointer and no error message; any call through it crashes. Check it with ``avs_library_env_failed``.
+    pointer, any call through it crashes. From 3.7.6 ``avs_get_error`` tells it, e.g.
+    "avs_create_script_environment: requested interface version is newer than this AviSynth";
+    older versions give no error message. Check it with ``avs_library_env_failed``.
   - Requesting a version below 11, AviSynth converts double values to float and long (int64) values
     to 32 bit int for the caller, even if it supports them itself:
 

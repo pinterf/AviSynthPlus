@@ -1861,6 +1861,12 @@ AVS_ScriptEnvironment * AVSC_CC avs_create_script_environment(int version)
       version = AVISYNTH_CLASSIC_INTERFACE_VERSION; // always request a more modern ScriptEnvironment.
     e->env = CreateScriptEnvironment2_internal(version, false, true); // flag: from C
     e->error = NULL;
+    if (e->env == NULL) {
+      // version newer than this AviSynth: no environment, report it instead of a silent NULL core.
+      // A literal: no env to SaveString into, and no thread_local buffer (XP_TLS builds: implicit TLS
+      // does not work in a LoadLibrary-ed DLL on XP). Exact versions: avs_get_env_property on a working env.
+      e->error = "avs_create_script_environment: requested interface version is newer than this AviSynth";
+    }
   }
   catch (const AvisynthError& err) {
     e->error = err.msg;
