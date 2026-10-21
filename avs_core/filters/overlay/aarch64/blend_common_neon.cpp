@@ -149,8 +149,9 @@ void weighted_merge_float_neon(BYTE* p1, const BYTE* p2,
     for (int x = 0; x < vec_width; x += 4) {
       float32x4_t v1 = vld1q_f32(dstp  + x);
       float32x4_t v2 = vld1q_f32(srcp2 + x);
-      // p1 + (p2-p1)*w  ==  p1*inv + p2*w
-      vst1q_f32(dstp + x, vmlaq_f32(vmulq_f32(v1, inv_v), v2, w_v));
+      // p1*inv + p2*w, fused like the C tail (GCC contracts it as fmadd(p1, inv, p2*w)).
+      // vmlaq_f32 is not fused on AArch64 (fmul + fadd): the row body and tail rounded differently.
+      vst1q_f32(dstp + x, vfmaq_f32(vmulq_f32(v2, w_v), v1, inv_v));
     }
     for (int x = vec_width; x < width; x++)
       dstp[x] = dstp[x] * invweight_f + srcp2[x] * weight_f;
@@ -406,7 +407,7 @@ void masked_merge_float_neon(BYTE* p1, const BYTE* p2, const BYTE* mask,
       float32x4_t v_p1   = vld1q_f32(dstp  + x);
       float32x4_t v_p2   = vld1q_f32(srcp2 + x);
       // p1 + (p2 - p1) * (mask * opacity)
-      vst1q_f32(dstp + x, vmlaq_f32(v_p1, vsubq_f32(v_p2, v_p1), v_mask));
+      vst1q_f32(dstp + x, vfmaq_f32(v_p1, vsubq_f32(v_p2, v_p1), v_mask)); // fused, like the C tail
     }
     for (int x = vec_width; x < width; x++) {
       const float m = maskp[x] * opacity_f;
@@ -429,18 +430,13 @@ AVS_FORCEINLINE uint8x16_t overlay_blend_opaque_neon_core(const uint8x16_t& p1, 
   return vbslq_u8(mask, p2, p1);
 }
 
-// For 16-bit pixels
-AVS_FORCEINLINE uint16x8_t overlay_blend_opaque_neon_core_u16(const uint16x8_t& p1, const uint16x8_t& p2, const uint16x8_t& mask) {
-  return vbslq_u16(mask, p2, p1);
-}
-
 // Compare functions for lighten and darken mode (8-bit)
 AVS_FORCEINLINE static uint8x16_t overlay_darken_neon_cmp(const uint8x16_t& p1, const uint8x16_t& p2) {
-  return vorrq_u8(vcltq_u8(p2, p1), vceqq_u8(p2, p1));
+  return vcleq_u8(p2, p1); // p2 <= p1, like overlay_darken_c_cmp
 }
 
 AVS_FORCEINLINE static uint8x16_t overlay_lighten_neon_cmp(const uint8x16_t& p1, const uint8x16_t& p2) {
-  return vorrq_u8(vcgtq_u8(p2, p1), vceqq_u8(p2, p1));
+  return vcgeq_u8(p2, p1); // p2 >= p1, like overlay_lighten_c_cmp
 }
 
 AVS_FORCEINLINE static int overlay_darken_c_cmp(BYTE p1, BYTE p2) { return p2 <= p1; }
@@ -763,7 +759,7 @@ static AVS_FORCEINLINE void blend_masked_float_neon_row(
     float32x4_t v_m  = vld1q_f32(mask + x);
     float32x4_t v_p1 = vld1q_f32(p1   + x);
     float32x4_t v_p2 = vld1q_f32(p2   + x);
-    vst1q_f32(p1 + x, vmlaq_f32(v_p1, vsubq_f32(v_p2, v_p1), v_m));
+    vst1q_f32(p1 + x, vfmaq_f32(v_p1, vsubq_f32(v_p2, v_p1), v_m)); // fused, like the C tail
   }
   for (; x < width; x++)
     p1[x] = p1[x] + (p2[x] - p1[x]) * mask[x];

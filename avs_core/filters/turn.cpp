@@ -352,7 +352,6 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
 
 #ifdef NEON_INTRINSICS
   const bool neon = env->GetCPUFlags() & CPUF_ARM_NEON;
-  const bool dotprod = env->GetCPUFlags() & CPUF_ARM_DOTPROD;
 #endif
 
   TurnFuncPtr funcs[3];

@@ -216,67 +216,6 @@ void turn_left_plane_8_neon(const BYTE* srcp, BYTE* dstp, int src_rowsize, int s
   turn_right_plane_8_neon(srcp + (src_height - 1) * src_pitch, dstp + (src_rowsize - 1) * dst_pitch, src_rowsize, src_height, -src_pitch, -dst_pitch);
 }
 
-// Transposes 8 rows of 4x16-bit values (shorts/words) into 4 rows of 8x16-bit values.
-static AVS_FORCEINLINE void transpose_16x4x8_neon(const BYTE* srcp, BYTE* dstp, const int src_pitch, const int dst_pitch)
-{
-  // Load 8 rows of 8 bytes (4 x 16-bit elements)
-  uint64x1_t a03_l = vld1_u64(reinterpret_cast<const uint64_t*>(srcp + src_pitch * 0));
-  uint64x1_t b03_l = vld1_u64(reinterpret_cast<const uint64_t*>(srcp + src_pitch * 1));
-  uint64x1_t c03_l = vld1_u64(reinterpret_cast<const uint64_t*>(srcp + src_pitch * 2));
-  uint64x1_t d03_l = vld1_u64(reinterpret_cast<const uint64_t*>(srcp + src_pitch * 3));
-  uint64x1_t e03_l = vld1_u64(reinterpret_cast<const uint64_t*>(srcp + src_pitch * 4));
-  uint64x1_t f03_l = vld1_u64(reinterpret_cast<const uint64_t*>(srcp + src_pitch * 5));
-  uint64x1_t g03_l = vld1_u64(reinterpret_cast<const uint64_t*>(srcp + src_pitch * 6));
-  uint64x1_t h03_l = vld1_u64(reinterpret_cast<const uint64_t*>(srcp + src_pitch * 7));
-
-  // Convert to 16-bit vectors (4 elements)
-  uint16x4_t a03 = vreinterpret_u16_u64(a03_l);
-  uint16x4_t b03 = vreinterpret_u16_u64(b03_l);
-  uint16x4_t c03 = vreinterpret_u16_u64(c03_l);
-  uint16x4_t d03 = vreinterpret_u16_u64(d03_l);
-  uint16x4_t e03 = vreinterpret_u16_u64(e03_l);
-  uint16x4_t f03 = vreinterpret_u16_u64(f03_l);
-  uint16x4_t g03 = vreinterpret_u16_u64(g03_l);
-  uint16x4_t h03 = vreinterpret_u16_u64(h03_l);
-
-  // NEON Transpose on 16-bit elements (VTRN.16)
-  // Step 1: Interleave pairs (a/e, b/f, c/g, d/h)
-  // SSE: _mm_unpacklo_epi16(A, B) -> A0 B0 A1 B1 ...
-  uint16x4x2_t ae = vtrn_u16(a03, e03); // {a0 e0 a1 e1}, {a2 e2 a3 e3}
-  uint16x4x2_t bf = vtrn_u16(b03, f03);
-  uint16x4x2_t cg = vtrn_u16(c03, g03);
-  uint16x4x2_t dh = vtrn_u16(d03, h03);
-
-  // Step 2: Interleave pairs of pairs (ae/cg, bf/dh)
-  uint16x4x2_t aceg01 = vtrn_u16(ae.val[0], cg.val[0]);
-  uint16x4x2_t aceg23 = vtrn_u16(ae.val[1], cg.val[1]);
-  uint16x4x2_t bdfh01 = vtrn_u16(bf.val[0], dh.val[0]);
-  uint16x4x2_t bdfh23 = vtrn_u16(bf.val[1], dh.val[1]);
-
-  // SSE: _mm_unpacklo_epi16(A, B) -> A0 B0 A1 B1 ... (A0 B0 C0 D0...)
-  // Step 3: Final combination/concatenation of the 4-element blocks.
-  // combine the left-half blocks (ACEG) with the right-half blocks (BDFH).
-
-  // Output Row 0: {A0 B0 C0 D0} + {E0 F0 G0 H0} (from the first elements of the transposed groups)
-  uint16x8_t abcdefgh0 = vcombine_u16(aceg01.val[0], bdfh01.val[0]);
-
-  // Output Row 1: {A1 B1 C1 D1} + {E1 F1 G1 H1}
-  uint16x8_t abcdefgh1 = vcombine_u16(aceg01.val[1], bdfh01.val[1]);
-
-  // Output Row 2: {A2 B2 C2 D2} + {E2 F2 G2 H2}
-  uint16x8_t abcdefgh2 = vcombine_u16(aceg23.val[0], bdfh23.val[0]);
-
-  // Output Row 3: {A3 B3 C3 D3} + {E3 F3 G3 H3}
-  uint16x8_t abcdefgh3 = vcombine_u16(aceg23.val[1], bdfh23.val[1]);
-
-  // Store results
-  // SSE: _mm_store_si128 (aligned store)
-  vst1q_u16(reinterpret_cast<uint16_t*>(dstp + dst_pitch * 0), abcdefgh0);
-  vst1q_u16(reinterpret_cast<uint16_t*>(dstp + dst_pitch * 1), abcdefgh1);
-  vst1q_u16(reinterpret_cast<uint16_t*>(dstp + dst_pitch * 2), abcdefgh2);
-  vst1q_u16(reinterpret_cast<uint16_t*>(dstp + dst_pitch * 3), abcdefgh3);
-}
-
 // Main loop for 16 bit plane turn
 void turn_right_plane_16_neon(const BYTE* srcp, BYTE* dstp, int src_rowsize, int src_height, int src_pitch, int dst_pitch)
 {

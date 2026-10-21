@@ -1363,7 +1363,7 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
         turn_right = turn_right_rgb32_sse2;
       }
       else
-#elif NEON_INTRINSICS
+#elif defined(NEON_INTRINSICS)
       if (has_neon) {
         turn_left = turn_left_rgb32_neon;
         turn_right = turn_right_rgb32_neon;
