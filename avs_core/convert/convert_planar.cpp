@@ -689,6 +689,13 @@ static void convert_yuv_to_planarrgb_c_internal(BYTE* dstp[3], int dstPitch[3], 
     pixel_t_dst* d1 = reinterpret_cast<pixel_t_dst*>(dstp[1]); // B or U
     pixel_t_dst* d2 = reinterpret_cast<pixel_t_dst*>(dstp[2]); // R or V
 
+    // 3 source + 3 destination planes: too many pointer pairs for GCC's runtime alias checks
+    // (vect-max-version-for-alias-checks), so without this only RGB_TO_Y was vectorized on aarch64.
+    // Safe: x reads and writes element x of each plane only and dst/src are different frames,
+    // so there is no loop-carried dependency.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < width; x++) {
       float in0_f, in1_f, in2_f;
       int in0_i, in1_i, in2_i;

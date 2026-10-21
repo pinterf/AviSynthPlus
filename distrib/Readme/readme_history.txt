@@ -15,7 +15,7 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   vld4/vst3 de-interleaving), the C versions stayed scalar with GCC -O3. Bit-identical to C.
 - Optimization: aarch64 NEON direct 8 bit YV24 -> packed RGB24/RGB32 (ConvertToRGB24/32 from 8 bit YUV,
   the legacy 13 bit integer matrix path), YUVA alpha to RGB32 as well. Bit-identical to C.
-  The packed RGB -> YUV direction and the planar matrix kernels were already vectorized by GCC -O3.
+  The packed RGB -> YUV direction was already vectorized by GCC -O3.
 - Optimization: aarch64 NEON Blur/Sharpen horizontal pass, planar 8, 10-16 bit and 32 bit float, in-place like C,
   any width. Bit-identical to C (float: fused like GCC contracts the C expression). The vertical pass was
   already vectorized by GCC -O3. Differs from the Intel paths: 10-14 bit is computed in 16 bit lanes like 8 bit
@@ -30,6 +30,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 NEON mask row preparation for subsampled chroma (Overlay/Layer/Merge masked blend, 8-16 bit):
   all 13 mask placement kernels (4:2:0, 4:2:2, 4:1:1, 4:1:0, 4:4:0; center, MPEG2, top-left), with and
   without baked opacity. Bit-identical to C. Float 4:2:0/4:1:1 center averages add in the C order (bit-identical).
+- Optimization: aarch64 planar YUV <-> planar RGB / Y matrix conversions: the C path is now vectorized by GCC
+  (#pragma GCC ivdep on the pixel loop). With 3 source and 3 destination planes GCC gave up on the runtime alias
+  checks, so only RGB -> Y was vectorized before. Output unchanged.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.
