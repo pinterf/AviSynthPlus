@@ -13,17 +13,18 @@ jobs:
         - {name: "Windows Latest x86", os: windows-latest, cmake-parameters: "-A Win32"}
         - {name: "Ubuntu 22.04 x64", os: ubuntu-22.04}
         - {name: "Ubuntu 24.04 x64", os: ubuntu-24.04}
-        - {name: "macOS Latest x64", os: macos-latest}
+        - {name: "Ubuntu 24.04 arm64", os: ubuntu-24.04-arm}
+        - {name: "macOS Latest arm64", os: macos-latest}
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
       with:
         submodules: ${{ matrix.config.checkout-submodules }}
         fetch-depth: 0
 
     - name: configure
       run: |
-        cmake -S . -B avisynth-build ${{ matrix.config.cmake-parameters }}
+        cmake -S . -B avisynth-build -DCMAKE_BUILD_TYPE=Release ${{ matrix.config.cmake-parameters }}
 
     - name: build
       run: |
