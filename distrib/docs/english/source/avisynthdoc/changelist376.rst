@@ -281,10 +281,12 @@ Build environment, Interface
   * ``AVS_CS_RGBP8``, ``AVS_CS_RGBAP8`` aliases
 
   See :ref:`API v14 changes<api_v14_whats_new>` for more details.
-- Fix: avisynth_c.h dynamic loader (``AVSC_NO_DECLSPEC``, ``avs_load_library``): the deprecated
-  ``avs_is_yuv444p16`` .. ``avs_is_y32`` entries (8 functions) were never loaded and contained garbage
-  (the struct was not zero filled); a failed load did not free the DLL. The header now includes
-  ``<windows.h>`` and ``<stdlib.h>`` itself for the loader. Existed since r2487.
+- C API dynamic loading: new header ``avisynth_c_loader.h`` for all platforms, replaces the Windows-only
+  loader in ``avisynth_c.h`` (which had uninitialized entries and leaked the DLL on a failed load).
+  Loads all C API functions (missing ones are NULL), creates or detects the environment with the
+  highest common interface version, and tells the available feature steps and 64 bit value support.
+  See :ref:`Dynamic loading<c_api_dynamic_loading>`.
+- avisynth_c.h: list of API functions fixed later than they appeared, with the interface version of the fix.
 - avisynth.h: ``CS_xxx_CHROMA_PLACEMENT`` (C++ ``AvsChromaPlacement``) marked deprecated: never implemented,
   use the ``_ChromaLocation`` frame property.
 - introduce ``AVS_RESTRICT`` to ``avs/config.h`` (compiler invariant c++ ``__restrict``)

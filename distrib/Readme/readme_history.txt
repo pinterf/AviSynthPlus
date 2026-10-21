@@ -9,8 +9,17 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20261020 3.7.5.rXXXX (pre 3.7.6)
+20261021 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- C API dynamic loading: new header avisynth_c_loader.h (Windows, Linux, macOS, ...), replaces the
+  Windows-only loader of avisynth_c.h. Loads all C API functions, those missing from an older AviSynth
+  are NULL; each is commented with the interface version from which it is reliably usable.
+  avs_library_create_script_environment (hosts) and avs_library_detect_plugin_env (plugins) fill the
+  interface version, has_at_least_v8 .. _v14 feature steps and has_64bit_values.
+  Removed from avisynth_c.h: the old avs_load_library, AVS26_FALLBACK_SIMULATION, EXTERNAL_AVS_C_API_LOADER.
+  See https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/C_api.html
+- avisynth_c.h: list of API functions fixed later than they appeared, with the interface version
+  of the fix (frame properties: V9, avs_prop_get_data, avs_new_video_frame_p: V9.1, avs_prop_get_clip: V14...).
 - Fix: runtime functions AverageLuma (and the other Average*), LumaDifference (and the other *Difference*,
   *DifferenceFromPrevious, *DifferenceToNext) and PlaneMinMaxStats returned 32 bit float, so the result
   did not compare equal to the same value written as a (64 bit double) script constant:

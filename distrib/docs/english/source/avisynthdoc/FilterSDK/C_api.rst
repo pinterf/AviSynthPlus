@@ -32,6 +32,8 @@ Using C interface is an option, you can use it from C++ programs.
 
 The Avisynth library can be used in two ways:
 
+.. _c_api_dynamic_loading:
+
 Dynamic loading
 ----------------
 
@@ -44,12 +46,267 @@ Dynamic loading
   versions may contain fewer API functions. By detecting the loaded AviSynth/interface 
   version, it's the caller's responsibility to call only those API functions which 
   have valid function pointers and are documented to work. For example, you should 
-  only use frame property-related functions when ``lib.avs_get_version(clip) >= 9``.
+  only use frame property-related functions when the interface version is at least 9.
 
-  - Use ``#define AVSC_NO_DECLSPEC`` for function pointer definitions only. 
-    (``avisynth_c.h`` provides prototypes and a helper function for loading the 
-    library in Windows.)
+  - Use ``#define AVSC_NO_DECLSPEC`` for function pointer definitions only: each API
+    function ``name`` gets a function pointer type ``name_func`` instead of a declaration.
+    The ``AVSC_INLINE`` helpers which call into the API (e.g. ``avs_new_video_frame``) are not
+    defined then: call the API function itself.
   - Load the library dynamically and get the necessary API functions as needed.
+
+Ready loader: avisynth_c_loader.h
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``avisynth_c_loader.h`` (since 3.7.6, next to ``avisynth_c.h``) is a header-only loader for
+Windows, Linux, macOS, BSD and Haiku. Use it as is, or copy and trim it for your project.
+It replaces the Windows-only ``avs_load_library`` which was part of ``avisynth_c.h`` before.
+
+- ``AVS_Library* avs_load_library(const char* library_path)``
+
+  Loads AviSynth and fills the ``AVS_Library`` struct with every C API function.
+  Functions missing from the loaded library (an older AviSynth) are NULL.
+  Returns NULL only if the library cannot be loaded.
+
+  ``library_path``: UTF-8 file name or path. NULL means ``avisynth`` (Windows),
+  ``libavisynth.dylib`` (macOS), ``libavisynth.so`` (others).
+
+- ``void avs_free_library(AVS_Library* library)``
+
+  Unloads the library and frees the struct.
+
+- ``AVS_ScriptEnvironment* avs_library_create_script_environment(AVS_Library* library)``
+
+  For hosts. Creates the environment with the highest version known by both the loaded DLL and
+  the ``avisynth_c.h`` the loader was compiled with. Two versions are involved: the header's
+  ``AVISYNTH_INTERFACE_VERSION`` (compile time, what the caller understands, the first request;
+  rebuilding with a newer header raises it) and the loaded DLL's interface version (run time,
+  requests above it are refused). Requests only the steps which make a difference, the first accepted one is kept
+  (a refused request is cheap, no environment is built):
+  ``AVISYNTH_INTERFACE_VERSION`` (what the caller understands), 11 (V11..V13 AviSynth: 64 bit
+  ``AVS_Value`` types), 8 (V8..V10 AviSynth: frame properties, ``avs_new_video_frame_p``; the same
+  environment as with 6, the step follows the ``has_at_least_v8`` level), 6 (classic, older AviSynth),
+  3 (AviSynth 2.5).
+  From 11 up to the DLL's interface version the environment is the same, as it is for any version
+  below 11; bugfix versions cannot be requested at all. The exact version and bugfix version are
+  then queried through the environment, filling the version fields of the struct (below).
+  Returns NULL on failure. Delete the result with ``lib->avs_delete_script_environment``.
+
+- ``int avs_library_detect_plugin_env(AVS_Library* library, AVS_ScriptEnvironment* env, int called_from_init2)``
+
+  For plugins, called from the plugin init with the ``env`` AviSynth passed. Fills the same version
+  fields, and ``has_64bit_values``. ``called_from_init2``: nonzero if AviSynth called
+  ``avisynth_c_plugin_init2``; the loader cannot see it, the plugin has to tell. See
+  :ref:`Plugins and 64 bit values<c_api_loader_plugins>`.
+
+- ``int avs_library_detect_version(AVS_Library* library, AVS_ScriptEnvironment* env)``
+
+  Fills only the version fields (``interface_version``, ``interface_bugfix``, ``has_at_least_xxx``)
+  through ``env``.
+
+- ``int avs_library_env_failed(const AVS_Library* library, AVS_ScriptEnvironment* env)``
+
+  Nonzero if ``avs_create_script_environment`` failed. For a version newer than the loaded DLL's interface version, the core
+  refuses the request (its ``CreateScriptEnvironment`` returns NULL), but the C wrapper returned by
+  ``avs_create_script_environment`` is still non-NULL: it holds the NULL core pointer and no error
+  message. The only sign of the refusal is that NULL core pointer, the first member of the opaque
+  struct. Its layout has been the same since the first C interface (2003).
+
+- ``int avs_library_interface_version(const AVS_Library* library, AVS_ScriptEnvironment* env, int* bugfix)``
+
+  Low level: returns the interface version of the loaded AviSynth (e.g. 6, 8, 11, 14), 0 if unknown;
+  ``*bugfix`` (may be NULL) receives the bugfix version (interface 9 with bugfix 1 is "V9.1").
+  ``AVS_AEP_INTERFACE_VERSION`` is asked only from V9, earlier versions did not know it.
+
+Version fields of ``AVS_Library``, filled by the two functions above, with the important feature steps:
+
++-----------------------+----------------------------------------------------------------------------+
+| Field                 | Meaning                                                                    |
++=======================+============================================================================+
+| ``interface_version`` | e.g. 6, 8, 11, 14                                                          |
++-----------------------+----------------------------------------------------------------------------+
+| ``interface_bugfix``  | e.g. 1 for V9.1                                                            |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v8``   | frame property API entries, ``avs_new_video_frame_p`` (property source);   |
+|                       | C API frame property access crashes in V8, use it from V9                  |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v9``   | C API frame property access works, ``avs_is/make_property_writable``,      |
+|                       | ``AVS_AEP_INTERFACE_VERSION/BUGFIX`` queries                               |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v9_1`` | ``avs_new_video_frame_p(_a)`` with a non-NULL ``prop_src``,                |
+|                       | ``avs_prop_get_data``                                                      |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v9_2`` | C filters: an error of the child clip is passed on                         |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v10``  | ``AVS_VideoFrame`` pixel_type                                              |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v11``  | the core knows 64 bit ``AVS_Value`` types (double, long); whether this     |
+|                       | caller gets them: ``has_64bit_values``                                     |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v12``  | global lock, ``avs_get_cpu_flags_ex``, L2 cache size query                 |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v13``  | YUV(A) 4:4:0, 4:1:1, 4:1:0, YA pixel formats                               |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_at_least_v14``  | function values, ``avs_invoke2/3(_try)``, ``avs_create_map``;              |
+|                       | ``avs_prop_get_xxx`` fixes, ``AVS_MT_NICE_FILTER`` error reporting         |
++-----------------------+----------------------------------------------------------------------------+
+| ``has_64bit_values``  | this caller gets double and long (int64) values, not converted to float    |
+|                       | and 32 bit int. Hosts: environment requested with version >= 11.           |
+|                       | Plugins: AviSynth called ``avisynth_c_plugin_init2``.                      |
++-----------------------+----------------------------------------------------------------------------+
+
+Example (client)::
+
+    #include "avisynth_c_loader.h" // instead of avisynth_c.h, it defines AVSC_NO_DECLSPEC
+
+    AVS_Library* lib = avs_load_library(NULL);
+    if (!lib)
+      return -1; // AviSynth not found
+    // the highest version both sides know: requests V14, then 11, 8, 6, 3
+    AVS_ScriptEnvironment* env = avs_library_create_script_environment(lib);
+    if (!env) {
+      avs_free_library(lib);
+      return -1;
+    }
+    if (lib->has_at_least_v9) {
+      // frame properties
+    }
+    if (lib->has_64bit_values) {
+      // double and long (int64) values are kept
+    }
+    if (lib->has_at_least_v14) {
+      // function values, avs_invoke2/3
+    }
+    lib->avs_delete_script_environment(env);
+    avs_free_library(lib);
+
+Notes:
+
+- Why the highest version: the version requested in ``avs_create_script_environment`` tells AviSynth
+  what the caller understands.
+
+  - A version newer than the loaded DLL's interface version is refused by the core (its ``CreateScriptEnvironment`` returns NULL),
+    but ``avs_create_script_environment`` still returns a non-NULL wrapper, holding the NULL core
+    pointer and no error message; any call through it crashes. Check it with ``avs_library_env_failed``.
+  - Requesting a version below 11, AviSynth converts double values to float and long (int64) values
+    to 32 bit int for the caller, even if it supports them itself:
+
+    +----------------------+---------------------------------+---------------------------------------------+
+    | ``Eval`` of          | Environment requested with 6    | ``avs_library_create_script_environment``   |
+    +======================+=================================+=============================================+
+    | ``1.0/3``            | ``'f'`` 0.3333333432674408      | ``'d'`` 0.33333333333333331                 |
+    +----------------------+---------------------------------+---------------------------------------------+
+    | ``4294967297``       | ``'i'`` 1                       | ``'l'`` 4294967297                          |
+    +----------------------+---------------------------------+---------------------------------------------+
+
+- A function existing in the library does not mean it works there: some were fixed in a later
+  interface version than the one they appeared in. The struct entries in ``avisynth_c_loader.h``
+  are commented with the version they appeared in and, where it differs, the version from which
+  they are reliably usable:
+
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+  | Function                                                  | Appeared | Reliably usable from                       |
+  +===========================================================+==========+============================================+
+  | ``avs_copy_frame_props``, ``avs_prop_set_frame``          | V8       | V9 (3.7.1), crashed in V8                  |
+  | ``avs_get_frame_props_ro``, ``avs_get_frame_props_rw``    |          |                                            |
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+  | ``avs_new_video_frame_p``, ``avs_new_video_frame_p_a``    | V8       | V9.1 with a non-NULL ``prop_src``          |
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+  | ``avs_prop_get_data``                                     | V8       | V9.1                                       |
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+  | ``avs_prop_get_xxx`` with a NULL ``error`` pointer        | V8       | V14, before it a failed read terminated    |
+  |                                                           |          | the process: pass a non-NULL pointer       |
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+  | ``avs_prop_get_clip``                                     | V8       | V14, before it returned an invalid clip    |
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+  | ``avs_prop_get_clip``, ``avs_prop_get_frame``: ``*error`` | V8       | V14, it was always 0 in V11 (3.7.4, 3.7.5) |
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+  | ``avs_new_c_filter`` with ``AVS_MT_NICE_FILTER``          | V3       | V14: error reporting of concurrent calls   |
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+  | ``avs_set_to_array`` with NULL ``src``, size > 0          | V11      | V14                                        |
+  +-----------------------------------------------------------+----------+--------------------------------------------+
+
+- Win32 (32 bit) AviSynth+ 3.6.x - 3.7.1 exported the V8 functions only with decorated names
+  (``_avs_get_frame_props_ro@8``), they are NULL there. Fixed in 3.7.2.
+- Plugins: AviSynth is already loaded when the plugin is, ``avs_load_library(NULL)`` gets the same
+  instance on Windows. On other systems pass the path of the running AviSynth if it is not in the
+  default library search path.
+
+.. _c_api_loader_plugins:
+
+Plugins and 64 bit values
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A host chooses by the version it requests in ``avs_create_script_environment``. A C plugin does not
+create an environment: AviSynth decides by the entry points the plugin exports.
+
+How it works (3.7.4+, V11+): a non-C++ plugin is probed for ``avisynth_c_plugin_init2`` first
+(Win32: also ``_avisynth_c_plugin_init2@4``). If exported, the plugin is 64 bit aware.
+Otherwise ``avisynth_c_plugin_init`` is called and the plugin is marked pre-V11.
+
+- Both init functions get the same, full environment. The mark is stored with every function the
+  plugin registers in its init (``avs_add_function``).
+- When such a function is called:
+
+  - 64 bit aware plugin: the full environment, double and long values are passed as they are.
+  - pre-V11 plugin: a camouflaged pre-V11 environment. The filter arguments are converted (long to
+    32 bit int, double to float), ``avs_invoke`` results through this environment as well.
+
+- AviSynth V10 and below (3.7.3 and older) does not know ``avisynth_c_plugin_init2``, calls only
+  ``avisynth_c_plugin_init``, and has no 64 bit values at all.
+
++--------------------------------------+------------------------------------+----------------------------------+
+| Plugin exports                       | AviSynth V10 and below             | AviSynth V11 and above           |
++======================================+====================================+==================================+
+| ``avisynth_c_plugin_init`` only      | loads, 32 bit values               | loads, values converted to       |
+|                                      |                                    | 32 bit int and float             |
++--------------------------------------+------------------------------------+----------------------------------+
+| ``avisynth_c_plugin_init2`` only     | does not load ("cannot be used as  | loads, 64 bit values             |
+|                                      | a plugin")                         |                                  |
++--------------------------------------+------------------------------------+----------------------------------+
+| both, ``init2`` forwarding to        | ``init`` is called, 32 bit values  | ``init2`` is called,             |
+| ``init`` (recommended)               |                                    | 64 bit values                    |
++--------------------------------------+------------------------------------+----------------------------------+
+
+The plugin knows which one was called only if ``init2`` remembers it. Pass it to
+``avs_library_detect_plugin_env``, which sets ``has_64bit_values``::
+
+    #include "avisynth_c_loader.h"
+
+    static AVS_Library* lib;
+    static int from_init2;
+
+    const char* AVSC_CC avisynth_c_plugin_init(AVS_ScriptEnvironment* env)
+    {
+      lib = avs_load_library(NULL);
+      if (!lib)
+        return "MyPlugin: AviSynth not loaded";
+      avs_library_detect_plugin_env(lib, env, from_init2); // version fields and has_64bit_values
+      lib->avs_add_function(env, "MyFilter", "c[x]f", my_filter_create, NULL);
+      return "MyPlugin";
+    }
+
+    // AviSynth V11+ calls it first: the plugin's functions get double and long values
+    const char* AVSC_CC avisynth_c_plugin_init2(AVS_ScriptEnvironment* env)
+    {
+      from_init2 = 1;
+      return avisynth_c_plugin_init(env);
+    }
+
+On Win32 add ``avisynth_c_plugin_init2@4 = _avisynth_c_plugin_init2@4`` to the .def file as well.
+
+Tested with a plugin built both ways, ``LdrTest(x)`` returning the received argument:
+
++-------------------------+------------------------------------------+------------------------------------------+
+| Script                  | Plugin with ``init`` only                | Plugin with ``init2``                    |
++=========================+==========================================+==========================================+
+| ``LdrTest(1.0/3)``      | ``'f'`` 0.3333333432674408,              | ``'d'`` 0.33333333333333331,             |
+|                         | ``has_64bit_values`` = 0                 | ``has_64bit_values`` = 1                 |
++-------------------------+------------------------------------------+------------------------------------------+
+| ``LdrTest(4294967297)`` | ``'i'`` 1                                | ``'l'`` 4294967297                       |
++-------------------------+------------------------------------------+------------------------------------------+
+
+Interface versions: 3: AviSynth 2.5; 6: AviSynth 2.6 and AviSynth+ up to 3.5.0; 7: 3.5.1; 8: 3.6.x, 3.7.0;
+9: 3.7.1, 3.7.2; 10: 3.7.3; 11: 3.7.4, 3.7.5 (11.1); 14: 3.7.6.
 
 Static linking
 --------------
