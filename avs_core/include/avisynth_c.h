@@ -147,6 +147,9 @@
 //              Add AVS_VALUE_TYPE_xxx constants for AVS_Value type (like C++ AvsValueType), plus C-only AVS_VALUE_TYPE_ERROR
 //              New avs_create_map, avs_free_map: standalone property map (like C++ createMap, freeMap)
 //              New avs_apply_message: write a text message onto a frame (like C++ ApplyMessage)
+//              Fix avs_prop_get_xxx: NULL error pointer no longer terminates the process;
+//              Fix avs_prop_get_clip: now returns a valid AVS_Clip;
+//              Fix avs_prop_get_clip/frame set *error
 
 // Notes.
 // Choose either method:
@@ -162,6 +165,27 @@
 // - Link the provided .lib to your module.
 // - Your plugin/software won't work with older AviSynth instances if it uses newer API functions.
 //   The plugin DLL won't load due to dependency issues. (On Windows: platform returned code 127)
+//
+// API functions fixed later than they appeared.
+// An entry existing in an older AviSynth DLL does not mean it works there.
+// Check the interface version (and bugfix version, avs_get_env_property with
+// AVS_AEP_INTERFACE_VERSION/AVS_AEP_INTERFACE_BUGFIX, V9+) before relying on these,
+// or avoid the problematic use on older versions:
+// - V9 (3.7.1): avs_copy_frame_props, avs_get_frame_props_ro, avs_get_frame_props_rw, avs_prop_set_frame
+//   crashed in V8 (3.6.x, 3.7.0). Thus no frame property access through the C API before V9.
+// - V9 (3.7.2): Win32 only: V8 functions were exported with decorated names (_avs_get_frame_props_ro@8),
+//   dynamic loading by plain name failed with 3.7.1.
+// - V9.1: avs_new_video_frame_p, avs_new_video_frame_p_a crashed with a non-NULL prop_src.
+// - V9.1: avs_prop_get_data fixed.
+// - V9.2: C filters: an error from the child clip (fi->child->error) was not passed on (undefined behavior).
+// - V14 (3.7.6): avs_prop_get_xxx with a NULL error pointer terminated the process on a failed read
+//   (missing key, wrong type, index). Before V14 always pass a non-NULL error pointer.
+// - V14: avs_prop_get_clip returned an invalid AVS_Clip, crash on its first use. Do not use it before V14.
+// - V14: avs_prop_get_clip, avs_prop_get_frame did not set *error in V11 (3.7.4, 3.7.5), it was always 0.
+//   Check the returned pointer for NULL as well.
+// - V14: C filters registered as AVS_MT_NICE_FILTER: concurrent calls on the same instance shared the
+//   error fields, an error could be lost or reported for another frame (#519).
+// - V14: avs_set_to_array with a NULL src and nonzero size: before V14 do not call it this way.
 
 
 #ifndef __AVISYNTH_C__
@@ -673,6 +697,8 @@ enum {
 };
 
 // Multithreading behaviour. AVS_Clip avs_set_cache_hints can return them on AVS_CACHE_GET_MTMODE query
+// AVS_MT_NICE_FILTER C filters: reliable error reporting from V14 only (#519), before V14 an error
+// set in a concurrent call could be lost or reported for another frame.
 enum {
   AVS_MT_INVALID = 0,
   AVS_MT_NICE_FILTER = 1,
@@ -1568,6 +1594,7 @@ AVSC_API(void, avs_delete_script_environment)(AVS_ScriptEnvironment *);
 AVSC_API(AVS_VideoFrame*, avs_subframe_planar_a)(AVS_ScriptEnvironment*, AVS_VideoFrame* src, int rel_offset, int new_pitch, int new_row_size, int new_height, int rel_offsetU, int rel_offsetV, int new_pitchUV, int rel_offsetA);
 // The returned video frame must be be released
 
+// Frame property functions: works from V9 (3.7.1), crashed in V8. See the "fixed later" list at the top.
 AVSC_API(void, avs_copy_frame_props)(AVS_ScriptEnvironment* p, const AVS_VideoFrame* src, AVS_VideoFrame* dst);
 AVSC_API(const AVS_Map*, avs_get_frame_props_ro)(AVS_ScriptEnvironment* p, const AVS_VideoFrame* frame);
 AVSC_API(AVS_Map*, avs_get_frame_props_rw)(AVS_ScriptEnvironment* p, AVS_VideoFrame* frame);
@@ -1579,6 +1606,8 @@ AVSC_API(int, avs_prop_num_elements)(AVS_ScriptEnvironment* p, const AVS_Map* ma
 AVSC_API(char, avs_prop_get_type)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key);
 
 // see AVS_GETPROPERROR_... enums
+// "error" pointer: before V14 always pass a non-NULL pointer, a failed read with NULL caused crash.
+// From V14 with NULL: returns 0/NULL, avs_get_error tells the reason.
 AVSC_API(int64_t, avs_prop_get_int)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 AVSC_API(double, avs_prop_get_float)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 // Note: avs_prop_get_data was fixed in interface V9.1
@@ -1586,6 +1615,9 @@ AVSC_API(const char*, avs_prop_get_data)(AVS_ScriptEnvironment* p, const AVS_Map
 AVSC_API(int, avs_prop_get_data_size)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 // V11
 AVSC_API(int, avs_prop_get_data_type_hint)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
+// avs_prop_get_clip: usable from V14, before it returned an invalid AVS_Clip (crash on first use).
+// The returned clip must be released with avs_release_clip.
+// avs_prop_get_clip, avs_prop_get_frame: *error is set from V14, in V11 (3.7.4, 3.7.5) it was always 0.
 AVSC_API(AVS_Clip*, avs_prop_get_clip)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 AVSC_API(const AVS_VideoFrame*, avs_prop_get_frame)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 // V11
@@ -1619,6 +1651,7 @@ AVSC_API(AVS_Map*, avs_create_map)(AVS_ScriptEnvironment* p);
 AVSC_API(void, avs_free_map)(AVS_ScriptEnvironment* p, AVS_Map* map);
 
 // with frame property source
+// a non-NULL prop_src works from V9.1, before it crashed
 AVSC_API(AVS_VideoFrame*, avs_new_video_frame_p)(AVS_ScriptEnvironment*,
   const AVS_VideoInfo* vi, const AVS_VideoFrame* prop_src);
 
