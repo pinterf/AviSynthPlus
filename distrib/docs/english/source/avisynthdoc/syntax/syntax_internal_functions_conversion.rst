@@ -138,6 +138,22 @@ String
 
 Converts a variable to a string. 
 
+The decimal point is always ``.``, independent of the locale of the process. Windows releases
+(MSVC builds) did so since 2016; since 3.7.6 also the Linux, macOS, BSD builds and MinGW builds with
+UCRT. Before, these followed the C locale: when a host or plugin switched the process locale to one
+with a decimal comma (``setlocale``, e.g. Qt or GTK hosts on Linux), the results were:
+
++----------------------------+--------------+------------+
+| Expression                 | Before 3.7.6 | 3.7.6      |
++============================+==============+============+
+| ``String(3.5)``            | "3,500000"   | "3.500000" |
++----------------------------+--------------+------------+
+| ``String(3.5, "%.3f")``    | "3,500"      | "3.500"    |
++----------------------------+--------------+------------+
+
+MinGW builds with the old ``msvcrt.dll`` still follow the process locale: that runtime has no
+locale independent formatting usable here.
+
 - String arguments are passed along unchanged; 
 - bools are converted to "true" or "false"; 
 - numbers are formatted as described below; 

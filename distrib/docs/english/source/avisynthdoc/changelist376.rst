@@ -372,6 +372,10 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: ``String`` and filter texts formatted by ``env->Sprintf`` on Linux, macOS, BSD and MinGW (UCRT)
+  builds: the decimal point is always ``.``, also when a host or plugin switched the process locale to a
+  decimal comma one. Windows MSVC builds did so since 2016. The new ``Format`` specifications use the same.
+  See :doc:`String <./syntax/syntax_internal_functions_conversion>`.
 - Fix: ``Value``, "ConditionalReader" float values, "GeneralConvolution" ``matrix``: the decimal point
   is always ``.``. When a host or plugin switched the process locale to a decimal comma one
   (``setlocale``), ``Value("3.5")`` gave 3. See :doc:`Value <./syntax/syntax_internal_functions_conversion>`.

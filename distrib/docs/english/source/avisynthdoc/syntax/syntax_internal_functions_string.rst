@@ -260,7 +260,8 @@ Number formatting
 
     So the result can be used to build script text for ``Eval`` or an ``Expr`` expression without
     losing precision. For a fixed number of decimals, e.g. for display, use a format specification
-    (``{:.2f}``, since 3.7.6) or ``String(x, "%.2f")``.
+    (``{:.2f}``, since 3.7.6) or ``String(x, "%.2f")``. These use ``.`` as well, like
+    :doc:`String <syntax_internal_functions_conversion>`.
 
 ::
 

@@ -35,6 +35,7 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include <cstdarg>
 
 bool streqi(const char* s1, const char* s2);
 std::string concat(const std::string &s1, const std::string &s2);
@@ -103,6 +104,11 @@ std::string float_to_string(float f);
 // whatever the process locale. No whitespace, sign, hex, inf, nan (script parser, strtod_c).
 // Returns the end of the number; p itself if there were no digits (value 0).
 const char* scan_decimal(const char* p, double* value);
+
+// printf-like formatting with '.' as the decimal point, whatever the process locale
+// (a host or plugin may call setlocale)
+std::string vsprintf_c(const char* fmt, va_list args);
+std::string sprintf_c(const char* fmt, ...);
 
 // strtod with '.' as the decimal point, whatever the process locale (a host or plugin may call
 // setlocale). Leading ASCII whitespace, sign, digits, '.', digits, e/E exponent; hex, inf, nan as strtod.

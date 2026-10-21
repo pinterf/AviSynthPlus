@@ -50,6 +50,11 @@
 #include <codecvt>
 #include <locale>
 #include <vector>
+#include <clocale>
+#include <cstdarg>
+#ifdef AVS_MACOS
+#include <xlocale.h> // newlocale, uselocale
+#endif
 
 
 bool streqi(const char* s1, const char* s2)
@@ -391,6 +396,68 @@ double strtod_c(const char* s, const char** end)
   if (end)
     *end = number_end;
   return negative ? -d : d;
+}
+
+// The locale object is created per call: a function-local static would need thread-safe static
+// initialization, which is off for the XP builds (/Zc:threadSafeInit-).
+// MSVC and MinGW with UCRT (_UCRT): the _l functions of the UCRT.
+// MinGW with the old msvcrt.dll: its _vsnprintf_l formats differently (3 digit exponent: 1e+020)
+// and it has no per-thread locale, so the plain vsnprintf stays: follows the process locale.
+// POSIX: uselocale, per thread.
+std::string vsprintf_c(const char* fmt, va_list args)
+{
+  va_list args_count, args_print; // one copy for each pass
+  va_copy(args_count, args);
+  va_copy(args_print, args);
+  std::string result;
+#if defined(AVS_WINDOWS) && (defined(MSVC) || defined(_UCRT))
+  _locale_t c_locale = _create_locale(LC_NUMERIC, "C");
+  // don't use _vsnprintf_l(NULL, 0, ...) for the size, it returns -1 instead under Wine (February, 2017)
+  const int count = c_locale ? _vscprintf_l(fmt, c_locale, args_count) : _vscprintf(fmt, args_count);
+  if (count >= 0) {
+    std::vector<char> buf(count + 1);
+    if (c_locale)
+      _vsnprintf_l(buf.data(), buf.size(), fmt, c_locale, args_print);
+    else
+      vsnprintf(buf.data(), buf.size(), fmt, args_print);
+    result.assign(buf.data(), count);
+  }
+  if (c_locale)
+    _free_locale(c_locale);
+#elif defined(AVS_WINDOWS)
+  const int count = vsnprintf(nullptr, 0, fmt, args_count);
+  if (count >= 0) {
+    std::vector<char> buf(count + 1);
+    vsnprintf(buf.data(), buf.size(), fmt, args_print);
+    result.assign(buf.data(), count);
+  }
+#else
+  // uselocale is per thread, unlike setlocale, which would change the whole process unsafely
+  locale_t c_locale = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
+  locale_t prev_locale = c_locale ? uselocale(c_locale) : (locale_t)0;
+  const int count = vsnprintf(nullptr, 0, fmt, args_count);
+  if (count >= 0) {
+    std::vector<char> buf(count + 1);
+    vsnprintf(buf.data(), buf.size(), fmt, args_print);
+    result.assign(buf.data(), count);
+  }
+  if (c_locale) {
+    uselocale(prev_locale);
+    freelocale(c_locale);
+  }
+#endif
+  va_end(args_count);
+  va_end(args_print);
+  return result;
+}
+
+std::string sprintf_c(const char* fmt, ...)
+{
+  va_list args;
+  va_start(args, fmt);
+  std::string result = vsprintf_c(fmt, args);
+  va_end(args);
+  return result;
 }
 
 std::string GetFullPathNameWrapUtf8(const std::string& f)

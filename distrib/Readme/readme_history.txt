@@ -11,6 +11,15 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261021 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: String() and everything formatted by env->Sprintf on Linux, macOS, BSD and MinGW builds with
+  UCRT: '.' decimal point regardless of the process locale. Windows MSVC builds did so since 2016
+  (_l functions); the others used plain vsnprintf, so when a host or plugin switched the locale to a
+  decimal comma one (setlocale, e.g. Qt or GTK on Linux), String(3.5) gave "3,500000".
+  The new Format specifications ({:.2f}) go through the same formatting.
+  New helper vsprintf_c: MSVC and UCRT: _vsnprintf_l with a "C" numeric locale; POSIX: uselocale,
+  which is per thread, unlike setlocale (tested on Linux under hu_HU.UTF-8, another thread kept its ',').
+  MinGW builds with the old msvcrt.dll keep following the locale: its _vsnprintf_l formats differently
+  (3 digit exponent, 1e+020) and it has no per-thread locale.
 - Fix: Value(), ConditionalReader float values, GeneralConvolution matrix: the decimal point is always '.'.
   They followed the C locale of the process (strtod, sscanf, atof): with the default "C" locale no
   difference, but when a host or plugin switched it to a decimal comma one (setlocale, e.g. Qt or GTK

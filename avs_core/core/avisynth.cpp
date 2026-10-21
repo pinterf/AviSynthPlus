@@ -441,64 +441,13 @@ static size_t GetNumPhysicalCPUs()
 #endif
 }
 
-#ifdef MSVC
+// '.' decimal point regardless of the process locale. A host program or a plugin may call
+// setlocale(LC_ALL, "") (e.g. Qt and GTK do on Linux), which switches the whole process to the
+// environment's locale, possibly with a decimal comma.
 static std::string FormatString(const char* fmt, va_list args)
 {
-  va_list args2;
-  va_copy(args2, args);
-  _locale_t locale = _create_locale(LC_NUMERIC, "C"); // decimal point: dot
-
-  int count = _vscprintf_l(fmt, locale, args2);
-  // don't use _vsnprintf_l(NULL, 0, fmt, locale, args) here,
-  // it returns -1 instead of the buffer size under Wine (February, 2017)
-  std::vector<char> buf(count + 1);
-  _vsnprintf_l(buf.data(), buf.size(), fmt, locale, args2);
-
-  _free_locale(locale);
-  va_end(args2);
-
-  return std::string(buf.data());
+  return vsprintf_c(fmt, args);
 }
-#else
-static std::string FormatString(const char* fmt, va_list args)
-{
-  va_list args2;
-  va_copy(args2, args);
-
-  // There is no locale specific version of vsnprintf under Linux/gcc.
-  // During program startup, the equivalent of setlocale(LC_ALL, "C")
-  // is executed before any user code is run. But Avisynth is just a dll/shared object.
-  // If the host program calls std::setlocale(LC_ALL, "") - typically in its 'main()'
-  // then it sets current locale by the environment variables.
-  // Unfortunately setlocale is not thread safe and modifies global state which
-  // affects execution of locale-dependent functions, it is undefined behavior to call
-  // it from one thread, while another thread is executing any of such functions (e.g. sprintf)
-  // It can happen that a plugin sets setlocale(LC_ALL, ""). The effect is global,
-  // other formatting functions in the same program will start using the new
-  // (environment) setting.
-  // One must set LC_NUMERIC part of the locale to "C" before the host executable,
-  // to be sure that after such unsafe setlocale(LC_ALL, "") then formatting to dot
-  // remains O.K.
-
-#if 0
-  // Finally we don't do that. Not 100% safe.
-  std::string prev_loc = std::setlocale(LC_NUMERIC, nullptr);
-  setlocale(LC_NUMERIC, "C"); // Set C locale for '.' and no thousand sep
-#endif
-
-  int count = vsnprintf(NULL, 0, fmt, args);
-  std::vector<char> buf(count + 1);
-  vsnprintf(buf.data(), buf.size(), fmt, args2);
-
-  va_end(args2);
-
-#if 0
-  std::setlocale(LC_NUMERIC, prev_loc.c_str()); // Restore the previous locale.
-#endif
-
-  return std::string(buf.data());
-}
-#endif
 
 void* VideoFrame::operator new(size_t size) {
   return ::operator new(size);
