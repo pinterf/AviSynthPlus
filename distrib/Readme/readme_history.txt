@@ -33,6 +33,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 planar YUV <-> planar RGB / Y matrix conversions: the C path is now vectorized by GCC
   (#pragma GCC ivdep on the pixel loop). With 3 source and 3 destination planes GCC gave up on the runtime alias
   checks, so only RGB -> Y was vectorized before. Output unchanged.
+- Optimization: aarch64 NEON horizontal resizer, planar 8, 10-16 bit, any kernel size (generic, like the AVX2
+  generic): per output pixel vmlal_s16 over 8 taps, vpaddq_s32 sums. Bit-identical to C. GCC compiled the C
+  (SIMD-C) version into scalar loads and multiplies on aarch64.
+- Resizers, C path, exact 16 bit horizontal: the 4-tap step of the kernel rest uses the signed pivot like the others.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.

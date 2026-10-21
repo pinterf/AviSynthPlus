@@ -44,6 +44,7 @@
 #endif
 #ifdef NEON_INTRINSICS
 #include "aarch64/turn_neon.h"
+#include "aarch64/resample_neon.h"
 #endif
 
 #include <avs/config.h>
@@ -965,8 +966,8 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* AVS_RES
     const int ksmod4 = kernel_size / 4 * 4;
     // Process 4 elements if needed
     if (i < ksmod4) {
-      Int32x4 shifttosigned_4;
-      shifttosigned_4.convert_from_lo(shifttosigned); // copy lower half of 8xshort, 4xshort to 4xint
+      // static factory: lower half of 8xshort, 4xshort to 4xint
+      const Int32x4 shifttosigned_4 = Int32x4::convert_from_lo(shifttosigned);
       process_two_4pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr1 + i, current_coeff + i, result1, shifttosigned_4);
       process_two_4pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr2 + i, current_coeff + filter_size + i, result2, shifttosigned_4);
       i += 4;
@@ -1743,6 +1744,10 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       return resizer_h_ssse3_generic_uint8_16<uint8_t, true>;
     }
 #endif
+#ifdef NEON_INTRINSICS
+    if (CPU & CPUF_ARM_NEON)
+      return resizer_h_neon_generic_uint8_16<uint8_t, true>;
+#endif
     return resizer_h_c_generic_uint8_16_vectorized<uint8_t, true>;
     //return resize_h_c_planar<uint8_t, 1>;
   }
@@ -1914,6 +1919,14 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
         return resizer_h_ssse3_generic_uint8_16<uint16_t, true>;
       else
         return resizer_h_ssse3_generic_uint8_16<uint16_t, false>;
+    }
+#endif
+#ifdef NEON_INTRINSICS
+    if (CPU & CPUF_ARM_NEON) {
+      if (bits_per_pixel == 16)
+        return resizer_h_neon_generic_uint8_16<uint16_t, false>;
+      else
+        return resizer_h_neon_generic_uint8_16<uint16_t, true>;
     }
 #endif
     if (bits_per_pixel == 16)
@@ -2677,8 +2690,8 @@ FilteredResize_2p::FilteredResize_2p(PClip _child,
   if (vi.IsRGB() && !isRGBPfamily)
     subrange_top = vi.height - subrange_top - subrange_height; // packed RGB upside down
 
-#ifdef INTEL_INTRINSICS
-  int cpu = env->GetCPUFlags();
+#if defined(INTEL_INTRINSICS) || defined(NEON_INTRINSICS)
+  int cpu = env->GetCPUFlags(); // NEON: horizontal resizer
 #else
   int cpu = 0;
 #endif
@@ -3032,6 +3045,10 @@ ResamplerH FilteredResize_2p::GetResamplerH(int CPU, int pixelsize, int bits_per
       return resizer_h_ssse3_generic_uint8_16<uint8_t, true>;
     }
 #endif
+#ifdef NEON_INTRINSICS
+    if (CPU & CPUF_ARM_NEON)
+      return resizer_h_neon_generic_uint8_16<uint8_t, true>;
+#endif
     return resizer_h_c_generic_uint8_16_vectorized<uint8_t, true>;
     //return resize_h_c_planar<uint8_t, 1>;
   }
@@ -3048,6 +3065,14 @@ ResamplerH FilteredResize_2p::GetResamplerH(int CPU, int pixelsize, int bits_per
         return resizer_h_ssse3_generic_uint8_16<uint16_t, true>;
       else
         return resizer_h_ssse3_generic_uint8_16<uint16_t, false>;
+    }
+#endif
+#ifdef NEON_INTRINSICS
+    if (CPU & CPUF_ARM_NEON) {
+      if (bits_per_pixel == 16)
+        return resizer_h_neon_generic_uint8_16<uint16_t, false>;
+      else
+        return resizer_h_neon_generic_uint8_16<uint16_t, true>;
     }
 #endif
     if (bits_per_pixel == 16)
