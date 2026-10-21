@@ -16,6 +16,11 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 NEON direct 8 bit YV24 -> packed RGB24/RGB32 (ConvertToRGB24/32 from 8 bit YUV,
   the legacy 13 bit integer matrix path), YUVA alpha to RGB32 as well. Bit-identical to C.
   The packed RGB -> YUV direction and the planar matrix kernels were already vectorized by GCC -O3.
+- Optimization: aarch64 NEON Blur/Sharpen horizontal pass, planar 8, 10-16 bit and 32 bit float, in-place like C,
+  any width. Bit-identical to C (float: fused like GCC contracts the C expression). The vertical pass was
+  already vectorized by GCC -O3. Differs from the Intel paths: 10-14 bit is computed in 16 bit lanes like 8 bit
+  (only 16 bit needs 32 bit lanes), every pixel is loaded once (neighbours from registers, no overlapping
+  reloads), and the last full block is SIMD at any width, only width % vector size remains per pixel.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.

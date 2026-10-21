@@ -36,6 +36,8 @@
 #ifdef INTEL_INTRINSICS
 #include "intel/focus_sse.h"
 #include "intel/focus_avx2.h"
+#elif defined(NEON_INTRINSICS)
+#include "aarch64/focus_neon.h"
 #endif
 #include <cmath>
 #include <vector>
@@ -500,6 +502,18 @@ PVideoFrame __stdcall AdjustFocusH::GetFrame(int n, IScriptEnvironment* env)
       }
       else if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_SSE2) && row_size > 16) {
         af_horizontal_planar_float_sse2(q, height, pitch, row_size, (float)amountd);
+      }
+      else
+#elif defined(NEON_INTRINSICS)
+      // any width: the NEON functions do the row ends per pixel
+      if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
+        af_horizontal_planar_neon(q, height, pitch, row_size, half_amount);
+      }
+      else if (pixelsize == 2 && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
+        af_horizontal_planar_uint16_t_neon(q, height, pitch, row_size, half_amount, bits_per_pixel);
+      }
+      else if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
+        af_horizontal_planar_float_neon(q, height, pitch, row_size, (float)amountd);
       }
       else
 #endif
