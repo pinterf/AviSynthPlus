@@ -514,8 +514,10 @@ CWDChanger::CWDChanger(const char* new_cwd)
 
 CWDChanger::~CWDChanger(void)
 {
-  if (restore)
-    chdir(old_working_directory);
+  if (restore) {
+    // nothing to do on failure in a destructor; the if only consumes the warn_unused_result value
+    if (chdir(old_working_directory) != 0) {}
+  }
 }
 #endif
 
