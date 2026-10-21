@@ -11,6 +11,19 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
 20261021 3.7.5.rXXXX (pre 3.7.6)
 --------------------------------
+- Fix: C plugins without avisynth_c_plugin_init2 (pre-V11) got unconverted double and long (int64)
+  values in three cases; an old avisynth_c.h does not know these types (its inline avs_is_float sees
+  'i' and 'f' only). Now converted to float and 32 bit int, like the top-level filter arguments were:
+  - function called at runtime, e.g. LdrTest(1.0/3) inside ScriptClip got 'd' 0.33333333333333331,
+    now 'f' 0.3333333432674408; LdrTest(4294967297) got 'l', now 'i' 1
+  - array arguments, at any depth: LdrTest([[[4294967297]]]) element was 'l', now 'i'
+  - array results of avs_invoke: Eval("[[1.0/3]]") element was 'd', now 'f'
+    (also for C hosts which requested a version below 11 in avs_create_script_environment)
+  AviSynth 2.5 C++ plugins: top-level arguments are now converted at runtime as well.
+  Existed since 3.7.4.
+- Optimization (under the hood, no visible change): filter construction copies the function arguments
+  (deep copy of arrays) once instead of twice, for 2.5 and pre-V11 C plugins once instead of three times;
+  the 64 bit conversion is in place. Matters only for big (nested) array arguments.
 - C API dynamic loading: new header avisynth_c_loader.h (Windows, Linux, macOS, ...), replaces the
   Windows-only loader of avisynth_c.h. Loads all C API functions, those missing from an older AviSynth
   are NULL; each is commented with the interface version from which it is reliably usable.

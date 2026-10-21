@@ -248,8 +248,9 @@ Otherwise ``avisynth_c_plugin_init`` is called and the plugin is marked pre-V11.
 - When such a function is called:
 
   - 64 bit aware plugin: the full environment, double and long values are passed as they are.
-  - pre-V11 plugin: a camouflaged pre-V11 environment. The filter arguments are converted (long to
-    32 bit int, double to float), ``avs_invoke`` results through this environment as well.
+  - pre-V11 plugin: a camouflaged pre-V11 environment. The function arguments are converted (long to
+    32 bit int, double to float), array elements included, also when the function is called at
+    runtime (e.g. from ScriptClip); ``avs_invoke`` results through this environment as well (3.7.6).
 
 - AviSynth V10 and below (3.7.3 and older) does not know ``avisynth_c_plugin_init2``, calls only
   ``avisynth_c_plugin_init``, and has no 64 bit values at all.

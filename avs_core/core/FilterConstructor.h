@@ -4,6 +4,12 @@
 #include "internal.h"
 #include <vector>
 
+// Function arguments (an owned, deep copied array) for isPluginAvs25 and isPluginPreV11C plugins:
+// long and double converted in place to 32 bit int and float. deep: array elements as well (pre-V11 C)
+void ArgsTo32bit(AVSValue& args, bool deep);
+// The same for a single value (e.g. avs_invoke results)
+void ValueTo32bit(AVSValue& v, bool deep);
+
 class FilterConstructor
 {
 private:

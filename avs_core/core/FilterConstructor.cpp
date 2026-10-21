@@ -21,34 +21,58 @@ FilterConstructor::FilterConstructor(IScriptEnvironment2 * env,
 }
 
 
+// isPluginAvs25 and isPluginPreV11C cannot accept long and double types in
+// their parameters passed to them.
+// Such plugins don't recognize 'l' and 'd' 64-bit types due to direct type field checks in AVSValue/AVS_Value.
+// IsInt/avs_is_int and IsFloat/avs_is_float check the type field directly in the old header, without an interface call.
+// New avisynth_c.h supports these types, but old plugins don't.
+// Thus we convert 64-bit types to 32-bit ones:
+//   long int64 -> 32 bit int,
+//   double -> float.
+// In place: the arrays are already deep copied (owned) when funcArgs is built.
+// Every AVSValue copy (copy constructor, operator=, array constructor) deep copies the whole array
+// tree, so v and the array elements are taken by reference, only the 'l' and 'd' leaves are
+// overwritten. A by-value parameter or 'AVSValue e = v[i]' would convert a copy, then throw it away.
+// Changing the elements is safe: funcArgs is a private copy, the caller's arrays stay untouched.
+// deep: array elements as well, at any depth (pre-V11 C plugins). Not for 2.5 plugins, which
+// do not know deep copied arrays.
+void ValueTo32bit(AVSValue& v, bool deep)
+{
+  switch (v.GetType()) {
+  case AvsValueType::VALUE_TYPE_LONG:
+    v = v.AsInt(); // same object, a scalar: no array copy (32 bit Avisynth: frees the int64 storage)
+    break;
+  case AvsValueType::VALUE_TYPE_DOUBLE:
+    v = v.AsFloatf();
+    break;
+  case AvsValueType::VALUE_TYPE_ARRAY:
+    if (deep) {
+      // operator[] returns a const reference to the stored element. const_cast keeps it a reference:
+      // the elements are not const objects (allocated by new AVSValue[] in Assign2).
+      for (int i = 0; i < v.ArraySize(); i++)
+        ValueTo32bit(const_cast<AVSValue&>(v[i]), true);
+    }
+    break;
+  default:
+    break;
+  }
+}
+
+// helper called from InstantiateFilter and from the runtime (is_runtime) branch of ScriptEnvironment::Invoke_
+void ArgsTo32bit(AVSValue& args, bool deep)
+{
+  for (int i = 0; i < args.ArraySize(); i++)
+    ValueTo32bit(const_cast<AVSValue&>(args[i]), deep);
+}
+
 AVSValue FilterConstructor::InstantiateFilter() const
 {
   // funcArgs is passed to the function as an array.
   // Calls the plugin's instance creator, which is usually Filter_Create(AVSValue args, void *user_data, IScriptEnvironment *env)
   // or create_c_filter
-  AVSValue funcArgs;
-
-  // isPluginAvs25 and isPluginPreV11C cannot accept long and double types in
-  // their parameters passed to them.
-  // Such plugins don't recognize 'l' and 'd' 64-bit types due to direct type field checks in AVSValue/AVS_Value.
-  // IsInt/avs_is_int and IsFloat/avs_is_float check the type field directly in the old header, without an interface call.
-  // New avisynth_c.h supports these types, but old plugins don't.
-  // Thus we convert 64-bit types in the parameter list to 32-bit ones.
-  if (Func->isPluginAvs25 || Func->isPluginPreV11C) {
-    std::vector<AVSValue> funcArgs_temp(CtorArgs.size(), AVSValue());
-    for (auto i = 0; i < (int)CtorArgs.size(); i++) {
-      if (CtorArgs[i].GetType() == AvsValueType::VALUE_TYPE_LONG) // long int64 -> 32 bit int
-        funcArgs_temp[i] = CtorArgs[i].AsInt();
-      else if (CtorArgs[i].GetType() == AvsValueType::VALUE_TYPE_DOUBLE) // double -> float
-        funcArgs_temp[i] = CtorArgs[i].AsFloatf();
-      else
-        funcArgs_temp[i] = CtorArgs[i];
-    }
-    funcArgs = AVSValue(funcArgs_temp.data(), (int)funcArgs_temp.size());
-  }
-  else {
-    funcArgs = AVSValue(CtorArgs.data(), (int)CtorArgs.size());
-  }
+  AVSValue funcArgs(CtorArgs.data(), (int)CtorArgs.size());
+  if (Func->isPluginAvs25 || Func->isPluginPreV11C)
+    ArgsTo32bit(funcArgs, Func->isPluginPreV11C);
 
   AVSValue retval = Func->apply(funcArgs, Func->user_data, 
     Func->isPluginAvs25 ? (IScriptEnvironment *)Env25 : 

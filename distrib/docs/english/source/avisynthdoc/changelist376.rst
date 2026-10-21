@@ -370,6 +370,10 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: C plugins without ``avisynth_c_plugin_init2`` (pre-V11) got unconverted double and 64 bit int
+  values when their function was called at runtime (e.g. from ScriptClip), in array arguments, and in
+  array results of ``avs_invoke``; such plugins cannot read them. Now converted to float and 32 bit int
+  there as well (2.5 C++ plugins: top-level runtime arguments). Existed since 3.7.4.
 - Fix: "CombinePlanes" with a single clip and a target of different chroma subsampling (e.g. YV12 to
   YV24, planes="Y"): the zero-copy path returned a malformed frame (chroma planes of the source size).
   Existed since r2487 (2017).
@@ -613,6 +617,9 @@ Bugfixes
 
 Optimizations
 ~~~~~~~~~~~~~
+- Under the hood, no visible change: filter construction copies the function arguments (deep copy
+  of arrays) once instead of twice (2.5 and pre-V11 C plugins: three times). Matters only for big
+  (nested) array arguments.
 - "Layer" YUVA/YUV/RGBP "add", "subtract", "mul", "darken", "lighten": refactor
   chroma placement calculation and function dispatchers; main algorithm SIMD
   vectorization is now possible for non-444 chroma placements by precalculating

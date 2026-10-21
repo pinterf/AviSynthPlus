@@ -1962,15 +1962,13 @@ public:
     // which would (if unchanged) result in a 64 bit type, like Pi() returns double.
     // Example call: 
     // AVS_Value ver = avs_invoke(Env, "Pi", avs_new_value_array(NULL, 0), NULL);
-    // We convert only basic types, and not handling array type return values here,
-    // to look into whether it contains 64 bit elements accidentally.
-    // Neither is an old C plugin expected to handle array return values.
-    // Anyway, proper dyn array support comes only from v11 on C API.
-    if (result.GetType() == AvsValueType::VALUE_TYPE_LONG) // real 64 bit integer
-      result = result.AsInt(); // to 32 bit integer
-    else if (result.GetType() == AvsValueType::VALUE_TYPE_DOUBLE) // real 64 bit double
-      result = result.AsFloatf(); // to 32 bit float
-
+    // Array results are converted at any depth: one level e.g. propGetAsArray (frame properties
+    // are flat, like VapourSynth maps), nested ones from script arrays (Eval("[[1.0/3]]")).
+    // Only C callers get here (pre-V11 C plugin, or C host requesting a version below 11):
+    // they reach the elements without an API call, the old avisynth_c.h inline avs_array_elt
+    // reads v.d.array[index] directly.
+    // Converted in place, result is our own deep copied value (see ValueTo32bit).
+    ValueTo32bit(result, true);
     return result;
   }
 
@@ -5526,6 +5524,10 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
   if(is_runtime) {
     // Invoked by a thread or GetFrame
     AVSValue funcArgs(args3.data(), (int)args3.size());
+
+    // 2.5 and pre-V11 C plugins get long and double converted, like in FilterConstructor
+    if (f->isPluginAvs25 || f->isPluginPreV11C)
+      ArgsTo32bit(funcArgs, f->isPluginPreV11C);
 
     if (f->isPluginAvs25) // like GRunT's AverageLuma wrapper
       *result = f->apply(funcArgs, f->user_data, (IScriptEnvironment*)((IScriptEnvironment_Avs25*)env_thread));
