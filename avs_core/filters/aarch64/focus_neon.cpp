@@ -375,3 +375,90 @@ template void accumulate_line_neon<uint16_t, false>(BYTE* c_plane, const BYTE** 
 template void accumulate_line_neon<uint16_t, true>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
 template void accumulate_line_neon<float, false>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
 template void accumulate_line_neon<float, true>(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
+
+// Sum of absolute differences, 8 / 16 bit: the NEON pair of calculate_sad_c (focus.cpp), get_sad_c /
+// get_sad_rgb_c (conditional_functions.cpp) and calculate_sad_8_or_16_sse2. Integer, so any order gives the
+// same total. rowsize is in bytes. packedRGB3264: the alpha (every 4th component) is skipped, like get_sad_rgb_c:
+// the absolute difference is masked (the mask is byte / lane granular, the same as masking both inputs).
+// 32 bytes per step into two independent accumulators (one accumulator chain is latency bound).
+//   8 bit: vabd + vpadal into 16 bit lanes, flushed into 32 bit lanes every 2 x 64 steps (at most 64 * 2 * 255).
+//   16 bit: vabal / vabal_high into 32 bit lanes (no pairwise add); RGB64 (masked): vabd + and + vpadal.
+// Row totals are added as 64 bit. The rest of the row (< 32 bytes): one 16 byte step, then per component.
+template<typename pixel_t, bool packedRGB3264>
+int64_t calculate_sad_8_or_16_neon(const BYTE* cur_ptr, const BYTE* other_ptr, int cur_pitch, int other_pitch, size_t rowsize, size_t height)
+{
+  const size_t mod32 = rowsize / 32 * 32;
+  const size_t mod16 = rowsize / 16 * 16;
+  const size_t width = rowsize / sizeof(pixel_t); // components
+  const uint8x16_t mask8 = vreinterpretq_u8_u32(vdupq_n_u32(0x00FFFFFF));              // RGB32: B G R kept, A zeroed
+  const uint16x8_t mask16 = vreinterpretq_u16_u64(vdupq_n_u64(0x0000FFFFFFFFFFFFull)); // RGB64: B G R kept, A zeroed
+  int64_t total = 0;
+  for (size_t y = 0; y < height; ++y) {
+    uint32x4_t acc32a = vdupq_n_u32(0);
+    uint32x4_t acc32b = vdupq_n_u32(0);
+    size_t x = 0;
+    if constexpr (sizeof(pixel_t) == 1) {
+      auto absdiff = [&](size_t pos) {
+        uint8x16_t d = vabdq_u8(vld1q_u8(cur_ptr + pos), vld1q_u8(other_ptr + pos));
+        if constexpr (packedRGB3264)
+          d = vandq_u8(d, mask8);
+        return d;
+      };
+      while (x < mod32) {
+        uint16x8_t acc16a = vdupq_n_u16(0);
+        uint16x8_t acc16b = vdupq_n_u16(0);
+        const size_t block_end = x + 64 * 32 < mod32 ? x + 64 * 32 : mod32;
+        for (; x < block_end; x += 32) {
+          acc16a = vpadalq_u8(acc16a, absdiff(x));
+          acc16b = vpadalq_u8(acc16b, absdiff(x + 16));
+        }
+        acc32a = vpadalq_u16(acc32a, acc16a);
+        acc32b = vpadalq_u16(acc32b, acc16b);
+      }
+      if (x < mod16) {
+        acc32a = vpadalq_u16(acc32a, vpaddlq_u8(absdiff(x)));
+        x += 16;
+      }
+    }
+    else {
+      auto step = [&](size_t pos, uint32x4_t& acc_lo, uint32x4_t& acc_hi) {
+        const uint16x8_t a = vld1q_u16(reinterpret_cast<const uint16_t*>(cur_ptr + pos));
+        const uint16x8_t b = vld1q_u16(reinterpret_cast<const uint16_t*>(other_ptr + pos));
+        if constexpr (packedRGB3264) {
+          acc_lo = vpadalq_u16(acc_lo, vandq_u16(vabdq_u16(a, b), mask16));
+        }
+        else {
+          acc_lo = vabal_u16(acc_lo, vget_low_u16(a), vget_low_u16(b));
+          acc_hi = vabal_high_u16(acc_hi, a, b);
+        }
+      };
+      for (; x < mod32; x += 32) {
+        step(x, acc32a, acc32b);
+        step(x + 16, packedRGB3264 ? acc32b : acc32a, packedRGB3264 ? acc32a : acc32b);
+      }
+      if (x < mod16) {
+        step(x, acc32a, acc32b);
+        x += 16;
+      }
+    }
+    int64_t rowsum = (int64_t)vaddlvq_u32(acc32a) + (int64_t)vaddlvq_u32(acc32b);
+    const pixel_t* p1 = reinterpret_cast<const pixel_t*>(cur_ptr);
+    const pixel_t* p2 = reinterpret_cast<const pixel_t*>(other_ptr);
+    for (size_t i = x / sizeof(pixel_t); i < width; ++i) {
+      if constexpr (packedRGB3264) {
+        if ((i & 3) == 3)
+          continue; // alpha
+      }
+      rowsum += std::abs((int)p1[i] - (int)p2[i]);
+    }
+    total += rowsum;
+    cur_ptr += cur_pitch;
+    other_ptr += other_pitch;
+  }
+  return total;
+}
+
+template int64_t calculate_sad_8_or_16_neon<uint8_t, false>(const BYTE*, const BYTE*, int, int, size_t, size_t);
+template int64_t calculate_sad_8_or_16_neon<uint8_t, true>(const BYTE*, const BYTE*, int, int, size_t, size_t);
+template int64_t calculate_sad_8_or_16_neon<uint16_t, false>(const BYTE*, const BYTE*, int, int, size_t, size_t);
+template int64_t calculate_sad_8_or_16_neon<uint16_t, true>(const BYTE*, const BYTE*, int, int, size_t, size_t);

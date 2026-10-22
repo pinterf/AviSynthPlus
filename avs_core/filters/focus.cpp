@@ -996,6 +996,14 @@ static int64_t calculate_sad(const BYTE* cur_ptr, const BYTE* other_ptr, int cur
     return calculate_sad_8_or_16_sse2<uint16_t, false>(cur_ptr, other_ptr, cur_pitch, other_pitch, rowsize, height) >> (bits_per_pixel-8);
   }
 #endif
+#ifdef NEON_INTRINSICS
+  if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+    if (pixelsize == 1)
+      return calculate_sad_8_or_16_neon<uint8_t, false>(cur_ptr, other_ptr, cur_pitch, other_pitch, rowsize, height);
+    if (pixelsize == 2)
+      return calculate_sad_8_or_16_neon<uint16_t, false>(cur_ptr, other_ptr, cur_pitch, other_pitch, rowsize, height) >> (bits_per_pixel - 8);
+  }
+#endif
 
   switch(pixelsize) {
   case 1: return calculate_sad_c<uint8_t>(cur_ptr, other_ptr, cur_pitch, other_pitch, rowsize, height);

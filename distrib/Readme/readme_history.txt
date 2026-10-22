@@ -56,6 +56,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 ShowRed/Green/Blue/Alpha from packed RGB32/64 to planar RGBA: the C path is vectorized
   by GCC (#pragma GCC ivdep; 4 destination planes were too many for its runtime alias checks). The other
   ShowXxx paths were already vectorized (GCC/Clang). Output unchanged.
+- Optimization: aarch64 NEON plane sum and SAD for the runtime functions (AverageLuma & co., LumaDifference,
+  RGBDifference, YDifferenceFromPrevious/ToNext & co.) and the TemporalSoften scene change detection, 8-16 bit:
+  vpadal / vabd / vabal, two accumulators, alpha of packed RGB32/64 masked. Same integer totals as C.
 - Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for
   rows narrower than the AVX2 minimum (32 / 16 pixels): 1.4x (RGB48) - 3.3x (RGB24) vs. the C path.
 - Overlay: removed the unused internal 4:2:0/4:2:2 <-> 4:4:4 converters (444convert, C/SSE2/AVX2);

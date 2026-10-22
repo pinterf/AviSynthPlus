@@ -48,4 +48,9 @@ void af_horizontal_planar_float_neon(BYTE* dstp, size_t height, size_t pitch, si
 template<typename pixel_t, bool maxThreshold>
 void accumulate_line_neon(BYTE* c_plane, const BYTE** planeP, int planes, size_t rowsize, BYTE threshold, int div, int bits_per_pixel);
 
+// Sum of absolute differences, 8 / 16 bit, rowsize in bytes; packedRGB3264: alpha skipped.
+// Same result as calculate_sad_c / get_sad_c / get_sad_rgb_c and calculate_sad_8_or_16_sse2.
+template<typename pixel_t, bool packedRGB3264>
+int64_t calculate_sad_8_or_16_neon(const BYTE* cur_ptr, const BYTE* other_ptr, int cur_pitch, int other_pitch, size_t rowsize, size_t height);
+
 #endif // __Focus_NEON_H__

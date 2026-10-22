@@ -39,6 +39,10 @@
 #include "intel/conditional_functions_sse.h"
 #include "../intel/focus_sse.h" // sad
 #endif
+#ifdef NEON_INTRINSICS
+#include "aarch64/conditional_functions_neon.h"
+#include "../aarch64/focus_neon.h" // sad
+#endif
 #include "../../core/internal.h"
 #include <avs/config.h>
 #include <avs/minmax.h>
@@ -243,6 +247,12 @@ AVSValue AveragePlane::AvgPlane(AVSValue clip, void* , int plane, int offset, IS
   } else
 #endif
 #endif
+#ifdef NEON_INTRINSICS
+  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
+    sum = pixelsize == 1 ? get_sum_of_pixels_neon<uint8_t>(srcp, height, width, pitch)
+                         : get_sum_of_pixels_neon<uint16_t>(srcp, height, width, pitch);
+  } else
+#endif
   {
     if(pixelsize==1)
       sum = get_sum_of_pixels_c<uint8_t>(srcp, height, width, pitch);
@@ -388,6 +398,12 @@ AVSValue ComparePlane::CmpPlane(AVSValue clip, AVSValue clip2, void* , int plane
       } else
 #endif
 #endif
+#ifdef NEON_INTRINSICS
+      if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+        sad = pixelsize == 1 ? (double)calculate_sad_8_or_16_neon<uint8_t, true>(srcp, srcp2, pitch, pitch2, rowsize, height)
+                             : (double)calculate_sad_8_or_16_neon<uint16_t, true>(srcp, srcp2, pitch, pitch2, rowsize, height);
+      } else
+#endif
       {
         if (pixelsize == 1)
           sad = (double)get_sad_rgb_c<uint8_t>(srcp, srcp2, height, width, pitch, pitch2);
@@ -407,6 +423,12 @@ AVSValue ComparePlane::CmpPlane(AVSValue clip, AVSValue clip2, void* , int plane
         sad = (double)calculate_sad_isse<false>(srcp, srcp2, pitch, pitch2, rowsize, height); // in focus, no overflow
       } else
 #endif
+#endif
+#ifdef NEON_INTRINSICS
+      if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
+        sad = pixelsize == 1 ? (double)calculate_sad_8_or_16_neon<uint8_t, false>(srcp, srcp2, pitch, pitch2, rowsize, height)
+                             : (double)calculate_sad_8_or_16_neon<uint16_t, false>(srcp, srcp2, pitch, pitch2, rowsize, height);
+      } else
 #endif
       {
         if(pixelsize==1)
@@ -485,6 +507,12 @@ AVSValue ComparePlane::CmpPlaneSame(AVSValue clip, void* , int offset, int plane
       } else
 #endif
 #endif
+#ifdef NEON_INTRINSICS
+      if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+        sad = pixelsize == 1 ? (double)calculate_sad_8_or_16_neon<uint8_t, true>(srcp, srcp2, pitch, pitch2, rowsize, height)
+                             : (double)calculate_sad_8_or_16_neon<uint16_t, true>(srcp, srcp2, pitch, pitch2, rowsize, height);
+      } else
+#endif
       {
         if(pixelsize==1)
           sad = get_sad_rgb_c<uint8_t>(srcp, srcp2, height, width, pitch, pitch2);
@@ -503,6 +531,12 @@ AVSValue ComparePlane::CmpPlaneSame(AVSValue clip, void* , int offset, int plane
         sad = (double)calculate_sad_isse<false>(srcp, srcp2, pitch, pitch2, rowsize, height); // in focus, no overflow
       } else
 #endif
+#endif
+#ifdef NEON_INTRINSICS
+      if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
+        sad = pixelsize == 1 ? (double)calculate_sad_8_or_16_neon<uint8_t, false>(srcp, srcp2, pitch, pitch2, rowsize, height)
+                             : (double)calculate_sad_8_or_16_neon<uint16_t, false>(srcp, srcp2, pitch, pitch2, rowsize, height);
+      } else
 #endif
       {
         if(pixelsize==1)
