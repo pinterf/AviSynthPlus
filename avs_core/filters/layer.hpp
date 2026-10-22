@@ -262,6 +262,11 @@ static void layer_yuv_lighten_darken_c(
       effective_mask_ptr = prepare_effective_mask_for_row<maskMode, pixel_t>(maskp, mask_pitch, cwidth, mask_buffer);
     }
 
+    // ovr/src/mask row pointers + 2 destination and 2 overlay chroma planes (+ luma for 444): too many pointer
+    // pairs for GCC's runtime alias checks. Safe: x reads and writes element x of each row only.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < cwidth; ++x) {
       // opacity_i is in [0..max_pixel_value], the same convention as masked_merge.
       uint32_t alpha_eff;
@@ -382,6 +387,10 @@ static void layer_yuv_lighten_darken_f_c(
       effective_mask_ptr = prepare_effective_mask_for_row_float_c<maskMode>(maskp, mask_pitch, cwidth, mask_buffer);
     }
 
+    // see layer_yuv_lighten_darken_c
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < cwidth; ++x) {
       float alpha_eff = has_alpha ? effective_mask_ptr[x] * opacity : opacity;
 
@@ -975,6 +984,11 @@ static void layer_planarrgb_lighten_darken_c(BYTE** dstp8, const BYTE** ovrp8, c
   const int half = max_pixel_value / 2;
 
   for (int y = 0; y < height; ++y) {
+    // 3-4 destination + 3-5 source planes: too many pointer pairs for GCC's runtime alias checks, the loop
+    // stayed scalar on aarch64. Safe: x reads and writes element x of each plane only, no loop-carried dependency.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < width; ++x) {
       // opacity_i is in [0..max_pixel_value], the same convention as masked_merge.
       uint32_t alpha_eff;
@@ -1045,6 +1059,10 @@ static void layer_planarrgb_lighten_darken_f_c(BYTE** dstp8, const BYTE** ovrp8,
   mask_pitch /= sizeof(float);
 
   for (int y = 0; y < height; ++y) {
+    // see layer_planarrgb_lighten_darken_c
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < width; ++x) {
       float alpha = has_alpha ? maskp[x] * opacity : opacity;
 
@@ -1361,6 +1379,10 @@ static void layer_planarrgb_mul_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE* 
   const int half = max_pixel_value / 2;
 
   for (int y = 0; y < height; ++y) {
+    // see layer_planarrgb_lighten_darken_c
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < width; ++x) {
 
       uint32_t alpha_eff;
@@ -1440,6 +1462,10 @@ static void layer_planarrgb_mul_f_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE
   mask_pitch /= sizeof(float);
 
   for (int y = 0; y < height; ++y) {
+    // see layer_planarrgb_lighten_darken_c
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < width; ++x) {
       float alpha = has_alpha ? maskp[x] * opacity : opacity;
 
