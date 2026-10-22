@@ -141,6 +141,37 @@ void colorkeymask_sse2(BYTE* pf, int pitch, int color, int height, int width, in
 }
 
 
+// RGB64: 2 pixels of 4x16 bit per 128 bit
+void colorkeymask_uint16_sse2(BYTE* pf, int pitch, uint64_t color64, int height, int tolB, int tolG, int tolR) {
+  const uint64_t t = 0xFFFF000000000000ull | ((uint64_t)tolR << 32) | ((uint64_t)tolG << 16) | (uint64_t)tolB; // alpha always passes
+  __m128i tolerance = _mm_set1_epi64x(t);
+  __m128i colorv = _mm_set1_epi64x(color64);
+  __m128i zero = _mm_setzero_si128();
+
+  BYTE* endp = pf + pitch * height;
+
+  while (pf < endp)
+  {
+    __m128i src = _mm_load_si128(reinterpret_cast<const __m128i*>(pf));
+    __m128i gt = _mm_subs_epu16(colorv, src);
+    __m128i lt = _mm_subs_epu16(src, colorv);
+    __m128i absdiff = _mm_or_si128(gt, lt); //abs(color - src)
+
+    __m128i not_passed = _mm_subs_epu16(absdiff, tolerance);
+    __m128i passed32 = _mm_cmpeq_epi32(not_passed, zero);
+    // both 32 bit halves of the 64 bit pixel (no _mm_cmpeq_epi64 in SSE2)
+    __m128i passed = _mm_and_si128(passed32, _mm_shuffle_epi32(passed32, _MM_SHUFFLE(2, 3, 0, 1)));
+    // no key pixel: no store, halves the memory traffic (a frame is far larger than the cache)
+    if (_mm_movemask_epi8(passed) != 0) {
+      passed = _mm_slli_epi64(passed, 48); // alpha word only
+      __m128i result = _mm_andnot_si128(passed, src);
+      _mm_store_si128(reinterpret_cast<__m128i*>(pf), result);
+    }
+
+    pf += 16;
+  }
+}
+
 void invert_frame_inplace_sse2(BYTE* frame, int pitch, int width, int height, int mask) {
   __m128i maskv = _mm_set1_epi32(mask);
 

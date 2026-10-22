@@ -278,15 +278,27 @@ ColorKeyMask::ColorKeyMask(PClip _child, int _color, int _tolB, int _tolG, int _
 }
 
 
+// IsClose(a, b, tol) in the pixel type: |a - b| <= tol. Same result (tol fits pixel_t), but the
+// vectorized compare stays at pixel width instead of 32 bit lanes.
+template<typename pixel_t>
+static AVS_FORCEINLINE bool is_close_absdiff(pixel_t a, pixel_t b, pixel_t tol) {
+  const pixel_t diff = a > b ? (pixel_t)(a - b) : (pixel_t)(b - a);
+  return diff <= tol;
+}
+
 template<typename pixel_t>
 static void colorkeymask_c(BYTE* pf8, int pitch, int R, int G, int B, int height, int rowsize, int tolB, int tolG, int tolR) {
   pixel_t* pf = reinterpret_cast<pixel_t*>(pf8);
   rowsize /= sizeof(pixel_t);
   pitch /= sizeof(pixel_t);
+  const pixel_t r = (pixel_t)R, g = (pixel_t)G, b = (pixel_t)B;
+  const pixel_t tol_r = (pixel_t)tolR, tol_g = (pixel_t)tolG, tol_b = (pixel_t)tolB;
   for (int y = 0; y < height; y++) {
+    // Vectorized by GCC and Clang: '&' instead of '&&' (short-circuit is control flow), and alpha is
+    // always rewritten through an AND mask (a conditional store or 'key ? 0 : alpha' stayed scalar).
     for (int x = 0; x < rowsize; x += 4) {
-      if (IsClose(pf[x], B, tolB) && IsClose(pf[x + 1], G, tolG) && IsClose(pf[x + 2], R, tolR))
-        pf[x + 3] = 0;
+      const bool key = is_close_absdiff(pf[x], b, tol_b) & is_close_absdiff(pf[x + 1], g, tol_g) & is_close_absdiff(pf[x + 2], r, tol_r);
+      pf[x + 3] = pf[x + 3] & (pixel_t)(key - 1); // key: 0, else unchanged
     }
     pf += pitch;
   }
@@ -299,10 +311,13 @@ static void colorkeymask_planar_c(const BYTE* pfR8, const BYTE* pfG8, const BYTE
   const pixel_t* pfB = reinterpret_cast<const pixel_t*>(pfB8);
   pixel_t* pfA = reinterpret_cast<pixel_t*>(pfA8);
   pitch /= sizeof(pixel_t);
+  const pixel_t r = (pixel_t)R, g = (pixel_t)G, b = (pixel_t)B;
+  const pixel_t tol_r = (pixel_t)tolR, tol_g = (pixel_t)tolG, tol_b = (pixel_t)tolB;
   for (int y = 0; y < height; y++) {
+    // see colorkeymask_c
     for (int x = 0; x < width; x++) {
-      if (IsClose(pfB[x], B, tolB) && IsClose(pfG[x], G, tolG) && IsClose(pfR[x], R, tolR))
-        pfA[x] = 0;
+      const bool key = is_close_absdiff(pfB[x], b, tol_b) & is_close_absdiff(pfG[x], g, tol_g) & is_close_absdiff(pfR[x], r, tol_r);
+      pfA[x] = pfA[x] & (pixel_t)(key - 1);
     }
     pfR += pitch;
     pfG += pitch;
@@ -319,9 +334,10 @@ static void colorkeymask_planar_float_c(const BYTE* pfR8, const BYTE* pfG8, cons
   pixel_t* pfA = reinterpret_cast<pixel_t*>(pfA8);
   pitch /= sizeof(pixel_t);
   for (int y = 0; y < height; y++) {
+    // see colorkeymask_c
     for (int x = 0; x < width; x++) {
-      if (IsCloseFloat(pfB[x], B, tolB) && IsCloseFloat(pfG[x], G, tolG) && IsCloseFloat(pfR[x], R, tolR))
-        pfA[x] = 0;
+      const bool key = IsCloseFloat(pfB[x], B, tolB) & IsCloseFloat(pfG[x], G, tolG) & IsCloseFloat(pfR[x], R, tolR);
+      pfA[x] = key ? 0.0f : pfA[x];
     }
     pfR += pitch;
     pfG += pitch;
@@ -378,6 +394,10 @@ PVideoFrame __stdcall ColorKeyMask::GetFrame(int n, IScriptEnvironment* env)
     else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
     {
       colorkeymask_sse2(pf, pitch, color, vi.height, rowsize, tolB, tolG, tolR);
+    }
+    else if ((pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2))
+    {
+      colorkeymask_uint16_sse2(pf, pitch, color64, vi.height, tolB16, tolG16, tolR16);
     }
     else
 #endif

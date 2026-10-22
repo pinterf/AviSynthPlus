@@ -40,6 +40,7 @@
 
 void mask_sse2(BYTE* srcp, const BYTE* alphap, int src_pitch, int alpha_pitch, size_t width, size_t height);
 void colorkeymask_sse2(BYTE* pf, int pitch, int color, int height, int width, int tolB, int tolG, int tolR);
+void colorkeymask_uint16_sse2(BYTE* pf, int pitch, uint64_t color64, int height, int tolB, int tolG, int tolR);
 void invert_frame_inplace_sse2(BYTE* frame, int pitch, int width, int height, int mask);
 void invert_frame_uint16_inplace_sse2(BYTE* frame, int pitch, int width, int height, uint64_t mask64);
 template<bool chroma>

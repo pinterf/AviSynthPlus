@@ -80,6 +80,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   aarch64 Levels 32 bit float (no gamma, no dither): vectorized by GCC; coring is a template parameter.
   On aarch64 the float and 16 bit results can differ from the earlier
   version in the last bit: multiply-adds are fused differently in the vectorized code.
+- Optimization: ColorKeyMask planar RGBA (8-16 bit, float) and packed RGB32/RGB64 C path: branchless, vectorized
+  by GCC and Clang (float: GCC only). x64 planar 8 bit 2.3x, 16 bit 1.3x-2x, float 1.2x.
+  New SSE2 RGB64 version (x64 1.15x-1.25x). Output unchanged.
 - Optimization: aarch64 Overlay mode="multiply" with mask: the C path is vectorized by GCC (#pragma GCC ivdep;
   7 planes were too many for its runtime alias checks). Clang already vectorized it. Output unchanged.
 - Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for
