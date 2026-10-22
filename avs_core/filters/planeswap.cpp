@@ -49,6 +49,9 @@
 #include "intel/planeswap_sse.h"
 #include "intel/planeswap_avx2.h"
 #endif
+#ifdef NEON_INTRINSICS
+#include "aarch64/planeswap_neon.h"
+#endif
 #include "../core/internal.h"
 #include "../core/strings.h"
 #include <algorithm>
@@ -365,6 +368,11 @@ PVideoFrame __stdcall SwapUVToY::GetFrame(int n, IScriptEnvironment* env)
         case 3: extract_packed_rgb64_channel_sse2<3>(srcp_bottom, dstp_base, src_pitch, dst_pitch, width, height); break;
         }
       }
+    } else
+#endif
+#ifdef NEON_INTRINSICS
+    if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+      extract_packed_rgb_channel_neon(srcp_bottom, dstp_base, src_pitch, dst_pitch, width, height, pixelsize, src_components, channel_index);
     } else
 #endif
     { // C fallback (RGB24/48 without AVX2, RGB32/64 without SSE2, or small widths)

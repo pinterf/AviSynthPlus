@@ -51,6 +51,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   10-16 bit and 32 bit float. NEON row kernels in the C templates (16 bit magic division by vmull_u32); 8 bit and
   float mul / mulovr stay on the GCC/Clang vectorized C. YUV lighten / darken and mulovr use the NEON mask row
   preparation. Bit-identical to C.
+- Optimization: aarch64 NEON ExtractR/G/B/A and PlaneToY("R"/"G"/"B"/"A") from packed RGB24/32/48/64:
+  de-interleaving loads (vld3/vld4), 16 (8 bit) or 8 (16 bit) pixels per step.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.
