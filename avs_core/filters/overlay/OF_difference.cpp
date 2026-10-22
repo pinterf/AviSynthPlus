@@ -122,6 +122,11 @@ void OL_DifferenceImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlay
   int h = base->h();
 
   for (int y = 0; y < h; y++) {
+    // With mask: 3 base + 3 overlay + 3 mask planes: too many pointer pairs for GCC's runtime alias checks, the loop
+    // stayed scalar on aarch64. Safe: x reads and writes element x of each plane only.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < w; x++) {
       int Y = abs((int)baseY[x] - (int)ovY[x]) + half_pixel_value;
       int U = abs((int)baseU[x] - (int)ovU[x]) + half_pixel_value;

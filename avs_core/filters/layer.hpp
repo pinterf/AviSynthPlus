@@ -1215,6 +1215,11 @@ static void layer_planarrgb_add_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE* 
   const int half = max_pixel_value / 2;
 
   for (int y = 0; y < height; ++y) {
+    // 3-4 destination + 3-4 overlay planes + mask: too many pointer pairs for GCC's runtime alias checks, the loop
+    // stayed scalar on aarch64. Safe: x reads and writes element x of each plane only.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < width; ++x) {
 
       uint32_t alpha_eff;
@@ -1288,6 +1293,10 @@ static void layer_planarrgb_add_f_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE
   mask_pitch /= sizeof(float);
 
   for (int y = 0; y < height; ++y) {
+    // see layer_planarrgb_add_c
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < width; ++x) {
       float alpha = has_alpha ? maskp[x] * opacity : opacity;
 
