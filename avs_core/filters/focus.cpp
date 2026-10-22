@@ -38,6 +38,7 @@
 #include "intel/focus_avx2.h"
 #elif defined(NEON_INTRINSICS)
 #include "aarch64/focus_neon.h"
+#include "aarch64/focus_dp.h"
 #endif
 #include <cmath>
 #include <vector>
@@ -997,6 +998,8 @@ static int64_t calculate_sad(const BYTE* cur_ptr, const BYTE* other_ptr, int cur
   }
 #endif
 #ifdef NEON_INTRINSICS
+  if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_ARM_DOTPROD))
+    return calculate_sad_8_dp<false>(cur_ptr, other_ptr, cur_pitch, other_pitch, rowsize, height);
   if (env->GetCPUFlags() & CPUF_ARM_NEON) {
     if (pixelsize == 1)
       return calculate_sad_8_or_16_neon<uint8_t, false>(cur_ptr, other_ptr, cur_pitch, other_pitch, rowsize, height);

@@ -160,9 +160,9 @@ static int64_t ARMCheckForExtensions()
   unsigned long hwcap = getauxval(AT_HWCAP);
   unsigned long hwcap2 = getauxval(AT_HWCAP2);
 
-  // When DOTPROD exists, we have at least Armv8.1-a
-  // optional in v8.1-a, mandatory in v8.4-a
-  // Safe gcc/clang flags: -march=armv8.1-a+dotprod
+  // When DOTPROD exists, we have at least Armv8.2-a
+  // optional in v8.2-a, mandatory in v8.4-a
+  // Safe gcc/clang flags: -march=armv8.2-a+dotprod (files *_dp.cpp)
   if ((hwcap & HWCAP_ASIMDDP)) {
     result |= CPUF_ARM_DOTPROD;
   }

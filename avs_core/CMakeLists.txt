@@ -151,8 +151,9 @@ if(ENABLE_NEON_SIMD)
     # asm output debug, leave it here pls.: handle_arch_flags(NEON " -march=armv8-a -S -g -fverbose-asm -Wa,-adhln " " /arch:armv8.0 ")
     handle_arch_flags(NEON " -march=armv8-a " " /arch:armv8.0 ")
 
-    # Dot Product (FEAT_DotProd / ARMv8.1-A) compulsory from ARMv8.4-A
-    handle_arch_flags(DP " -march=armv8.1-a+dotprod " " /arch:armv8.1 ") 
+    # Dot Product (FEAT_DotProd: optional from ARMv8.2-A, compulsory from ARMv8.4-A)
+    # armv8.2-a base: GCC 11/12 arm_neon.h define vdotq_u32 for arch=armv8.2-a+dotprod, armv8.1-a+dotprod fails there.
+    handle_arch_flags(DP " -march=armv8.2-a+dotprod " " /arch:armv8.2 ") 
 
     # Int8 Matrix Multiply (FEAT_I8MM / ARMv8.2-A) Compulsory from ARMv8.6-A
     # Use the base arch flag to enable the features, relying on modern toolchain support.

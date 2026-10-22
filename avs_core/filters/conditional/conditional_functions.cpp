@@ -41,7 +41,9 @@
 #endif
 #ifdef NEON_INTRINSICS
 #include "aarch64/conditional_functions_neon.h"
+#include "aarch64/conditional_functions_dp.h"
 #include "../aarch64/focus_neon.h" // sad
+#include "../aarch64/focus_dp.h" // sad, dot product
 #endif
 #include "../../core/internal.h"
 #include <avs/config.h>
@@ -248,6 +250,9 @@ AVSValue AveragePlane::AvgPlane(AVSValue clip, void* , int plane, int offset, IS
 #endif
 #endif
 #ifdef NEON_INTRINSICS
+  if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_ARM_DOTPROD)) {
+    sum = get_sum_of_pixels_u8_dp(srcp, height, width, pitch);
+  } else
   if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
     sum = pixelsize == 1 ? get_sum_of_pixels_neon<uint8_t>(srcp, height, width, pitch)
                          : get_sum_of_pixels_neon<uint16_t>(srcp, height, width, pitch);
@@ -399,6 +404,9 @@ AVSValue ComparePlane::CmpPlane(AVSValue clip, AVSValue clip2, void* , int plane
 #endif
 #endif
 #ifdef NEON_INTRINSICS
+      if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_ARM_DOTPROD)) {
+        sad = (double)calculate_sad_8_dp<true>(srcp, srcp2, pitch, pitch2, rowsize, height);
+      } else
       if (env->GetCPUFlags() & CPUF_ARM_NEON) {
         sad = pixelsize == 1 ? (double)calculate_sad_8_or_16_neon<uint8_t, true>(srcp, srcp2, pitch, pitch2, rowsize, height)
                              : (double)calculate_sad_8_or_16_neon<uint16_t, true>(srcp, srcp2, pitch, pitch2, rowsize, height);
@@ -425,6 +433,9 @@ AVSValue ComparePlane::CmpPlane(AVSValue clip, AVSValue clip2, void* , int plane
 #endif
 #endif
 #ifdef NEON_INTRINSICS
+      if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_ARM_DOTPROD)) {
+        sad = (double)calculate_sad_8_dp<false>(srcp, srcp2, pitch, pitch2, rowsize, height);
+      } else
       if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
         sad = pixelsize == 1 ? (double)calculate_sad_8_or_16_neon<uint8_t, false>(srcp, srcp2, pitch, pitch2, rowsize, height)
                              : (double)calculate_sad_8_or_16_neon<uint16_t, false>(srcp, srcp2, pitch, pitch2, rowsize, height);
@@ -508,6 +519,9 @@ AVSValue ComparePlane::CmpPlaneSame(AVSValue clip, void* , int offset, int plane
 #endif
 #endif
 #ifdef NEON_INTRINSICS
+      if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_ARM_DOTPROD)) {
+        sad = (double)calculate_sad_8_dp<true>(srcp, srcp2, pitch, pitch2, rowsize, height);
+      } else
       if (env->GetCPUFlags() & CPUF_ARM_NEON) {
         sad = pixelsize == 1 ? (double)calculate_sad_8_or_16_neon<uint8_t, true>(srcp, srcp2, pitch, pitch2, rowsize, height)
                              : (double)calculate_sad_8_or_16_neon<uint16_t, true>(srcp, srcp2, pitch, pitch2, rowsize, height);
@@ -533,6 +547,9 @@ AVSValue ComparePlane::CmpPlaneSame(AVSValue clip, void* , int offset, int plane
 #endif
 #endif
 #ifdef NEON_INTRINSICS
+      if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_ARM_DOTPROD)) {
+        sad = (double)calculate_sad_8_dp<false>(srcp, srcp2, pitch, pitch2, rowsize, height);
+      } else
       if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
         sad = pixelsize == 1 ? (double)calculate_sad_8_or_16_neon<uint8_t, false>(srcp, srcp2, pitch, pitch2, rowsize, height)
                              : (double)calculate_sad_8_or_16_neon<uint16_t, false>(srcp, srcp2, pitch, pitch2, rowsize, height);

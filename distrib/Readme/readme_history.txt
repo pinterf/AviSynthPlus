@@ -59,6 +59,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 NEON plane sum and SAD for the runtime functions (AverageLuma & co., LumaDifference,
   RGBDifference, YDifferenceFromPrevious/ToNext & co.) and the TemporalSoften scene change detection, 8-16 bit:
   vpadal / vabd / vabal, two accumulators, alpha of packed RGB32/64 masked. Same integer totals as C.
+- Optimization: aarch64 8 bit plane sum and SAD (the same functions) with UDOT, used when the CPU has the
+  dot product extension (CPUF_ARM_DOTPROD, SetMaxCPU "dotprod"); _dp.cpp modules. Same integer totals as C.
+- Build: aarch64 dot product modules (*_dp.cpp) are compiled with -march=armv8.2-a+dotprod (MSVC /arch:armv8.2):
+  FEAT_DotProd is an Armv8.2 extension, and GCC 11/12 do not provide vdotq_u32 for armv8.1-a+dotprod.
 - Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for
   rows narrower than the AVX2 minimum (32 / 16 pixels): 1.4x (RGB48) - 3.3x (RGB24) vs. the C path.
 - Overlay: removed the unused internal 4:2:0/4:2:2 <-> 4:4:4 converters (444convert, C/SSE2/AVX2);
