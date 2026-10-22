@@ -85,6 +85,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   New SSE2 RGB64 version (x64 1.15x-1.25x). Output unchanged.
 - Fix: Compare 16 bit (planar and RGB48/RGB64): the sum of squared differences (PSNR) overflowed for pixel
   differences above 46340, e.g. PSNR was nan for black vs. white. The result depended on the compiler.
+- Optimization: Compare RGB24/32/48/64 and YUY2 C path: vectorized by GCC and Clang (compile time component
+  step, row sums in locals). x64 C: RGB32 2.2x, RGB64 1.3x, RGB24/48 1.15x-1.2x. Output unchanged.
 - Optimization: aarch64 Overlay mode="multiply" with mask: the C path is vectorized by GCC (#pragma GCC ivdep;
   7 planes were too many for its runtime alias checks). Clang already vectorized it. Output unchanged.
 - Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for
