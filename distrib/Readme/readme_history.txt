@@ -72,6 +72,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 Overlay mode="add"/"subtract"/"difference"/"exclusion"/"softlight"/"hardlight" with mask,
   and Layer planar RGB "add" C path (no alpha, use_chroma=false, float): vectorized by GCC (#pragma GCC ivdep;
   too many planes for its runtime alias checks). Output unchanged.
+- Optimization: Overlay mode="darken"/"lighten" 10-16 bit (and 8 bit C path), Overlay mode="add"/"subtract"
+  32 bit float: the C path is vectorized by GCC (aarch64 and x86). Branchless rewrite; GCC kept the conditional
+  parts as control flow (its default -ftrapping-math). Clang already vectorized them. Output unchanged.
 - Optimization: aarch64 Overlay mode="multiply" with mask: the C path is vectorized by GCC (#pragma GCC ivdep;
   7 planes were too many for its runtime alias checks). Clang already vectorized it. Output unchanged.
 - Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for

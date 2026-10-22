@@ -38,7 +38,22 @@
 #include "blend_common.h"
 
 #include <stdint.h>
+#include <string.h>
 #include <type_traits>
+
+// Tricky optimizer workaround
+// cond ? a : b on the bit patterns. GCC turns a ternary that feeds a multiplication back into a
+// conditional multiplication, which its default -ftrapping-math keeps as control flow: no vectorizing.
+static AVS_FORCEINLINE float select_float_bits(bool cond, float a, float b) {
+  uint32_t ia, ib;
+  memcpy(&ia, &a, sizeof(float));
+  memcpy(&ib, &b, sizeof(float));
+  const uint32_t m = 0u - (uint32_t)cond;
+  const uint32_t r = (ia & m) | (ib & ~m);
+  float result;
+  memcpy(&result, &r, sizeof(float));
+  return result;
+}
 
 void OL_AddImage::DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask) {
   if (rgb) {
@@ -340,6 +355,10 @@ void OL_AddImage::BlendImageMask_float(ImageOverlayInternal* base, ImageOverlayI
   int h = base->h();
 
   for (int y = 0; y < h; y++) {
+    // With mask: too many pointer pairs for GCC's runtime alias checks, see BlendImageMask.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < w; ++x) {
       float Y, U, V;
       // eff on the 0.0f..1.0f opacity scale (mask == 1.0f when absent)
@@ -375,22 +394,28 @@ void OL_AddImage::BlendImageMask_float(ImageOverlayInternal* base, ImageOverlayI
 
       constexpr float over32 = 32.0f / 255.0f; // ~0.12549f
 
+      // Overshoot handling without a branch: the operands are selected, U * 1.0f / 1.0f is exactly U.
+      // GCC did not vectorize the if blocks ("control flow in loop"), see select_float_bits.
       if constexpr (of_add) {
-        if (Y > max_pixel_value) { // Y > 1.0f
-          float multiplier = max(0.0f, 1.0f + over32 - Y); // 1.12549 - Y, clamp to >=0
-          // Blend U/V toward neutral (0.0f)
-          U = U * multiplier / over32;
-          V = V * multiplier / over32;
-          Y = max_pixel_value; // 1.0f
-        }
+        const bool over = Y > max_pixel_value; // Y > 1.0f
+        const float multiplier = max(0.0f, 1.0f + over32 - Y); // 1.12549 - Y, clamp to >=0
+        const float mul = select_float_bits(over, multiplier, 1.0f);
+        const float div = select_float_bits(over, over32, 1.0f);
+        // Blend U/V toward neutral (0.0f)
+        U = U * mul / div;
+        V = V * mul / div;
+        Y = over ? max_pixel_value : Y; // 1.0f
       }
       else {
-        if (Y < 0.0f) {
-          float multiplier = min(-Y, over32); // 0 to over32
-          U = U * (over32 - multiplier) / over32;
-          V = V * (over32 - multiplier) / over32;
-          Y = 0.0f;
-        }
+        const bool under = Y < 0.0f;
+        // over32 - min(-Y, over32), written in the form GCC keeps branchless; same value: x - (-y) == x + y,
+        // and over32 - over32 == +0.0f == max(0.0f, negative or +0.0f)
+        const float factor = max(0.0f, over32 + Y); // over32 to 0
+        const float mul = select_float_bits(under, factor, 1.0f);
+        const float div = select_float_bits(under, over32, 1.0f);
+        U = U * mul / div;
+        V = V * mul / div;
+        Y = under ? 0.0f : Y;
       }
 
       // No other clamping for float

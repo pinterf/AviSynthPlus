@@ -216,11 +216,18 @@ static void overlay_darklighten_c(BYTE *p1Y_8, BYTE *p1U_8, BYTE *p1V_8, const B
   //p2_pitch /= sizeof(pixel_t);
 
   for (int y = 0; y < height; y++) {
+    // All loads before the stores, then plain selects: GCC can if-convert and vectorize the loop
+    // ("control flow in loop" when the p1Y store came before the U/V loads).
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int x = 0; x < width; x++) {
-      int mask = darken ? (p2Y[x] <= p1Y[x]) : (p2Y[x] >= p1Y[x]); // compare(p1Y[x], p2Y[x]);
-      p1Y[x] = overlay_blend_opaque_c_core<pixel_t>(p1Y[x], p2Y[x], mask);
-      p1U[x] = overlay_blend_opaque_c_core<pixel_t>(p1U[x], p2U[x], mask);
-      p1V[x] = overlay_blend_opaque_c_core<pixel_t>(p1V[x], p2V[x], mask);
+      const pixel_t y1 = p1Y[x], u1 = p1U[x], v1 = p1V[x];
+      const pixel_t y2 = p2Y[x], u2 = p2U[x], v2 = p2V[x];
+      const bool mask = darken ? (y2 <= y1) : (y2 >= y1);
+      p1Y[x] = mask ? y2 : y1;
+      p1U[x] = mask ? u2 : u1;
+      p1V[x] = mask ? v2 : v1;
     }
 
     p1Y += p1_pitch;
