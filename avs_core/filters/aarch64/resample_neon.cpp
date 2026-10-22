@@ -48,6 +48,7 @@
 
 #include "resample_neon.h"
 #include <avs/config.h>
+#include <cmath>
 #include <cstdint>
 
 #include <arm_neon.h>
@@ -161,3 +162,94 @@ void resizer_h_neon_generic_uint8_16(BYTE* dst8, const BYTE* src8, int dst_pitch
 template void resizer_h_neon_generic_uint8_16<uint8_t, true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 template void resizer_h_neon_generic_uint8_16<uint16_t, true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 template void resizer_h_neon_generic_uint8_16<uint16_t, false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+
+// --- float ---
+// The NEON pair of resize_h_c_planar<float> (resample.cpp), same arithmetic and order, bit-identical
+// (as GCC 11/12 compile the C on aarch64):
+//   acc (4 lanes, from +0) = fma over the taps in groups of 4, lane k gets the taps i % 4 == k
+//   sum = (((0 + acc[0]) + acc[1]) + acc[2]) + acc[3]
+//   the rest taps (kernel_size % 4): sum = fma(src, coeff, sum), in tap order
+// The C does one output pixel at a time (one dependent fma chain). Here 4 output pixels are processed
+// together: 4 independent chains, and the horizontal sums of the 4 pixels are done at once after a 4x4
+// transpose, in the same order per lane. The last 1..3 pixels of the row are done one at a time.
+
+static AVS_FORCEINLINE float sum_lanes_like_c(float32x4_t acc)
+{
+  float sum = 0.0f;
+  sum = sum + vgetq_lane_f32(acc, 0);
+  sum = sum + vgetq_lane_f32(acc, 1);
+  sum = sum + vgetq_lane_f32(acc, 2);
+  sum = sum + vgetq_lane_f32(acc, 3);
+  return sum;
+}
+
+void resizer_h_neon_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
+{
+  AVS_UNUSED(bits_per_pixel);
+  const int filter_size = program->filter_size;
+  const int kernel_size = program->filter_size_real;
+  const int ksmod4 = kernel_size / 4 * 4;
+  const int* pixel_offset = program->pixel_offset.data();
+  const float* coeff_base = program->pixel_coefficient_float;
+
+  const float* src = reinterpret_cast<const float*>(src8);
+  float* dst = reinterpret_cast<float*>(dst8);
+  src_pitch /= sizeof(float);
+  dst_pitch /= sizeof(float);
+  const float32x4_t zero = vdupq_n_f32(0.0f);
+
+  for (int y = 0; y < height; y++) {
+    int x = 0;
+    for (; x + 4 <= width; x += 4) {
+      const float* s0 = src + pixel_offset[x + 0];
+      const float* s1 = src + pixel_offset[x + 1];
+      const float* s2 = src + pixel_offset[x + 2];
+      const float* s3 = src + pixel_offset[x + 3];
+      const float* c0 = coeff_base + (x + 0) * filter_size;
+      const float* c1 = c0 + filter_size;
+      const float* c2 = c1 + filter_size;
+      const float* c3 = c2 + filter_size;
+      float32x4_t a0 = zero, a1 = zero, a2 = zero, a3 = zero;
+      for (int i = 0; i < ksmod4; i += 4) {
+        a0 = vfmaq_f32(a0, vld1q_f32(c0 + i), vld1q_f32(s0 + i));
+        a1 = vfmaq_f32(a1, vld1q_f32(c1 + i), vld1q_f32(s1 + i));
+        a2 = vfmaq_f32(a2, vld1q_f32(c2 + i), vld1q_f32(s2 + i));
+        a3 = vfmaq_f32(a3, vld1q_f32(c3 + i), vld1q_f32(s3 + i));
+      }
+      // 4x4 transpose: Lk = lane k of the 4 pixels' accumulators
+      const float32x4x2_t t01 = vtrnq_f32(a0, a1); // [a0_0 a1_0 a0_2 a1_2] [a0_1 a1_1 a0_3 a1_3]
+      const float32x4x2_t t23 = vtrnq_f32(a2, a3);
+      // 64 bit trn1/trn2 pairs the halves (vcombine of halves compiles to lane moves)
+      const float32x4_t L0 = vreinterpretq_f32_f64(vtrn1q_f64(vreinterpretq_f64_f32(t01.val[0]), vreinterpretq_f64_f32(t23.val[0])));
+      const float32x4_t L2 = vreinterpretq_f32_f64(vtrn2q_f64(vreinterpretq_f64_f32(t01.val[0]), vreinterpretq_f64_f32(t23.val[0])));
+      const float32x4_t L1 = vreinterpretq_f32_f64(vtrn1q_f64(vreinterpretq_f64_f32(t01.val[1]), vreinterpretq_f64_f32(t23.val[1])));
+      const float32x4_t L3 = vreinterpretq_f32_f64(vtrn2q_f64(vreinterpretq_f64_f32(t01.val[1]), vreinterpretq_f64_f32(t23.val[1])));
+      float32x4_t sum = vaddq_f32(vaddq_f32(vaddq_f32(vaddq_f32(zero, L0), L1), L2), L3);
+      for (int i = ksmod4; i < kernel_size; i++) {
+        float32x4_t sv = vdupq_n_f32(s0[i]);
+        sv = vsetq_lane_f32(s1[i], sv, 1);
+        sv = vsetq_lane_f32(s2[i], sv, 2);
+        sv = vsetq_lane_f32(s3[i], sv, 3);
+        float32x4_t cv = vdupq_n_f32(c0[i]);
+        cv = vsetq_lane_f32(c1[i], cv, 1);
+        cv = vsetq_lane_f32(c2[i], cv, 2);
+        cv = vsetq_lane_f32(c3[i], cv, 3);
+        sum = vfmaq_f32(sum, sv, cv);
+      }
+      vst1q_f32(dst + x, sum);
+    }
+    for (; x < width; x++) {
+      const float* s0 = src + pixel_offset[x];
+      const float* c0 = coeff_base + x * filter_size;
+      float32x4_t a0 = zero;
+      for (int i = 0; i < ksmod4; i += 4)
+        a0 = vfmaq_f32(a0, vld1q_f32(c0 + i), vld1q_f32(s0 + i));
+      float sum = sum_lanes_like_c(a0);
+      for (int i = ksmod4; i < kernel_size; i++)
+        sum = std::fma(s0[i], c0[i], sum);
+      dst[x] = sum;
+    }
+    dst += dst_pitch;
+    src += src_pitch;
+  }
+}

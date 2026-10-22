@@ -37,6 +37,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   generic): per output pixel vmlal_s16 over 8 taps, vpaddq_s32 sums. Bit-identical to C. GCC compiled the C
   (SIMD-C) version into scalar loads and multiplies on aarch64.
 - Resizers, C path, exact 16 bit horizontal: the 4-tap step of the kernel rest uses the signed pivot like the others.
+- Optimization: aarch64 NEON horizontal resizer, planar 32 bit float, any kernel size: 4 output pixels at once
+  (independent fma chains), horizontal sums after a 4x4 transpose in the C order. Bit-identical to C.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.

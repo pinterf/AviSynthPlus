@@ -43,4 +43,7 @@
 template<typename pixel_t, bool lessthan16bit>
 void resizer_h_neon_generic_uint8_16(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
+// Horizontal resizer, planar 32 bit float, any kernel size. Same arithmetic and order as resize_h_c_planar<float>.
+void resizer_h_neon_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+
 #endif // __Resample_NEON_H__

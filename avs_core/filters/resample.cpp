@@ -2087,6 +2087,10 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       }
     }
 #endif
+#ifdef NEON_INTRINSICS
+    if (CPU & CPUF_ARM_NEON)
+      return resizer_h_neon_generic_float;
+#endif
     return resize_h_c_planar<float, 0>;
   }
 }
