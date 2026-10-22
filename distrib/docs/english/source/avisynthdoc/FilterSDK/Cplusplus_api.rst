@@ -3466,12 +3466,13 @@ The build system (via CMake) uses the file name suffix to select the appropriate
 | ``*_sve2.cpp``    | Scalable Vector Extension 2                      | ``-march=armv8.5-a+sve2``          | ``/arch:armv8.5``                  |
 |                   | (``FEAT_SVE2``) / ARMv8.5-A                      |                                    |                                    |
 +-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
-| ``*_sve2_1.cpp``  | Scalable Vector Extension 2.1                    | ``-march=armv9.1-a+sve2.1``        | ``/arch:armv9.1``                  |
+| ``*_sve2_1.cpp``  | Scalable Vector Extension 2.1                    | ``-march=armv9.1-a+sve2p1``        | ``/arch:armv9.1``                  |
 |                   | (``FEAT_SVE2p1``) / ARMv9.1-A                    |                                    |                                    |
 +-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
 
 .. note::
-    * ``-march=armv9.1-a+sve2.1`` is not accepted by GCC 11/12 and Clang 15 (newer compilers needed);
+    * The SVE2.1 modifier ``+sve2p1`` needs GCC 15 or a newer Clang (Clang 15 does not know it,
+      Clang 22 of Visual Studio 2026 does);
       a ``*_sve2_1.cpp`` file would need a compiler version check in CMake.
     * MSVC supports the ``/arch:armvX.X`` syntax for convenience, individual features are not supported as separate flags.
     * This distinction is necessary when targeting features for Clang-cl and gcc, the allowed C++ intrinsics are stricter

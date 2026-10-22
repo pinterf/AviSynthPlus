@@ -163,7 +163,8 @@ if(ENABLE_NEON_SIMD)
     handle_arch_flags(SVE2 " -march=armv8.5-a+sve2 " " /arch:armv8.5 ") 
 
     # SVE2.1 (FEAT_SVE2p1 / ARMv9.1-A)
-    handle_arch_flags(SVE2_1 " -march=armv9.1-a+sve2.1 " " /arch:armv9.1 ")
+    # Needs GCC 15 or a newer Clang (Clang 22 OK, Clang 15 not).
+    handle_arch_flags(SVE2_1 " -march=armv9.1-a+sve2p1 " " /arch:armv9.1 ")
 
 else()
     # =========================================================================
