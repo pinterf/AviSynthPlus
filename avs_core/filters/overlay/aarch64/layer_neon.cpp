@@ -22,9 +22,13 @@
 // C template dispatcher: get_layer_yuv_add_functions / get_layer_planarrgb_add_functions.
 // static functions — this TU's copy gets -march=armv8-a auto-vectorization (GCC/Clang).
 // Integer mask rows: NEON rowprep variant (like LAYER_ROWPREP_FN at SSE4.1/AVX2).
+// Mul / lighten / darken pixel loops: NEON row kernels (LAYER_ROW_KERNELS, layer_row_kernels_neon.h).
 #include "masked_rowprep_neon.h"
+#include "layer_row_kernels_neon.h"
 #define LAYER_ROWPREP_FN       prepare_effective_mask_for_row_neon
+#define LAYER_ROW_KERNELS      LayerRowKernelsNeon
 #include "../../layer.hpp"
+#undef LAYER_ROW_KERNELS
 #undef LAYER_ROWPREP_FN
 
 // ---------------------------------------------------------------------------
@@ -86,4 +90,39 @@ void get_layer_yuv_masked_add_functions_neon(
 
   *layer_fn   = get_overlay_blend_masked_fn_neon(is_chroma, maskMode);
   *layer_f_fn = get_overlay_blend_masked_float_fn_neon(is_chroma, maskMode);
+}
+
+// ---------------------------------------------------------------------------
+// NEON Layer mul / lighten / darken dispatchers: this TU's copies of the C templates,
+// with the NEON row kernels (10-16 bit, float lighten/darken) and the NEON rowprep.
+// ---------------------------------------------------------------------------
+void get_layer_yuv_mul_functions_neon(
+  bool is_chroma, bool hasAlpha,
+  int placement, VideoInfo& vi, int bits_per_pixel,
+  layer_yuv_mul_c_t** layer_fn,
+  layer_yuv_mul_f_c_t** layer_f_fn)
+{
+  get_layer_yuv_mul_functions(is_chroma, hasAlpha, placement, vi, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+void get_layer_yuv_lighten_darken_functions_neon(bool isLighten, int placement, VideoInfo& vi, int bits_per_pixel,
+  layer_yuv_lighten_darken_c_t** layer_fn,
+  layer_yuv_lighten_darken_f_c_t** layer_f_fn)
+{
+  get_layer_yuv_lighten_darken_functions(isLighten, placement, vi, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+void get_layer_planarrgb_mul_functions_neon(
+  bool chroma, bool hasAlpha, bool blendAlpha, int bits_per_pixel,
+  layer_planarrgb_mul_c_t** layer_fn,
+  layer_planarrgb_mul_f_c_t** layer_f_fn)
+{
+  get_layer_planarrgb_mul_functions(chroma, hasAlpha, blendAlpha, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+void get_layer_planarrgb_lighten_darken_functions_neon(bool isLighten, bool hasAlpha, bool blendAlpha, int bits_per_pixel,
+  layer_planarrgb_lighten_darken_c_t** layer_fn,
+  layer_planarrgb_lighten_darken_f_c_t** layer_f_fn)
+{
+  get_layer_planarrgb_lighten_darken_functions(isLighten, hasAlpha, blendAlpha, bits_per_pixel, layer_fn, layer_f_fn);
 }

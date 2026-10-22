@@ -47,6 +47,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 Layer C path, planar RGB mul / lighten / darken and YUV lighten / darken: vectorized by GCC
   (#pragma GCC ivdep on the pixel loop; too many planes for its runtime alias checks). 8 bit and float mul,
   float lighten / darken without mask. Output unchanged.
+- Optimization: aarch64 NEON Layer, planar RGB(A) and YUV(A): mul 10-16 bit, lighten / darken 10-16 bit and
+  32 bit float. NEON row kernels in the C templates (16 bit magic division by vmull_u32); 8 bit and float mul stay
+  on the GCC/Clang vectorized C. YUV lighten / darken uses the NEON mask row preparation. Bit-identical to C.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.

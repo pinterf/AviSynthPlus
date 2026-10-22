@@ -22,6 +22,35 @@
 #  define LAYER_ROWPREP_FN  prepare_effective_mask_for_row
 #endif
 
+// ---------------------------------------------------------------------------
+// LAYER_ROW_KERNELS — SIMD row kernels for the pixel loops below, also defined by the including TU
+// (e.g. layer_neon.cpp). Each kernel processes the first n pixels of a row (n <= width, the same
+// result as the C loop) and returns n; the C loop then does the rest of the row.
+// Pointers are in pixels, the same ones the C loop uses. Default: no kernels, the C loop does the whole row.
+// ---------------------------------------------------------------------------
+#ifndef LAYER_ROW_KERNELS
+struct LayerRowKernelsC {
+  template<typename pixel_t, bool is_chroma, bool has_alpha>
+  static int yuv_mul(pixel_t*, const pixel_t*, const pixel_t*, int, int, int, int, MagicDiv) { return 0; }
+  template<int mode, typename pixel_t, bool lumaonly, bool has_alpha, bool update_luma>
+  static int yuv_lighten_darken(pixel_t*, pixel_t*, pixel_t*, const pixel_t*, const pixel_t*, const pixel_t*,
+    const pixel_t*, const pixel_t*, const pixel_t*, int, int, int, int, int, MagicDiv) { return 0; }
+  template<int mode, bool lumaonly, bool has_alpha, bool update_luma>
+  static int yuv_lighten_darken_f(float*, float*, float*, const float*, const float*, const float*,
+    const float*, const float*, const float*, int, float, float) { return 0; }
+  template<int mode, typename pixel_t, bool has_alpha, bool blend_alpha>
+  static int planarrgb_lighten_darken(pixel_t*, pixel_t*, pixel_t*, pixel_t*, const pixel_t*, const pixel_t*, const pixel_t*,
+    const pixel_t*, const pixel_t*, int, int, int, int, int, MagicDiv) { return 0; }
+  template<int mode, bool has_alpha, bool blend_alpha>
+  static int planarrgb_lighten_darken_f(float*, float*, float*, float*, const float*, const float*, const float*,
+    const float*, const float*, int, float, float) { return 0; }
+  template<typename pixel_t, bool chroma, bool has_alpha, bool blend_alpha>
+  static int planarrgb_mul(pixel_t*, pixel_t*, pixel_t*, pixel_t*, const pixel_t*, const pixel_t*, const pixel_t*,
+    const pixel_t*, const pixel_t*, int, int, int, int, MagicDiv) { return 0; }
+};
+#  define LAYER_ROW_KERNELS  LayerRowKernelsC
+#endif
+
 DISABLE_WARNING_PUSH
 DISABLE_WARNING_UNREFERENCED_LOCAL_VARIABLE
 
@@ -64,7 +93,9 @@ static void layer_yuv_mul_c_inner(BYTE* dstp8, const BYTE* ovrp8, const BYTE* ma
     }
 
     // Main blending loop — alpha_mask is fully prepared by rowprep.
-    for (int x = 0; x < width; ++x) {
+    // SIMD row kernel: does pixels [0, x) and returns x; 0 when there is none (C build). The C loop does the rest.
+    int x = LAYER_ROW_KERNELS::yuv_mul<pixel_t, is_chroma, has_alpha>(dstp, ovrp, effective_mask_ptr, width, opacity_i, max_pixel_value, half, magic);
+    for (; x < width; ++x) {
       // has_alpha=true: rowprep baked level in (!full_opacity) or returned avg (full_opacity).
       // has_alpha=false: flat level, no mask.
       const uint32_t alpha_mask = has_alpha ? effective_mask_ptr[x] : opacity_i;
@@ -78,8 +109,9 @@ static void layer_yuv_mul_c_inner(BYTE* dstp8, const BYTE* ovrp8, const BYTE* ma
         // division by max_pixel_value, unlike the old >> bits_per_pixel shift it replaced.
         // This keeps the max*max=max rule (e.g. 255*255 -> 255 instead of 254).
         //
-        // There is currently no SIMD implementation of "Mul" (get_layer_yuv_mul_functions_avx2
-        // in layer_avx2.cpp just includes this scalar path, compiled possibly into a more optimized code).
+        // No Intel SIMD implementation of "Mul" (get_layer_yuv_mul_functions_avx2 in layer_avx2.cpp
+        // just includes this scalar path, compiled possibly into a more optimized code). NEON: 10-16 bit
+        // row kernel (LAYER_ROW_KERNELS::yuv_mul, layer_row_kernels_neon.h).
         const pixel_t prod = (pixel_t)magic_div_rt<pixel_t>((uint32_t)ovrp[x] * (uint32_t)dstp[x], magic);
         target_pixel = prod;
         // was: dstp[x] = (pixel_t)(dstp[x] + ((((((calc_t)ovrp[x] * dstp[x]) >> bits_per_pixel) - dstp[x]) * alpha_mask) >> bits_per_pixel));
@@ -255,19 +287,23 @@ static void layer_yuv_lighten_darken_c(
   for (int y = 0; y < cheight; ++y) {
 
     // Prepare all three pointers using the helper, full-opacity mode, no opacity_i-magicdiv baking
-    const pixel_t* ovr_ptr = prepare_effective_mask_for_row<maskMode, pixel_t>(ovrp, overlay_pitch, cwidth, ovr_buffer);
-    const pixel_t* src_ptr = prepare_effective_mask_for_row<maskMode, pixel_t>(dstp, dst_pitch, cwidth, src_buffer);
+    const pixel_t* ovr_ptr = LAYER_ROWPREP_FN<maskMode, pixel_t>(ovrp, overlay_pitch, cwidth, ovr_buffer);
+    const pixel_t* src_ptr = LAYER_ROWPREP_FN<maskMode, pixel_t>(dstp, dst_pitch, cwidth, src_buffer);
     const pixel_t* effective_mask_ptr = nullptr;
     if constexpr (has_alpha) {
-      effective_mask_ptr = prepare_effective_mask_for_row<maskMode, pixel_t>(maskp, mask_pitch, cwidth, mask_buffer);
+      effective_mask_ptr = LAYER_ROWPREP_FN<maskMode, pixel_t>(maskp, mask_pitch, cwidth, mask_buffer);
     }
 
+    // SIMD row kernel: does pixels [0, x) and returns x; 0 when there is none (C build). The C loop does the rest.
+    int x = LAYER_ROW_KERNELS::yuv_lighten_darken<mode, pixel_t, lumaonly, has_alpha, maskMode == MASK444>(
+      dstp, dstp_u, dstp_v, ovrp, ovrp_u, ovrp_v, ovr_ptr, src_ptr, effective_mask_ptr,
+      cwidth, opacity_i, thresh, max_pixel_value, half, magic);
     // ovr/src/mask row pointers + 2 destination and 2 overlay chroma planes (+ luma for 444): too many pointer
     // pairs for GCC's runtime alias checks. Safe: x reads and writes element x of each row only.
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC ivdep
 #endif
-    for (int x = 0; x < cwidth; ++x) {
+    for (; x < cwidth; ++x) {
       // opacity_i is in [0..max_pixel_value], the same convention as masked_merge.
       uint32_t alpha_eff;
       if constexpr (has_alpha) {
@@ -387,11 +423,14 @@ static void layer_yuv_lighten_darken_f_c(
       effective_mask_ptr = prepare_effective_mask_for_row_float_c<maskMode>(maskp, mask_pitch, cwidth, mask_buffer);
     }
 
+    // SIMD row kernel: does pixels [0, x) and returns x; 0 when there is none (C build). The C loop does the rest.
+    int x = LAYER_ROW_KERNELS::yuv_lighten_darken_f<mode, lumaonly, has_alpha, maskMode == MASK444>(
+      dstp, dstp_u, dstp_v, ovrp, ovrp_u, ovrp_v, ovr_ptr, src_ptr, effective_mask_ptr, cwidth, opacity, thresh);
     // see layer_yuv_lighten_darken_c
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC ivdep
 #endif
-    for (int x = 0; x < cwidth; ++x) {
+    for (; x < cwidth; ++x) {
       float alpha_eff = has_alpha ? effective_mask_ptr[x] * opacity : opacity;
 
       float ovr = ovr_ptr[x];
@@ -958,7 +997,7 @@ static void layer_planarrgb_lighten_darken_c(BYTE** dstp8, const BYTE** ovrp8, c
   pixel_t* dstp_b = reinterpret_cast<pixel_t*>(dstp8[1]);
   pixel_t* dstp_r = reinterpret_cast<pixel_t*>(dstp8[2]);
   // dstp8[3]: written only when blend_alpha=true (both clips have alpha).
-  pixel_t* dstp_a;
+  pixel_t* dstp_a = nullptr;
   if constexpr (blend_alpha)
     dstp_a = reinterpret_cast<pixel_t*>(dstp8[3]);
   const pixel_t* ovrp_g = reinterpret_cast<const pixel_t*>(ovrp8[0]);
@@ -968,7 +1007,7 @@ static void layer_planarrgb_lighten_darken_c(BYTE** dstp8, const BYTE** ovrp8, c
   const pixel_t* maskp = reinterpret_cast<const pixel_t*>(maskp8);
   // alpha_target: value blended into dstp_a (only used when blend_alpha=true).
   // For plain Add this is the same plane as maskp; for Subtract it is the inverted A plane.
-  const pixel_t* alpha_target;
+  const pixel_t* alpha_target = nullptr;
   if constexpr (blend_alpha)
     alpha_target = reinterpret_cast<const pixel_t*>(ovrp8[3]);
 
@@ -984,12 +1023,16 @@ static void layer_planarrgb_lighten_darken_c(BYTE** dstp8, const BYTE** ovrp8, c
   const int half = max_pixel_value / 2;
 
   for (int y = 0; y < height; ++y) {
+    // SIMD row kernel: does pixels [0, x) and returns x; 0 when there is none (C build). The C loop does the rest.
+    int x = LAYER_ROW_KERNELS::planarrgb_lighten_darken<mode, pixel_t, has_alpha, blend_alpha>(
+      dstp_g, dstp_b, dstp_r, dstp_a, ovrp_g, ovrp_b, ovrp_r, maskp, alpha_target,
+      width, opacity_i, thresh, max_pixel_value, half, magic);
     // 3-4 destination + 3-5 source planes: too many pointer pairs for GCC's runtime alias checks, the loop
     // stayed scalar on aarch64. Safe: x reads and writes element x of each plane only, no loop-carried dependency.
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC ivdep
 #endif
-    for (int x = 0; x < width; ++x) {
+    for (; x < width; ++x) {
       // opacity_i is in [0..max_pixel_value], the same convention as masked_merge.
       uint32_t alpha_eff;
       if constexpr (has_alpha) {
@@ -1042,7 +1085,7 @@ static void layer_planarrgb_lighten_darken_f_c(BYTE** dstp8, const BYTE** ovrp8,
   float* dstp_b = reinterpret_cast<float*>(dstp8[1]);
   float* dstp_r = reinterpret_cast<float*>(dstp8[2]);
   // dstp8[3]: written only when blend_alpha=true (both clips have alpha).
-  float* dstp_a;
+  float* dstp_a = nullptr;
   if constexpr (blend_alpha)
     dstp_a = reinterpret_cast<float*>(dstp8[3]);
   const float* ovrp_g = reinterpret_cast<const float*>(ovrp8[0]);
@@ -1050,7 +1093,7 @@ static void layer_planarrgb_lighten_darken_f_c(BYTE** dstp8, const BYTE** ovrp8,
   const float* ovrp_r = reinterpret_cast<const float*>(ovrp8[2]);
   // maskp: per-pixel blend weight — decoupled from ovrp8[3].
   const float* maskp = reinterpret_cast<const float*>(maskp8);
-  const float* alpha_target;
+  const float* alpha_target = nullptr;
   if constexpr (blend_alpha)
     alpha_target = reinterpret_cast<const float*>(ovrp8[3]);
 
@@ -1059,11 +1102,15 @@ static void layer_planarrgb_lighten_darken_f_c(BYTE** dstp8, const BYTE** ovrp8,
   mask_pitch /= sizeof(float);
 
   for (int y = 0; y < height; ++y) {
+    // SIMD row kernel: does pixels [0, x) and returns x; 0 when there is none (C build). The C loop does the rest.
+    int x = LAYER_ROW_KERNELS::planarrgb_lighten_darken_f<mode, has_alpha, blend_alpha>(
+      dstp_g, dstp_b, dstp_r, dstp_a, ovrp_g, ovrp_b, ovrp_r, maskp, alpha_target,
+      width, opacity, thresh);
     // see layer_planarrgb_lighten_darken_c
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC ivdep
 #endif
-    for (int x = 0; x < width; ++x) {
+    for (; x < width; ++x) {
       float alpha = has_alpha ? maskp[x] * opacity : opacity;
 
       float luma_ovr = cyb_f * ovrp_b[x] + cyg_f * ovrp_g[x] + cyr_f * ovrp_r[x];
@@ -1135,7 +1182,7 @@ static void layer_planarrgb_add_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE* 
   pixel_t* dstp_b = reinterpret_cast<pixel_t*>(dstp8[1]);
   pixel_t* dstp_r = reinterpret_cast<pixel_t*>(dstp8[2]);
   // dstp8[3]: written only when blend_alpha=true (both clips have alpha).
-  pixel_t* dstp_a;
+  pixel_t* dstp_a = nullptr;
   if constexpr (blend_alpha)
     dstp_a = reinterpret_cast<pixel_t*>(dstp8[3]);
   const pixel_t* ovrp_g = reinterpret_cast<const pixel_t*>(ovrp8[0]);
@@ -1146,7 +1193,7 @@ static void layer_planarrgb_add_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE* 
   // alpha_target: the value blended into dstp_a.
   // For plain Add: same as maskp (original overlay A).
   // For Subtract: ovrp8[3] is the inverted A; maskp is the saved pre-invert A.
-  const pixel_t* alpha_target;
+  const pixel_t* alpha_target = nullptr;
   if constexpr (blend_alpha)
     alpha_target = reinterpret_cast<const pixel_t*>(ovrp8[3]);
 
@@ -1219,7 +1266,7 @@ static void layer_planarrgb_add_f_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE
   float* dstp_b = reinterpret_cast<float*>(dstp8[1]);
   float* dstp_r = reinterpret_cast<float*>(dstp8[2]);
   // dstp8[3]: written only when blend_alpha=true (both clips have alpha).
-  float* dstp_a;
+  float* dstp_a = nullptr;
   if constexpr (blend_alpha)
     dstp_a = reinterpret_cast<float*>(dstp8[3]);
   const float* ovrp_g = reinterpret_cast<const float*>(ovrp8[0]);
@@ -1227,7 +1274,7 @@ static void layer_planarrgb_add_f_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE
   const float* ovrp_r = reinterpret_cast<const float*>(ovrp8[2]);
   // maskp: per-pixel blend weight — decoupled from ovrp8[3].
   const float* maskp = reinterpret_cast<const float*>(maskp8);
-  const float* alpha_target;
+  const float* alpha_target = nullptr;
   if constexpr (blend_alpha)
     alpha_target = reinterpret_cast<const float*>(ovrp8[3]);
 
@@ -1353,7 +1400,7 @@ static void layer_planarrgb_mul_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE* 
   pixel_t* dstp_b = reinterpret_cast<pixel_t*>(dstp8[1]);
   pixel_t* dstp_r = reinterpret_cast<pixel_t*>(dstp8[2]);
   // dstp8[3]: written only when blend_alpha=true (both clips have alpha).
-  pixel_t* dstp_a;
+  pixel_t* dstp_a = nullptr;
   if constexpr (blend_alpha)
     dstp_a = reinterpret_cast<pixel_t*>(dstp8[3]);
   const pixel_t* ovrp_g = reinterpret_cast<const pixel_t*>(ovrp8[0]);
@@ -1362,7 +1409,7 @@ static void layer_planarrgb_mul_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE* 
   // maskp: per-pixel blend weight — decoupled from ovrp8[3].
   const pixel_t* maskp = reinterpret_cast<const pixel_t*>(maskp8);
   // alpha_target: the value multiplied into dstp_a (only when blend_alpha=true).
-  const pixel_t* alpha_target;
+  const pixel_t* alpha_target = nullptr;
   if constexpr (blend_alpha)
     alpha_target = reinterpret_cast<const pixel_t*>(ovrp8[3]);
 
@@ -1379,11 +1426,15 @@ static void layer_planarrgb_mul_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE* 
   const int half = max_pixel_value / 2;
 
   for (int y = 0; y < height; ++y) {
+    // SIMD row kernel: does pixels [0, x) and returns x; 0 when there is none (C build). The C loop does the rest.
+    int x = LAYER_ROW_KERNELS::planarrgb_mul<pixel_t, chroma, has_alpha, blend_alpha>(
+      dstp_g, dstp_b, dstp_r, dstp_a, ovrp_g, ovrp_b, ovrp_r, maskp, alpha_target,
+      width, opacity_i, max_pixel_value, half, magic);
     // see layer_planarrgb_lighten_darken_c
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC ivdep
 #endif
-    for (int x = 0; x < width; ++x) {
+    for (; x < width; ++x) {
 
       uint32_t alpha_eff;
       if constexpr (has_alpha) {
@@ -1445,7 +1496,7 @@ static void layer_planarrgb_mul_f_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE
   float* dstp_b = reinterpret_cast<float*>(dstp8[1]);
   float* dstp_r = reinterpret_cast<float*>(dstp8[2]);
   // dstp8[3]: written only when blend_alpha=true (both clips have alpha).
-  float* dstp_a;
+  float* dstp_a = nullptr;
   if constexpr (blend_alpha)
     dstp_a = reinterpret_cast<float*>(dstp8[3]);
   const float* ovrp_g = reinterpret_cast<const float*>(ovrp8[0]);
@@ -1453,7 +1504,7 @@ static void layer_planarrgb_mul_f_c(BYTE** dstp8, const BYTE** ovrp8, const BYTE
   const float* ovrp_r = reinterpret_cast<const float*>(ovrp8[2]);
   // maskp: per-pixel blend weight — decoupled from ovrp8[3].
   const float* maskp = reinterpret_cast<const float*>(maskp8);
-  const float* alpha_target;
+  const float* alpha_target = nullptr;
   if constexpr (blend_alpha)
     alpha_target = reinterpret_cast<const float*>(ovrp8[3]);
 

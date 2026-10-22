@@ -2602,7 +2602,12 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       layer_yuv_lighten_darken_f_c_t* layer_f_fn = nullptr;
 
       // fills layer_yuv_lighten_darken_c_t or layer_yuv_lighten_darken_f_c_t depending on video format, and bits_per_pixel.
-      get_layer_yuv_lighten_darken_functions(isLighten, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
+#ifdef NEON_INTRINSICS
+      if (env->GetCPUFlags() & CPUF_ARM_NEON)
+        get_layer_yuv_lighten_darken_functions_neon(isLighten, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
+      else
+#endif
+        get_layer_yuv_lighten_darken_functions(isLighten, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
 
       // ThresholdParam was scaled from the 8 bit world
       if (layer_fn && bits_per_pixel != 32) {
@@ -2727,6 +2732,10 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
             get_layer_yuv_mul_functions_avx2(is_chroma, hasAlpha, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
           }
           else
+#elif defined(NEON_INTRINSICS)
+          if (env->GetCPUFlags() & CPUF_ARM_NEON)
+            get_layer_yuv_mul_functions_neon(is_chroma, hasAlpha, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
+          else
 #endif
             get_layer_yuv_mul_functions(is_chroma, hasAlpha, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
 
@@ -2841,6 +2850,10 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
         get_layer_planarrgb_mul_functions_avx2(chroma, hasAlpha, process_alpha_channel, bits_per_pixel, &layer_fn, &layer_f_fn);
       }
       else
+#elif defined(NEON_INTRINSICS)
+      if (env->GetCPUFlags() & CPUF_ARM_NEON)
+        get_layer_planarrgb_mul_functions_neon(chroma, hasAlpha, process_alpha_channel, bits_per_pixel, &layer_fn, &layer_f_fn);
+      else
 #endif
       {
         get_layer_planarrgb_mul_functions(chroma, hasAlpha, process_alpha_channel, bits_per_pixel, &layer_fn, &layer_f_fn);
@@ -2938,6 +2951,10 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
         // wrapper for the avx2 module, which calls its local scoped get_layer_planarrgb_lighten_darken_functions the included layer.hpp
         get_layer_planarrgb_lighten_darken_functions_avx2(isLighten, hasAlpha, process_alpha_channel, bits_per_pixel, &layer_fn, &layer_f_fn);
       }
+      else
+#elif defined(NEON_INTRINSICS)
+      if (env->GetCPUFlags() & CPUF_ARM_NEON)
+        get_layer_planarrgb_lighten_darken_functions_neon(isLighten, hasAlpha, process_alpha_channel, bits_per_pixel, &layer_fn, &layer_f_fn);
       else
 #endif
         get_layer_planarrgb_lighten_darken_functions(isLighten, hasAlpha, process_alpha_channel, bits_per_pixel, &layer_fn, &layer_f_fn);
