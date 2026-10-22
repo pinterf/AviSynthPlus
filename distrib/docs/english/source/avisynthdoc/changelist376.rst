@@ -629,6 +629,9 @@ Bugfixes
 - Fix: "Expr" wrong results or crash (mostly x86) in the SSE2/AVX2 JIT under certain conditions: relative
   pixel loads (``x[dx,dy]``) near the row edges with many values held on the stack (high register pressure).
   A bug in the JIT code generator's register handling, existed in earlier versions as well.
+- Fix: "Compare" 16 bit (planar and RGB48/RGB64): the sum of squared differences overflowed for pixel
+  differences above 46340, PSNR was wrong or ``nan`` (e.g. black vs. white), depending on the compiler.
+  Existed since 16 bit support in "Compare".
 
 
 Optimizations

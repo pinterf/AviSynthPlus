@@ -83,6 +83,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: ColorKeyMask planar RGBA (8-16 bit, float) and packed RGB32/RGB64 C path: branchless, vectorized
   by GCC and Clang (float: GCC only). x64 planar 8 bit 2.3x, 16 bit 1.3x-2x, float 1.2x.
   New SSE2 RGB64 version (x64 1.15x-1.25x). Output unchanged.
+- Fix: Compare 16 bit (planar and RGB48/RGB64): the sum of squared differences (PSNR) overflowed for pixel
+  differences above 46340, e.g. PSNR was nan for black vs. white. The result depended on the compiler.
 - Optimization: aarch64 Overlay mode="multiply" with mask: the C path is vectorized by GCC (#pragma GCC ivdep;
   7 planes were too many for its runtime alias checks). Clang already vectorized it. Output unchanged.
 - Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for

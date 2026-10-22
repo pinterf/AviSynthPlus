@@ -2563,6 +2563,9 @@ AVSValue __cdecl Compare::Create(AVSValue args, void*, IScriptEnvironment *env)
             env);
 }
 
+// d * d as unsigned 32 bit: exact for 16 bit differences (|d| <= 65535), the int multiply overflows above 46340
+static AVS_FORCEINLINE uint32_t sqr_u32(int d) { return (uint32_t)d * (uint32_t)d; }
+
 static void compare_planar_c(
     const BYTE * f1ptr, int pitch1,
     const BYTE * f2ptr, int pitch2,
@@ -2612,7 +2615,7 @@ static void compare_planar_uint16_t_c(
             int d0 = p1 - p2;
             SD_sum += d0;
             SAD_sum += abs(d0);
-            row_SSD += d0 * d0;
+            row_SSD += sqr_u32(d0);
             pos_D = max(pos_D, d0);
             neg_D = min(neg_D, d0);
         }
@@ -2677,7 +2680,7 @@ static void compare_uint16_t_c(uint64_t mask64, int increment,
             int d3 = (p1 >> 48) - (p2 >> 48);
             SD_sum += d0 + d1 + d2 + d3;
             SAD_sum += abs(d0) + abs(d1) + abs(d2) + abs(d3);
-            row_SSD += d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
+            row_SSD += (int64_t)sqr_u32(d0) + (int64_t)sqr_u32(d1) + (int64_t)sqr_u32(d2) + (int64_t)sqr_u32(d3);
             pos_D = max(max(max(max(pos_D, d0), d1), d2), d3);
             neg_D = min(min(min(min(neg_D, d0), d1), d2), d3);
         }
