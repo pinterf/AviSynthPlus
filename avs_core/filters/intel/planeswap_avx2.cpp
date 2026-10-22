@@ -59,6 +59,64 @@
 #endif
 
 // ---------------------------------------------------------------------------
+// Row end of the packed RGB32 / RGB64 extraction: after the AVX2 blocks, aligned SSE blocks while they fit,
+// then one unaligned SSE block that ends exactly at width, overlapping pixels already written (same values).
+// Rows narrower than one SSE block are copied per pixel. Nothing is read or written beyond the row.
+// ---------------------------------------------------------------------------
+
+template<bool aligned>
+static AVS_FORCEINLINE __m128i load_si128_a(const BYTE* p)
+{
+  if constexpr (aligned)
+    return _mm_load_si128(reinterpret_cast<const __m128i*>(p));
+  else
+    return _mm_loadu_si128(reinterpret_cast<const __m128i*>(p));
+}
+
+template<bool aligned>
+static AVS_FORCEINLINE void store_si128_a(BYTE* p, __m128i v)
+{
+  if constexpr (aligned)
+    _mm_store_si128(reinterpret_cast<__m128i*>(p), v);
+  else
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(p), v);
+}
+
+template<typename pixel_t, int components, int channel_index>
+static void extract_packed_rgb_channel_row_c_avx2(const BYTE* srcp8, BYTE* dstp8, int width)
+{
+  const pixel_t* srcp = reinterpret_cast<const pixel_t*>(srcp8);
+  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
+  for (int x = 0; x < width; ++x)
+    dstp[x] = srcp[x * components + channel_index];
+}
+
+// RGB32, 16 pixels, SSSE3 shuffle (the AVX2 shuffle mask, 128 bit)
+template<bool aligned>
+static AVS_FORCEINLINE void extract_rgb32_block16_ssse3(const BYTE* s, BYTE* d, __m128i shuf128)
+{
+  __m128i t0 = _mm_shuffle_epi8(load_si128_a<aligned>(s +  0), shuf128);
+  __m128i t1 = _mm_shuffle_epi8(load_si128_a<aligned>(s + 16), shuf128);
+  __m128i t2 = _mm_shuffle_epi8(load_si128_a<aligned>(s + 32), shuf128);
+  __m128i t3 = _mm_shuffle_epi8(load_si128_a<aligned>(s + 48), shuf128);
+  store_si128_a<aligned>(d, _mm_packus_epi16(_mm_packs_epi32(t0, t1), _mm_packs_epi32(t2, t3)));
+}
+
+// RGB64, 8 pixels, SSSE3 shuffle (the AVX2 shuffle mask, 128 bit)
+template<bool aligned>
+static AVS_FORCEINLINE void extract_rgb64_block8_ssse3(const BYTE* s, BYTE* d, __m128i shuf128)
+{
+  // each: [{C_even, C_odd}, 0, 0, 0] as dwords
+  __m128i t0 = _mm_shuffle_epi8(load_si128_a<aligned>(s +  0), shuf128); // px 0-1
+  __m128i t1 = _mm_shuffle_epi8(load_si128_a<aligned>(s + 16), shuf128); // px 2-3
+  __m128i t2 = _mm_shuffle_epi8(load_si128_a<aligned>(s + 32), shuf128); // px 4-5
+  __m128i t3 = _mm_shuffle_epi8(load_si128_a<aligned>(s + 48), shuf128); // px 6-7
+  __m128i q01 = _mm_unpacklo_epi32(t0, t1); // [{C0,C1},{C2,C3}, 0, 0]
+  __m128i q23 = _mm_unpacklo_epi32(t2, t3); // [{C4,C5},{C6,C7}, 0, 0]
+  store_si128_a<aligned>(d, _mm_unpacklo_epi64(q01, q23)); // [{C0,C1},{C2,C3},{C4,C5},{C6,C7}]
+}
+
+// ---------------------------------------------------------------------------
 // Packed RGB32 channel extraction — AVX2, 32 pixels per main iteration.
 //
 // Source layout (per pixel, 4 bytes): B G R A  (channel_index: B=0 G=1 R=2 A=3)
@@ -73,8 +131,7 @@
 //      in 4-byte groups due to in-lane packing.
 //   4. vpermd with indices [0,4,1,5,2,6,3,7]: restore sequential pixel order.
 //
-// Width is guaranteed a multiple of 16 (64-byte pitch / 4 bytes per pixel).
-// Main loop handles multiples of 32; SSE2/SSSE3 tail handles the remaining 16.
+// Main loop handles multiples of 32; the row end: see above.
 // ---------------------------------------------------------------------------
 template<int channel_index>
 void extract_packed_rgb32_channel_avx2(
@@ -98,7 +155,7 @@ void extract_packed_rgb32_channel_avx2(
   // Indices [0,4,1,5,2,6,3,7] restore sequential order.
   const __m256i perm = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
 
-  // SSE tail: same shuffle but 128-bit (16 pixels, processed with SSE packs — no lane issue).
+  // Row end blocks: same shuffle but 128-bit (16 pixels, processed with SSE packs — no lane issue).
   const __m128i shuf128 = _mm_set_epi8(
     (char)0x80,(char)0x80,(char)0x80,(char)(c+12),
     (char)0x80,(char)0x80,(char)0x80,(char)(c+ 8),
@@ -126,19 +183,13 @@ void extract_packed_rgb32_channel_avx2(
       packed = _mm256_permutevar8x32_epi32(packed, perm);
       _mm256_store_si256(reinterpret_cast<__m256i*>(dstp + x), packed);
     }
-    // SSE tail: at most 16 pixels remain (width is a multiple of 16).
-    for (; x < width; x += 16) {
-      const BYTE* s = srcp + x * 4;
-      __m128i t0 = _mm_load_si128(reinterpret_cast<const __m128i*>(s +  0));
-      __m128i t1 = _mm_load_si128(reinterpret_cast<const __m128i*>(s + 16));
-      __m128i t2 = _mm_load_si128(reinterpret_cast<const __m128i*>(s + 32));
-      __m128i t3 = _mm_load_si128(reinterpret_cast<const __m128i*>(s + 48));
-      t0 = _mm_shuffle_epi8(t0, shuf128);
-      t1 = _mm_shuffle_epi8(t1, shuf128);
-      t2 = _mm_shuffle_epi8(t2, shuf128);
-      t3 = _mm_shuffle_epi8(t3, shuf128);
-      _mm_store_si128(reinterpret_cast<__m128i*>(dstp + x),
-        _mm_packus_epi16(_mm_packs_epi32(t0, t1), _mm_packs_epi32(t2, t3)));
+    for (; x <= width - 16; x += 16)
+      extract_rgb32_block16_ssse3<true>(srcp + x * 4, dstp + x, shuf128);
+    if (x < width) {
+      if (width >= 16) // overlapping last block
+        extract_rgb32_block16_ssse3<false>(srcp + (width - 16) * 4, dstp + (width - 16), shuf128);
+      else
+        extract_packed_rgb_channel_row_c_avx2<uint8_t, 4, channel_index>(srcp, dstp, width);
     }
     srcp -= src_pitch;
     dstp += dst_pitch;
@@ -168,8 +219,7 @@ template void extract_packed_rgb32_channel_avx2<3>(const BYTE*, BYTE*, int, int,
 //      interleaved in dword-pair groups, mirroring the RGB32 pattern.
 //   4. vpermd with indices [0,4,1,5,2,6,3,7]: restore sequential pixel order.
 //
-// Width is guaranteed a multiple of 8 (64-byte pitch / 8 bytes per pixel).
-// Main loop handles multiples of 16; SSE tail handles the remaining 0 or 8 pixels.
+// Main loop handles multiples of 16; the row end: see extract_rgb64_block8_ssse3 above.
 // ---------------------------------------------------------------------------
 template<int channel_index>
 void extract_packed_rgb64_channel_avx2(
@@ -191,7 +241,7 @@ void extract_packed_rgb64_channel_avx2(
   );
   const __m256i perm = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
 
-  // SSE tail mask (same pattern, 128-bit).
+  // Row end blocks mask (same pattern, 128-bit).
   const __m128i shuf128 = _mm_set_epi8(
     (char)0x80,(char)0x80,(char)0x80,(char)0x80,
     (char)0x80,(char)0x80,(char)0x80,(char)0x80,
@@ -226,22 +276,13 @@ void extract_packed_rgb64_channel_avx2(
       gathered = _mm256_permutevar8x32_epi32(gathered, perm);
       _mm256_store_si256(reinterpret_cast<__m256i*>(dstp + x * 2), gathered);
     }
-    // SSE tail: at most 8 pixels remain (width is a multiple of 8).
-    for (; x < width; x += 8) {
-      const BYTE* s = srcp + x * 8;
-      __m128i t0 = _mm_load_si128(reinterpret_cast<const __m128i*>(s +  0)); // px 0-1
-      __m128i t1 = _mm_load_si128(reinterpret_cast<const __m128i*>(s + 16)); // px 2-3
-      __m128i t2 = _mm_load_si128(reinterpret_cast<const __m128i*>(s + 32)); // px 4-5
-      __m128i t3 = _mm_load_si128(reinterpret_cast<const __m128i*>(s + 48)); // px 6-7
-      t0 = _mm_shuffle_epi8(t0, shuf128);
-      t1 = _mm_shuffle_epi8(t1, shuf128);
-      t2 = _mm_shuffle_epi8(t2, shuf128);
-      t3 = _mm_shuffle_epi8(t3, shuf128);
-      // t0..t3 each: [{C_even, C_odd}, 0, 0, 0] as dwords
-      __m128i q01 = _mm_unpacklo_epi32(t0, t1); // [{C0,C1},{C2,C3}, 0, 0]
-      __m128i q23 = _mm_unpacklo_epi32(t2, t3); // [{C4,C5},{C6,C7}, 0, 0]
-      _mm_store_si128(reinterpret_cast<__m128i*>(dstp + x * 2),
-        _mm_unpacklo_epi64(q01, q23)); // [{C0,C1},{C2,C3},{C4,C5},{C6,C7}]
+    for (; x <= width - 8; x += 8)
+      extract_rgb64_block8_ssse3<true>(srcp + x * 8, dstp + x * 2, shuf128);
+    if (x < width) {
+      if (width >= 8) // overlapping last block
+        extract_rgb64_block8_ssse3<false>(srcp + (width - 8) * 8, dstp + (width - 8) * 2, shuf128);
+      else
+        extract_packed_rgb_channel_row_c_avx2<uint16_t, 4, channel_index>(srcp, dstp, width);
     }
     srcp -= src_pitch;
     dstp += dst_pitch;

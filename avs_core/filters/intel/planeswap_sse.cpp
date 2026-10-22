@@ -58,57 +58,97 @@
 #include <type_traits>
 
 // ---------------------------------------------------------------------------
-// Packed RGB32 channel extraction — SSE2, 16 pixels per iteration.
+// Packed RGB32 / RGB64 channel extraction — SSE2.
 //
-// Source layout (per pixel, 4 bytes): B G R A  (channel_index: B=0 G=1 R=2 A=3)
 // Source rows are bottom-up; srcp must already point at the last (bottom) row.
 // Pitch is positive; we step backwards (srcp -= src_pitch) each row.
 //
-// Strategy: shift each 32-bit pixel right by channel_index*8, mask the low byte,
-// pack 4+4+4+4 = 16 values through packs_epi32 + packus_epi16.
-// Width is guaranteed a multiple of 16 (64-byte pitch / 4 bytes per pixel).
+// Row end: whole aligned blocks while they fit, then one unaligned block that ends exactly at
+// width, overlapping pixels already written (same values). Rows narrower than one block are
+// copied per pixel. Nothing is read or written beyond the row.
 // ---------------------------------------------------------------------------
+
+template<bool aligned>
+static AVS_FORCEINLINE __m128i load_si128(const BYTE* p)
+{
+  if constexpr (aligned)
+    return _mm_load_si128(reinterpret_cast<const __m128i*>(p));
+  else
+    return _mm_loadu_si128(reinterpret_cast<const __m128i*>(p));
+}
+
+template<bool aligned>
+static AVS_FORCEINLINE void store_si128(BYTE* p, __m128i v)
+{
+  if constexpr (aligned)
+    _mm_store_si128(reinterpret_cast<__m128i*>(p), v);
+  else
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(p), v);
+}
+
+// one row per pixel, rows narrower than one SIMD block
+template<typename pixel_t, int components, int channel_index>
+static void extract_packed_rgb_channel_row_c(const BYTE* srcp8, BYTE* dstp8, int width)
+{
+  const pixel_t* srcp = reinterpret_cast<const pixel_t*>(srcp8);
+  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
+  for (int x = 0; x < width; ++x)
+    dstp[x] = srcp[x * components + channel_index];
+}
+
+// RGB32, 16 pixels: shift each 32-bit pixel right by channel_index*8, mask the low byte,
+// pack 4+4+4+4 = 16 values through packs_epi32 + packus_epi16.
+// Source layout (per pixel, 4 bytes): B G R A  (channel_index: B=0 G=1 R=2 A=3)
+template<int channel_index, bool aligned>
+static AVS_FORCEINLINE void extract_rgb32_block16_sse2(const BYTE* srcp, BYTE* dstp)
+{
+  const __m128i mask = _mm_set1_epi32(0xFF);
+  __m128i v0 = load_si128<aligned>(srcp + 0);
+  __m128i v1 = load_si128<aligned>(srcp + 16);
+  __m128i v2 = load_si128<aligned>(srcp + 32);
+  __m128i v3 = load_si128<aligned>(srcp + 48);
+  // Move requested byte to the low byte of each 32-bit dword
+  if constexpr (channel_index > 0) {
+    v0 = _mm_srli_epi32(v0, channel_index * 8);
+    v1 = _mm_srli_epi32(v1, channel_index * 8);
+    v2 = _mm_srli_epi32(v2, channel_index * 8);
+    v3 = _mm_srli_epi32(v3, channel_index * 8);
+  }
+  v0 = _mm_and_si128(v0, mask);
+  v1 = _mm_and_si128(v1, mask);
+  v2 = _mm_and_si128(v2, mask);
+  v3 = _mm_and_si128(v3, mask);
+  // Pack 4 × 32-bit (values 0-255) → 8 × 16-bit → 16 × 8-bit
+  store_si128<aligned>(dstp, _mm_packus_epi16(_mm_packs_epi32(v0, v1), _mm_packs_epi32(v2, v3)));
+}
+
 template<int channel_index>
 void extract_packed_rgb32_channel_sse2(
   const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pitch, int width, int height)
 {
-  const __m128i mask = _mm_set1_epi32(0xFF);
   for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; x += 16) {
-      __m128i v0 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x * 4 +  0));
-      __m128i v1 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x * 4 + 16));
-      __m128i v2 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x * 4 + 32));
-      __m128i v3 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x * 4 + 48));
-      // Move requested byte to the low byte of each 32-bit dword
-      if constexpr (channel_index > 0) {
-        v0 = _mm_srli_epi32(v0, channel_index * 8);
-        v1 = _mm_srli_epi32(v1, channel_index * 8);
-        v2 = _mm_srli_epi32(v2, channel_index * 8);
-        v3 = _mm_srli_epi32(v3, channel_index * 8);
-      }
-      v0 = _mm_and_si128(v0, mask);
-      v1 = _mm_and_si128(v1, mask);
-      v2 = _mm_and_si128(v2, mask);
-      v3 = _mm_and_si128(v3, mask);
-      // Pack 4 × 32-bit (values 0-255) → 8 × 16-bit → 16 × 8-bit
-      _mm_store_si128(reinterpret_cast<__m128i*>(dstp + x),
-        _mm_packus_epi16(_mm_packs_epi32(v0, v1), _mm_packs_epi32(v2, v3)));
+    if (width < 16)
+      extract_packed_rgb_channel_row_c<uint8_t, 4, channel_index>(srcp, dstp, width);
+    else {
+      int x = 0;
+      for (; x <= width - 16; x += 16)
+        extract_rgb32_block16_sse2<channel_index, true>(srcp + x * 4, dstp + x);
+      if (x < width) // overlapping last block, unaligned
+        extract_rgb32_block16_sse2<channel_index, false>(srcp + (width - 16) * 4, dstp + (width - 16));
     }
     srcp -= src_pitch;
     dstp += dst_pitch;
   }
 }
-
 template void extract_packed_rgb32_channel_sse2<0>(const BYTE*, BYTE*, int, int, int, int);
 template void extract_packed_rgb32_channel_sse2<1>(const BYTE*, BYTE*, int, int, int, int);
 template void extract_packed_rgb32_channel_sse2<2>(const BYTE*, BYTE*, int, int, int, int);
 template void extract_packed_rgb32_channel_sse2<3>(const BYTE*, BYTE*, int, int, int, int);
 
 // ---------------------------------------------------------------------------
-// Packed RGB64 channel extraction — SSE2, 8 pixels per iteration.
+// RGB64, 8 pixels per block.
 //
 // Source layout (per pixel, 8 bytes): B G R A  (uint16_t each; B=0 G=1 R=2 A=3)
-// Source rows are bottom-up; srcp must already point at the last (bottom) row.
 //
 // Strategy: 3-stage deinterleave using unpacklo/hi_epi16, unpacklo/hi_epi32,
 // unpacklo/hi_epi64, then unscramble with shufflelo/hi_epi16.
@@ -124,52 +164,62 @@ template void extract_packed_rgb32_channel_sse2<3>(const BYTE*, BYTE*, int, int,
 // unpackhi_epi32 of those:   [R0 R2 R1 R3 | A0 A2 A1 A3]   (ch 2,3 in lo/hi 64-bit lanes)
 // unpacklo/hi_epi64 selects the right channel across both pairs → [C0 C2 C1 C3 | C4 C6 C5 C7]
 // shufflelo + shufflehi with _MM_SHUFFLE(3,1,2,0) unscrambles to [C0 C1 C2 C3 | C4 C5 C6 C7].
-//
-// Width is guaranteed a multiple of 8 (64-byte pitch / 8 bytes per pixel).
 // ---------------------------------------------------------------------------
+template<int channel_index, bool aligned>
+static AVS_FORCEINLINE void extract_rgb64_block8_sse2(const BYTE* srcp, BYTE* dstp)
+{
+  __m128i a = load_si128<aligned>(srcp + 0);  // px 0-1
+  __m128i b = load_si128<aligned>(srcp + 16); // px 2-3
+  __m128i c = load_si128<aligned>(srcp + 32); // px 4-5
+  __m128i d = load_si128<aligned>(srcp + 48); // px 6-7
+
+  // Stage 1: interleave same-index pixels from each pair
+  // t0/t1 from pair (a,b); t4/t5 from pair (c,d)
+  __m128i t0 = _mm_unpacklo_epi16(a, b); // [B0 B2 | G0 G2 | R0 R2 | A0 A2]
+  __m128i t1 = _mm_unpackhi_epi16(a, b); // [B1 B3 | G1 G3 | R1 R3 | A1 A3]
+  __m128i t4 = _mm_unpacklo_epi16(c, d); // [B4 B6 | G4 G6 | R4 R6 | A4 A6]
+  __m128i t5 = _mm_unpackhi_epi16(c, d); // [B5 B7 | G5 G7 | R5 R7 | A5 A7]
+
+  // Stage 2: gather channel into 64-bit lanes
+  // ch 0,1: lo qword = channel ch%2==0, hi qword = channel ch%2==1
+  // ch 2,3: same but from the hi 32-bit positions
+  __m128i lo, hi;
+  if constexpr (channel_index <= 1) {
+    lo = _mm_unpacklo_epi32(t0, t1); // [B0 B2 B1 B3 | G0 G2 G1 G3]
+    hi = _mm_unpacklo_epi32(t4, t5); // [B4 B6 B5 B7 | G4 G6 G5 G7]
+  } else {
+    lo = _mm_unpackhi_epi32(t0, t1); // [R0 R2 R1 R3 | A0 A2 A1 A3]
+    hi = _mm_unpackhi_epi32(t4, t5); // [R4 R6 R5 R7 | A4 A6 A5 A7]
+  }
+
+  // Stage 3: select even-indexed (ch 0,2) or odd-indexed (ch 1,3) channel lane
+  __m128i v;
+  if constexpr (channel_index == 0 || channel_index == 2) {
+    v = _mm_unpacklo_epi64(lo, hi); // [C0 C2 C1 C3 | C4 C6 C5 C7]
+  } else {
+    v = _mm_unpackhi_epi64(lo, hi); // [C0 C2 C1 C3 | C4 C6 C5 C7]
+  }
+
+  // Stage 4: unscramble [C0 C2 C1 C3 | C4 C6 C5 C7] → [C0 C1 C2 C3 | C4 C5 C6 C7]
+  v = _mm_shufflelo_epi16(v, _MM_SHUFFLE(3,1,2,0));
+  v = _mm_shufflehi_epi16(v, _MM_SHUFFLE(3,1,2,0));
+
+  store_si128<aligned>(dstp, v);
+}
+
 template<int channel_index>
 void extract_packed_rgb64_channel_sse2(
   const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pitch, int width, int height)
 {
   for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; x += 8) {
-      __m128i a = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x * 8 +  0)); // px 0-1
-      __m128i b = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x * 8 + 16)); // px 2-3
-      __m128i c = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x * 8 + 32)); // px 4-5
-      __m128i d = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x * 8 + 48)); // px 6-7
-
-      // Stage 1: interleave same-index pixels from each pair
-      // t0/t1 from pair (a,b); t4/t5 from pair (c,d)
-      __m128i t0 = _mm_unpacklo_epi16(a, b); // [B0 B2 | G0 G2 | R0 R2 | A0 A2]
-      __m128i t1 = _mm_unpackhi_epi16(a, b); // [B1 B3 | G1 G3 | R1 R3 | A1 A3]
-      __m128i t4 = _mm_unpacklo_epi16(c, d); // [B4 B6 | G4 G6 | R4 R6 | A4 A6]
-      __m128i t5 = _mm_unpackhi_epi16(c, d); // [B5 B7 | G5 G7 | R5 R7 | A5 A7]
-
-      // Stage 2: gather channel into 64-bit lanes
-      // ch 0,1: lo qword = channel ch%2==0, hi qword = channel ch%2==1
-      // ch 2,3: same but from the hi 32-bit positions
-      __m128i lo, hi;
-      if constexpr (channel_index <= 1) {
-        lo = _mm_unpacklo_epi32(t0, t1); // [B0 B2 B1 B3 | G0 G2 G1 G3]
-        hi = _mm_unpacklo_epi32(t4, t5); // [B4 B6 B5 B7 | G4 G6 G5 G7]
-      } else {
-        lo = _mm_unpackhi_epi32(t0, t1); // [R0 R2 R1 R3 | A0 A2 A1 A3]
-        hi = _mm_unpackhi_epi32(t4, t5); // [R4 R6 R5 R7 | A4 A6 A5 A7]
-      }
-
-      // Stage 3: select even-indexed (ch 0,2) or odd-indexed (ch 1,3) channel lane
-      __m128i v;
-      if constexpr (channel_index == 0 || channel_index == 2) {
-        v = _mm_unpacklo_epi64(lo, hi); // [C0 C2 C1 C3 | C4 C6 C5 C7]
-      } else {
-        v = _mm_unpackhi_epi64(lo, hi); // [C0 C2 C1 C3 | C4 C6 C5 C7]
-      }
-
-      // Stage 4: unscramble [C0 C2 C1 C3 | C4 C6 C5 C7] → [C0 C1 C2 C3 | C4 C5 C6 C7]
-      v = _mm_shufflelo_epi16(v, _MM_SHUFFLE(3,1,2,0));
-      v = _mm_shufflehi_epi16(v, _MM_SHUFFLE(3,1,2,0));
-
-      _mm_store_si128(reinterpret_cast<__m128i*>(dstp + x * 2), v);
+    if (width < 8)
+      extract_packed_rgb_channel_row_c<uint16_t, 4, channel_index>(srcp, dstp, width);
+    else {
+      int x = 0;
+      for (; x <= width - 8; x += 8)
+        extract_rgb64_block8_sse2<channel_index, true>(srcp + x * 8, dstp + x * 2);
+      if (x < width) // overlapping last block, unaligned
+        extract_rgb64_block8_sse2<channel_index, false>(srcp + (width - 8) * 8, dstp + (width - 8) * 2);
     }
     srcp -= src_pitch;
     dstp += dst_pitch;
