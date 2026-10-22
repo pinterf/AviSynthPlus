@@ -162,7 +162,7 @@ static void get_limits(luma_chroma_limits_t &d, int bits_per_pixel) {
  *******   Levels Filter   ******
  ********************************/
 
-template<bool chroma, bool use_gamma>
+template<bool chroma, bool use_gamma, bool coring>
 AVS_FORCEINLINE float Levels::calcPixel(const float pixel)
 {
     float result;
@@ -619,183 +619,195 @@ PVideoFrame __stdcall Levels::GetFrame(int n, IScriptEnvironment* env)
   else {
     // float 32 bit. only planars here
     // no lut, realtime calculation only
-    if (dither) {
-      if (vi.IsYUV() || vi.IsYUVA()) { // planar YUV (incl Y only)
-        // luma. with or w/o gamma
-        if (use_gamma) {
-          for (int y = 0; y < vi.height; ++y) {
-            const int _y = (y << 4) & 0xf0;
-            for (int x = 0; x < vi.width; ++x) {
-              float _dither = ditherMap_f[(x & 0x0f) | _y];
-              const float pixel = reinterpret_cast<float *>(p)[x] + _dither;
-              reinterpret_cast<float *>(p)[x] = calcPixel<false, true>(pixel);
-            }
-            p += pitch;
+    if (coring)
+      processFloat<true>(frame);
+    else
+      processFloat<false>(frame);
+  }
+  return frame;
+}
+
+// coring as template parameter: GCC did not unswitch it from the planar RGB loop, which stayed scalar.
+template<bool coring>
+void Levels::processFloat(PVideoFrame& frame)
+{
+  BYTE* p = frame->GetWritePtr();
+  const int pitch = frame->GetPitch();
+  if (dither) {
+    if (vi.IsYUV() || vi.IsYUVA()) { // planar YUV (incl Y only)
+      // luma. with or w/o gamma
+      if (use_gamma) {
+        for (int y = 0; y < vi.height; ++y) {
+          const int _y = (y << 4) & 0xf0;
+          for (int x = 0; x < vi.width; ++x) {
+            float _dither = ditherMap_f[(x & 0x0f) | _y];
+            const float pixel = reinterpret_cast<float *>(p)[x] + _dither;
+            reinterpret_cast<float *>(p)[x] = calcPixel<false, true, coring>(pixel);
           }
-        }
-        else {
-          // don't use gamma (faster)
-          for (int y = 0; y < vi.height; ++y) {
-            const int _y = (y << 4) & 0xf0;
-            for (int x = 0; x < vi.width; ++x) {
-              float _dither = ditherMap_f[(x & 0x0f) | _y];
-              const float pixel = reinterpret_cast<float *>(p)[x] + _dither;
-              reinterpret_cast<float *>(p)[x] = calcPixel<false, false>(pixel); // w/o gamma
-            }
-            p += pitch;
-          }
-        }
-        // chroma
-        if (need_chroma) {
-          const int UVpitch = frame->GetPitch(PLANAR_U);
-          const int w = frame->GetRowSize(PLANAR_U) / pixelsize;
-          const int h = frame->GetHeight(PLANAR_U);
-          p = frame->GetWritePtr(PLANAR_U);
-          BYTE* q = frame->GetWritePtr(PLANAR_V);
-          for (int y = 0; y < h; ++y) {
-            const int _y = (y << 4) & 0xf0;
-            for (int x = 0; x < w; ++x) {
-              float _dither = ditherMap_f[(x & 0x0f) | _y];
-              const float pixel_u = reinterpret_cast<float *>(p)[x] + _dither;
-              reinterpret_cast<float *>(p)[x] = calcPixel<true, false>(pixel_u);
-              const float pixel_v = reinterpret_cast<float *>(q)[x] + _dither;
-              reinterpret_cast<float *>(q)[x] = calcPixel<true, false>(pixel_v);
-            }
-            p += UVpitch;
-            q += UVpitch;
-          }
-        }
-      }
-      else if (vi.IsPlanarRGB() || vi.IsPlanarRGBA()) {
-        // planar RGB
-        BYTE* b = frame->GetWritePtr(PLANAR_B);
-        BYTE* r = frame->GetWritePtr(PLANAR_R);
-        const int pitch_b = frame->GetPitch(PLANAR_B);
-        const int pitch_r = frame->GetPitch(PLANAR_R);
-        if (use_gamma) {
-          for (int y = 0; y < vi.height; ++y) {
-            const int _y = (y << 4) & 0xf0;
-            for (int x = 0; x < vi.width; ++x) {
-              float _dither = ditherMap_f[(x & 0x0f) | _y];
-              const float pixel_p = reinterpret_cast<float *>(p)[x] + _dither; // g channel
-              reinterpret_cast<float *>(p)[x] = calcPixel<false, true>(pixel_p);
-              const float pixel_b = reinterpret_cast<float *>(b)[x] + _dither;
-              reinterpret_cast<float *>(b)[x] = calcPixel<false, true>(pixel_b);
-              const float pixel_r = reinterpret_cast<float *>(r)[x] + _dither;
-              reinterpret_cast<float *>(r)[x] = calcPixel<false, true>(pixel_r);
-            }
-            p += pitch; // g
-            b += pitch_b;
-            r += pitch_r;
-          }
-        }
-        else {
-          for (int y = 0; y < vi.height; ++y) {
-            const int _y = (y << 4) & 0xf0;
-            for (int x = 0; x < vi.width; ++x) {
-              float _dither = ditherMap_f[(x & 0x0f) | _y];
-              const float pixel_p = reinterpret_cast<float *>(p)[x] + _dither; // g channel
-              reinterpret_cast<float *>(p)[x] = calcPixel<false, false>(pixel_p);
-              const float pixel_b = reinterpret_cast<float *>(b)[x] + _dither;
-              reinterpret_cast<float *>(b)[x] = calcPixel<false, false>(pixel_b);
-              const float pixel_r = reinterpret_cast<float *>(r)[x] + _dither;
-              reinterpret_cast<float *>(r)[x] = calcPixel<false, false>(pixel_r);
-            }
-            p += pitch; // g
-            b += pitch_b;
-            r += pitch_r;
-          }
+          p += pitch;
         }
       }
       else {
-        // 32 bit, neither YUV(A), nor RGB(A)
+        // don't use gamma (faster)
+        for (int y = 0; y < vi.height; ++y) {
+          const int _y = (y << 4) & 0xf0;
+          for (int x = 0; x < vi.width; ++x) {
+            float _dither = ditherMap_f[(x & 0x0f) | _y];
+            const float pixel = reinterpret_cast<float *>(p)[x] + _dither;
+            reinterpret_cast<float *>(p)[x] = calcPixel<false, false, coring>(pixel); // w/o gamma
+          }
+          p += pitch;
+        }
+      }
+      // chroma
+      if (need_chroma) {
+        const int UVpitch = frame->GetPitch(PLANAR_U);
+        const int w = frame->GetRowSize(PLANAR_U) / pixelsize;
+        const int h = frame->GetHeight(PLANAR_U);
+        p = frame->GetWritePtr(PLANAR_U);
+        BYTE* q = frame->GetWritePtr(PLANAR_V);
+        for (int y = 0; y < h; ++y) {
+          const int _y = (y << 4) & 0xf0;
+          for (int x = 0; x < w; ++x) {
+            float _dither = ditherMap_f[(x & 0x0f) | _y];
+            const float pixel_u = reinterpret_cast<float *>(p)[x] + _dither;
+            reinterpret_cast<float *>(p)[x] = calcPixel<true, false, coring>(pixel_u);
+            const float pixel_v = reinterpret_cast<float *>(q)[x] + _dither;
+            reinterpret_cast<float *>(q)[x] = calcPixel<true, false, coring>(pixel_v);
+          }
+          p += UVpitch;
+          q += UVpitch;
+        }
+      }
+    }
+    else if (vi.IsPlanarRGB() || vi.IsPlanarRGBA()) {
+      // planar RGB
+      BYTE* b = frame->GetWritePtr(PLANAR_B);
+      BYTE* r = frame->GetWritePtr(PLANAR_R);
+      const int pitch_b = frame->GetPitch(PLANAR_B);
+      const int pitch_r = frame->GetPitch(PLANAR_R);
+      if (use_gamma) {
+        for (int y = 0; y < vi.height; ++y) {
+          const int _y = (y << 4) & 0xf0;
+          for (int x = 0; x < vi.width; ++x) {
+            float _dither = ditherMap_f[(x & 0x0f) | _y];
+            const float pixel_p = reinterpret_cast<float *>(p)[x] + _dither; // g channel
+            reinterpret_cast<float *>(p)[x] = calcPixel<false, true, coring>(pixel_p);
+            const float pixel_b = reinterpret_cast<float *>(b)[x] + _dither;
+            reinterpret_cast<float *>(b)[x] = calcPixel<false, true, coring>(pixel_b);
+            const float pixel_r = reinterpret_cast<float *>(r)[x] + _dither;
+            reinterpret_cast<float *>(r)[x] = calcPixel<false, true, coring>(pixel_r);
+          }
+          p += pitch; // g
+          b += pitch_b;
+          r += pitch_r;
+        }
+      }
+      else {
+        for (int y = 0; y < vi.height; ++y) {
+          const int _y = (y << 4) & 0xf0;
+          for (int x = 0; x < vi.width; ++x) {
+            float _dither = ditherMap_f[(x & 0x0f) | _y];
+            const float pixel_p = reinterpret_cast<float *>(p)[x] + _dither; // g channel
+            reinterpret_cast<float *>(p)[x] = calcPixel<false, false, coring>(pixel_p);
+            const float pixel_b = reinterpret_cast<float *>(b)[x] + _dither;
+            reinterpret_cast<float *>(b)[x] = calcPixel<false, false, coring>(pixel_b);
+            const float pixel_r = reinterpret_cast<float *>(r)[x] + _dither;
+            reinterpret_cast<float *>(r)[x] = calcPixel<false, false, coring>(pixel_r);
+          }
+          p += pitch; // g
+          b += pitch_b;
+          r += pitch_r;
+        }
       }
     }
     else {
-      // no dither
-      if (vi.IsYUV() || vi.IsYUVA()) { // planar YUV (incl Y only)
-                                       // luma. with or w/o gamma
-        if (use_gamma) {
-          for (int y = 0; y < vi.height; ++y) {
-            for (int x = 0; x < vi.width; ++x) {
-              const float pixel = reinterpret_cast<float *>(p)[x];
-              reinterpret_cast<float *>(p)[x] = calcPixel<false, true>(pixel);
-            }
-            p += pitch;
+      // 32 bit, neither YUV(A), nor RGB(A)
+    }
+  }
+  else {
+    // no dither
+    if (vi.IsYUV() || vi.IsYUVA()) { // planar YUV (incl Y only)
+                                     // luma. with or w/o gamma
+      if (use_gamma) {
+        for (int y = 0; y < vi.height; ++y) {
+          for (int x = 0; x < vi.width; ++x) {
+            const float pixel = reinterpret_cast<float *>(p)[x];
+            reinterpret_cast<float *>(p)[x] = calcPixel<false, true, coring>(pixel);
           }
-        }
-        else {
-          // don't use gamma (faster)
-          for (int y = 0; y < vi.height; ++y) {
-            for (int x = 0; x < vi.width; ++x) {
-              const float pixel = reinterpret_cast<float *>(p)[x];
-              reinterpret_cast<float *>(p)[x] = calcPixel<false, false>(pixel); // w/o gamma
-            }
-            p += pitch;
-          }
-        }
-        // chroma
-        if (need_chroma) {
-          const int UVpitch = frame->GetPitch(PLANAR_U);
-          const int w = frame->GetRowSize(PLANAR_U) / pixelsize;
-          const int h = frame->GetHeight(PLANAR_U);
-          p = frame->GetWritePtr(PLANAR_U);
-          BYTE* q = frame->GetWritePtr(PLANAR_V);
-          for (int y = 0; y < h; ++y) {
-            for (int x = 0; x < w; ++x) {
-              const float pixel_u = reinterpret_cast<float *>(p)[x];
-              reinterpret_cast<float *>(p)[x] = calcPixel<true, false>(pixel_u);
-              const float pixel_v = reinterpret_cast<float *>(q)[x];
-              reinterpret_cast<float *>(q)[x] = calcPixel<true, false>(pixel_v);
-            }
-            p += UVpitch;
-            q += UVpitch;
-          }
-        }
-      }
-      else if (vi.IsPlanarRGB() || vi.IsPlanarRGBA()) {
-        // planar RGB
-        BYTE* b = frame->GetWritePtr(PLANAR_B);
-        BYTE* r = frame->GetWritePtr(PLANAR_R);
-        const int pitch_b = frame->GetPitch(PLANAR_B);
-        const int pitch_r = frame->GetPitch(PLANAR_R);
-        if (use_gamma) {
-          for (int y = 0; y < vi.height; ++y) {
-            for (int x = 0; x < vi.width; ++x) {
-              const float pixel_p = reinterpret_cast<float *>(p)[x]; // g channel
-              reinterpret_cast<float *>(p)[x] = calcPixel<false, true>(pixel_p);
-              const float pixel_b = reinterpret_cast<float *>(b)[x];
-              reinterpret_cast<float *>(b)[x] = calcPixel<false, true>(pixel_b);
-              const float pixel_r = reinterpret_cast<float *>(r)[x];
-              reinterpret_cast<float *>(r)[x] = calcPixel<false, true>(pixel_r);
-            }
-            p += pitch; // g
-            b += pitch_b;
-            r += pitch_r;
-          }
-        }
-        else {
-          for (int y = 0; y < vi.height; ++y) {
-            for (int x = 0; x < vi.width; ++x) {
-              const float pixel_p = reinterpret_cast<float *>(p)[x]; // g channel
-              reinterpret_cast<float *>(p)[x] = calcPixel<false, false>(pixel_p);
-              const float pixel_b = reinterpret_cast<float *>(b)[x];
-              reinterpret_cast<float *>(b)[x] = calcPixel<false, false>(pixel_b);
-              const float pixel_r = reinterpret_cast<float *>(r)[x];
-              reinterpret_cast<float *>(r)[x] = calcPixel<false, false>(pixel_r);
-            }
-            p += pitch; // g
-            b += pitch_b;
-            r += pitch_r;
-          }
+          p += pitch;
         }
       }
       else {
-        // 32 bit, neither YUV(A), nor RGB(A)
+        // don't use gamma (faster)
+        for (int y = 0; y < vi.height; ++y) {
+          for (int x = 0; x < vi.width; ++x) {
+            const float pixel = reinterpret_cast<float *>(p)[x];
+            reinterpret_cast<float *>(p)[x] = calcPixel<false, false, coring>(pixel); // w/o gamma
+          }
+          p += pitch;
+        }
+      }
+      // chroma
+      if (need_chroma) {
+        const int UVpitch = frame->GetPitch(PLANAR_U);
+        const int w = frame->GetRowSize(PLANAR_U) / pixelsize;
+        const int h = frame->GetHeight(PLANAR_U);
+        p = frame->GetWritePtr(PLANAR_U);
+        BYTE* q = frame->GetWritePtr(PLANAR_V);
+        for (int y = 0; y < h; ++y) {
+          for (int x = 0; x < w; ++x) {
+            const float pixel_u = reinterpret_cast<float *>(p)[x];
+            reinterpret_cast<float *>(p)[x] = calcPixel<true, false, coring>(pixel_u);
+            const float pixel_v = reinterpret_cast<float *>(q)[x];
+            reinterpret_cast<float *>(q)[x] = calcPixel<true, false, coring>(pixel_v);
+          }
+          p += UVpitch;
+          q += UVpitch;
+        }
       }
     }
+    else if (vi.IsPlanarRGB() || vi.IsPlanarRGBA()) {
+      // planar RGB
+      BYTE* b = frame->GetWritePtr(PLANAR_B);
+      BYTE* r = frame->GetWritePtr(PLANAR_R);
+      const int pitch_b = frame->GetPitch(PLANAR_B);
+      const int pitch_r = frame->GetPitch(PLANAR_R);
+      if (use_gamma) {
+        for (int y = 0; y < vi.height; ++y) {
+          for (int x = 0; x < vi.width; ++x) {
+            const float pixel_p = reinterpret_cast<float *>(p)[x]; // g channel
+            reinterpret_cast<float *>(p)[x] = calcPixel<false, true, coring>(pixel_p);
+            const float pixel_b = reinterpret_cast<float *>(b)[x];
+            reinterpret_cast<float *>(b)[x] = calcPixel<false, true, coring>(pixel_b);
+            const float pixel_r = reinterpret_cast<float *>(r)[x];
+            reinterpret_cast<float *>(r)[x] = calcPixel<false, true, coring>(pixel_r);
+          }
+          p += pitch; // g
+          b += pitch_b;
+          r += pitch_r;
+        }
+      }
+      else {
+        for (int y = 0; y < vi.height; ++y) {
+          for (int x = 0; x < vi.width; ++x) {
+            const float pixel_p = reinterpret_cast<float *>(p)[x]; // g channel
+            reinterpret_cast<float *>(p)[x] = calcPixel<false, false, coring>(pixel_p);
+            const float pixel_b = reinterpret_cast<float *>(b)[x];
+            reinterpret_cast<float *>(b)[x] = calcPixel<false, false, coring>(pixel_b);
+            const float pixel_r = reinterpret_cast<float *>(r)[x];
+            reinterpret_cast<float *>(r)[x] = calcPixel<false, false, coring>(pixel_r);
+          }
+          p += pitch; // g
+          b += pitch_b;
+          r += pitch_r;
+        }
+      }
+    }
+    else {
+      // 32 bit, neither YUV(A), nor RGB(A)
+    }
   }
-  return frame;
 }
 
 AVSValue __cdecl Levels::Create(AVSValue args, void*, IScriptEnvironment* env)
@@ -1840,6 +1852,17 @@ Tweak::Tweak(PClip _child, double _hue, double _sat, double _bright, double _con
 template<typename pixel_t, bool dither>
 void Tweak::tweak_calc_chroma(BYTE *srcpu, BYTE *srcpv, int src_pitch, int width, int height, float minUV, float maxUV)
 {
+  // allPixels as template parameter: GCC did not unswitch it, the loop stayed scalar even when no
+  // hue/saturation range check is needed.
+  if (allPixels)
+    tweak_calc_chroma_impl<pixel_t, dither, true>(srcpu, srcpv, src_pitch, width, height, minUV, maxUV);
+  else
+    tweak_calc_chroma_impl<pixel_t, dither, false>(srcpu, srcpv, src_pitch, width, height, minUV, maxUV);
+}
+
+template<typename pixel_t, bool dither, bool all_pixels>
+void Tweak::tweak_calc_chroma_impl(BYTE *srcpu, BYTE *srcpv, int src_pitch, int width, int height, float minUV, float maxUV)
+{
   // no lookup, alway true for 16/32 bit, optional for 8 bit
   const double Hue = (dhue * PI) / 180.0;
   // 100% equals sat=119 (= maximal saturation of valid RGB (R=255,G=B=0)
@@ -1877,7 +1900,7 @@ void Tweak::tweak_calc_chroma(BYTE *srcpu, BYTE *srcpv, int src_pitch, int width
       v = (v + (dither ? ditherval : 0)) / (sizeof(pixel_t) == 4 ? 1.0f : pixel_range);
 
       double dWorkSat = dsat; // init from original param
-      if(allPixels || ProcessPixelUnscaled(v * uv_range_corr, u * uv_range_corr, dstartHue, dendHue, maxSat, minSat, p, dWorkSat))
+      if(all_pixels || ProcessPixelUnscaled(v * uv_range_corr, u * uv_range_corr, dstartHue, dendHue, maxSat, minSat, p, dWorkSat))
       {
         float du = ((u*cosHue + v*sinHue) * (float)dWorkSat);
         float dv = ((v*cosHue - u*sinHue) * (float)dWorkSat);

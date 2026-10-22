@@ -75,6 +75,11 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: Overlay mode="darken"/"lighten" 10-16 bit (and 8 bit C path), Overlay mode="add"/"subtract"
   32 bit float: the C path is vectorized by GCC (aarch64 and x86). Branchless rewrite; GCC kept the conditional
   parts as control flow (its default -ftrapping-math). Clang already vectorized them. Output unchanged.
+- Optimization: Tweak hue/saturation (no hue/saturation range, no dither) 10-16 bit, 32 bit float and 8 bit realcalc:
+  the C path is vectorized by GCC (x64: 1.3x-2.4x); the "all pixels" case is now a template parameter.
+  aarch64 Levels 32 bit float (no gamma, no dither): vectorized by GCC; coring is a template parameter.
+  On aarch64 the float and 16 bit results can differ from the earlier
+  version in the last bit: multiply-adds are fused differently in the vectorized code.
 - Optimization: aarch64 Overlay mode="multiply" with mask: the C path is vectorized by GCC (#pragma GCC ivdep;
   7 planes were too many for its runtime alias checks). Clang already vectorized it. Output unchanged.
 - Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for

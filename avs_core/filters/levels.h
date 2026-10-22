@@ -111,8 +111,10 @@ private:
   float bias_dither;
   float dither_strength;
 
-  template<bool chroma, bool use_gamma>
+  template<bool chroma, bool use_gamma, bool coring>
   AVS_FORCEINLINE float calcPixel(const float pixel);
+  template<bool coring>
+  void processFloat(PVideoFrame& frame);
 };
 
 
@@ -211,6 +213,8 @@ private:
 
   template<typename pixel_t, bool dither>
   void tweak_calc_chroma(BYTE *srcpU, BYTE *srcpV, int src_pitch, int width, int height, float minUV, float maxUV);
+  template<typename pixel_t, bool dither, bool all_pixels>
+  void tweak_calc_chroma_impl(BYTE *srcpU, BYTE *srcpV, int src_pitch, int width, int height, float minUV, float maxUV);
 
     int Sin, Cos;
     int Sat, Bright, Cont;
