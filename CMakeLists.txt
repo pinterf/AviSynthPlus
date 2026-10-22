@@ -201,7 +201,7 @@ if(NOT HEADERS_ONLY)
     #1930-1949 = VS 17.x (v143 toolset) Visual Studio 2022
     #  ( 1940-1949 = VS v17.10+: Toolset v143 (Still!) | Compiler 19.4x)
     #1950-1959 = VS 18.0 (v145 toolset) Visual Studio 2026
-    
+
     # --- Determine MSVC target platform, Ninja makes a bit more work for us
     # Since CMAKE_VS_PLATFORM_NAME is empty, only valid for Visual Studio generators.
 
@@ -475,8 +475,12 @@ if(NOT HEADERS_ONLY)
         # NEON intrinsics master switch (if enabled)
         if(ENABLE_NEON_SIMD)
           target_compile_definitions(${AFFECTED_TARGET} PRIVATE NEON_INTRINSICS)
+          if(CLANG_IN_VS STREQUAL "1")
+            # clang-cl: fuse a*b+c across the SIMD-C operator calls like GCC (see the GCC/Clang branch)
+            target_compile_options(${AFFECTED_TARGET} PRIVATE /clang:-ffp-contract=fast)
+          endif()
         endif()
-        
+
         # FIXME: With Ninja, we can see cl : Command line warning D9025 : overriding '/EHs' with '/EHa'
         
         # Compiler-specific options for IntelLLVM / Clang
@@ -545,6 +549,11 @@ if(NOT HEADERS_ONLY)
         endif()
         if(ENABLE_NEON_SIMD)
           target_compile_definitions(${AFFECTED_TARGET} PRIVATE NEON_INTRINSICS)
+          if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            # Clang (Linux, Apple clang, llvm-mingw) fuses a*b+c only within one expression by default, not across
+            # the SIMD-C operator calls like GCC: the C float paths (e.g. resizers) would be unfused, the NEON fused.
+            target_compile_options(${AFFECTED_TARGET} PRIVATE -ffp-contract=fast)
+          endif()
         endif()
         if(WIN32)
           target_compile_definitions(${AFFECTED_TARGET} PRIVATE __CRT__NO_INLINE=1)
