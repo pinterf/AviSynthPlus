@@ -2130,8 +2130,8 @@ FilteredResizeV::FilteredResizeV(PClip _child, double subrange_top, double subra
   if (vi.IsRGB() && !isRGBPfamily)
     subrange_top = vi.height - subrange_top - subrange_height; // packed RGB upside down
 
-#ifdef INTEL_INTRINSICS
-  int cpu = env->GetCPUFlags();
+#if defined(INTEL_INTRINSICS) || defined(NEON_INTRINSICS)
+  int cpu = env->GetCPUFlags(); // NEON: vertical resizer
 #else
   int cpu = 0;
 #endif
@@ -2288,6 +2288,10 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
         return resize_v_mmx_planar;
 #endif
 #endif
+#ifdef NEON_INTRINSICS
+      if (CPU & CPUF_ARM_NEON)
+        return resize_v_neon_planar_uint8_16<uint8_t, true>;
+#endif
       // C version
       return resize_v_c_planar_uint8_16_t_auto_vectorized<uint8_t, true>;
     }
@@ -2313,6 +2317,14 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
           return resize_v_sse2_planar_uint16_t<true>;
         else
           return resize_v_sse2_planar_uint16_t<false>;
+      }
+#endif
+#ifdef NEON_INTRINSICS
+      if (CPU & CPUF_ARM_NEON) {
+        if (bits_per_pixel < 16)
+          return resize_v_neon_planar_uint8_16<uint16_t, true>;
+        else
+          return resize_v_neon_planar_uint8_16<uint16_t, false>;
       }
 #endif
       // C version
@@ -2341,6 +2353,10 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
       if (CPU & CPUF_SSE2) {
         return resize_v_sse2_planar_float;
       }
+#endif
+#ifdef NEON_INTRINSICS
+      if (CPU & CPUF_ARM_NEON)
+        return resize_v_neon_planar_float;
 #endif
       return resize_v_c_planar_float_auto_vectorized;
     }

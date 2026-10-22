@@ -253,3 +253,174 @@ void resizer_h_neon_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, i
     src += src_pitch;
   }
 }
+
+// Vertical resizers, planar 8-16 bit and 32 bit float: the NEON pairs of resize_v_c_planar_uint8_16_t_auto_vectorized
+// and resize_v_c_planar_float_auto_vectorized (resample.cpp). The C versions compile to per-pixel lane loads (8-16 bit)
+// and accumulators kept in stack memory (float) on aarch64 (GCC 11/12).
+// 16 pixels per step (the row end: 8), the taps in two chains (even and odd rows), added at the end, the odd last tap
+// to the even chain. Same overread/overwrite as C at the row end (within FRAME_ALIGN).
+// 8-16 bit: the integer sum is exact, bit-identical to C in any order. Pivot and rounding as in the horizontal one.
+// float: the C order: fused multiply-add per chain, both starting at +0, then even + odd, then the odd last tap fused.
+
+// N pixels (8 or 16) as int16x8 groups: 8 bit zero-extended, 10-14 bit as is, 16 bit pivoted to signed
+template<int N, typename pixel_t, bool lessthan16bit>
+static AVS_FORCEINLINE void load_n_s16(const pixel_t* p, int16x8_t* out)
+{
+  if constexpr (sizeof(pixel_t) == 1 && N == 16) {
+    const uint8x16_t v = vld1q_u8(p);
+    out[0] = vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(v)));
+    out[1] = vreinterpretq_s16_u16(vmovl_high_u8(v));
+  }
+  else {
+    for (int k = 0; k < N / 8; k++)
+      out[k] = load8_s16<pixel_t, lessthan16bit>(p + 8 * k);
+  }
+}
+
+template<int N, typename pixel_t, bool lessthan16bit>
+static AVS_FORCEINLINE void process_n_pixels_v_neon(const pixel_t* AVS_RESTRICT src2_ptr, int src_pitch, const short* AVS_RESTRICT coeff,
+  int kernel_size, int32x4_t rounder, uint16x8_t clamp_limit, pixel_t* AVS_RESTRICT dst)
+{
+  constexpr int G = N / 8; // int16x8 groups
+  int32x4_t acc_even[2 * G], acc_odd[2 * G];
+  for (int r = 0; r < 2 * G; r++) {
+    acc_even[r] = rounder;
+    acc_odd[r] = vdupq_n_s32(0);
+  }
+  const int ksmod2 = kernel_size / 2 * 2;
+  int i = 0;
+  for (; i < ksmod2; i += 2) {
+    int16x8_t s0[G], s1[G];
+    load_n_s16<N, pixel_t, lessthan16bit>(src2_ptr, s0);
+    load_n_s16<N, pixel_t, lessthan16bit>(src2_ptr + src_pitch, s1);
+    const int16_t c0 = coeff[i];
+    const int16_t c1 = coeff[i + 1];
+    for (int k = 0; k < G; k++) {
+      acc_even[2 * k] = vmlal_n_s16(acc_even[2 * k], vget_low_s16(s0[k]), c0);
+      acc_even[2 * k + 1] = vmlal_high_n_s16(acc_even[2 * k + 1], s0[k], c0);
+      acc_odd[2 * k] = vmlal_n_s16(acc_odd[2 * k], vget_low_s16(s1[k]), c1);
+      acc_odd[2 * k + 1] = vmlal_high_n_s16(acc_odd[2 * k + 1], s1[k], c1);
+    }
+    src2_ptr += 2 * src_pitch;
+  }
+  if (i < kernel_size) {
+    int16x8_t s0[G];
+    load_n_s16<N, pixel_t, lessthan16bit>(src2_ptr, s0);
+    const int16_t c0 = coeff[i];
+    for (int k = 0; k < G; k++) {
+      acc_even[2 * k] = vmlal_n_s16(acc_even[2 * k], vget_low_s16(s0[k]), c0);
+      acc_even[2 * k + 1] = vmlal_high_n_s16(acc_even[2 * k + 1], s0[k], c0);
+    }
+  }
+  constexpr int fp_scale_bits = sizeof(pixel_t) == 1 ? FPScale8bits : FPScale16bits;
+  uint16x8_t res[G];
+  for (int k = 0; k < G; k++) {
+    const int32x4_t lo = vshrq_n_s32(vaddq_s32(acc_even[2 * k], acc_odd[2 * k]), fp_scale_bits);
+    const int32x4_t hi = vshrq_n_s32(vaddq_s32(acc_even[2 * k + 1], acc_odd[2 * k + 1]), fp_scale_bits);
+    res[k] = vcombine_u16(vqmovun_s32(lo), vqmovun_s32(hi)); // < 0 -> 0, > 65535 -> 65535
+    if constexpr (sizeof(pixel_t) == 2 && lessthan16bit)
+      res[k] = vminq_u16(res[k], clamp_limit);
+  }
+  if constexpr (sizeof(pixel_t) == 1) {
+    if constexpr (N == 16)
+      vst1q_u8(dst, vcombine_u8(vqmovn_u16(res[0]), vqmovn_u16(res[1]))); // > 255 -> 255
+    else
+      vst1_u8(dst, vqmovn_u16(res[0]));
+  }
+  else {
+    for (int k = 0; k < G; k++)
+      vst1q_u16(dst + 8 * k, res[k]);
+  }
+}
+
+template<typename pixel_t, bool lessthan16bit>
+void resize_v_neon_planar_uint8_16(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+  const int filter_size = program->filter_size;
+  const int kernel_size = program->filter_size_real;
+  const short* AVS_RESTRICT current_coeff = program->pixel_coefficient;
+  constexpr int fp_scale_bits = sizeof(pixel_t) == 1 ? FPScale8bits : FPScale16bits;
+  int rounder_i = 1 << (fp_scale_bits - 1);
+  if constexpr (sizeof(pixel_t) == 2 && !lessthan16bit)
+    rounder_i += 32768 << FPScale16bits; // back from the signed pivot
+  const int32x4_t rounder = vdupq_n_s32(rounder_i);
+  const uint16x8_t clamp_limit = vdupq_n_u16((uint16_t)((1 << bits_per_pixel) - 1));
+
+  const pixel_t* src = reinterpret_cast<const pixel_t*>(src8);
+  pixel_t* AVS_RESTRICT dst = reinterpret_cast<pixel_t*>(dst8);
+  dst_pitch /= sizeof(pixel_t);
+  src_pitch /= sizeof(pixel_t);
+  const int width_mod16 = width / 16 * 16;
+
+  for (int y = 0; y < target_height; y++) {
+    const pixel_t* src_ptr = src + program->pixel_offset[y] * src_pitch;
+    int x = 0;
+    for (; x < width_mod16; x += 16)
+      process_n_pixels_v_neon<16, pixel_t, lessthan16bit>(src_ptr + x, src_pitch, current_coeff, kernel_size, rounder, clamp_limit, dst + x);
+    for (; x < width; x += 8)
+      process_n_pixels_v_neon<8, pixel_t, lessthan16bit>(src_ptr + x, src_pitch, current_coeff, kernel_size, rounder, clamp_limit, dst + x);
+    dst += dst_pitch;
+    current_coeff += filter_size;
+  }
+}
+
+template void resize_v_neon_planar_uint8_16<uint8_t, true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
+template void resize_v_neon_planar_uint8_16<uint16_t, true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
+template void resize_v_neon_planar_uint8_16<uint16_t, false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
+
+template<int N>
+static AVS_FORCEINLINE void process_n_pixels_v_neon_float(const float* AVS_RESTRICT src2_ptr, int src_pitch, const float* AVS_RESTRICT coeff,
+  int kernel_size, float* AVS_RESTRICT dst)
+{
+  constexpr int R = N / 4;
+  float32x4_t acc_even[R], acc_odd[R];
+  for (int r = 0; r < R; r++) {
+    acc_even[r] = vdupq_n_f32(0.0f);
+    acc_odd[r] = vdupq_n_f32(0.0f);
+  }
+  const int ksmod2 = kernel_size / 2 * 2;
+  int i = 0;
+  for (; i < ksmod2; i += 2) {
+    const float c0 = coeff[i];
+    const float c1 = coeff[i + 1];
+    for (int r = 0; r < R; r++) {
+      acc_even[r] = vfmaq_n_f32(acc_even[r], vld1q_f32(src2_ptr + 4 * r), c0);
+      acc_odd[r] = vfmaq_n_f32(acc_odd[r], vld1q_f32(src2_ptr + src_pitch + 4 * r), c1);
+    }
+    src2_ptr += 2 * src_pitch;
+  }
+  for (int r = 0; r < R; r++)
+    acc_even[r] = vaddq_f32(acc_even[r], acc_odd[r]);
+  if (i < kernel_size) {
+    const float c0 = coeff[i];
+    for (int r = 0; r < R; r++)
+      acc_even[r] = vfmaq_n_f32(acc_even[r], vld1q_f32(src2_ptr + 4 * r), c0);
+  }
+  for (int r = 0; r < R; r++)
+    vst1q_f32(dst + 4 * r, acc_even[r]);
+}
+
+void resize_v_neon_planar_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+  AVS_UNUSED(bits_per_pixel);
+  const int filter_size = program->filter_size;
+  const int kernel_size = program->filter_size_real;
+  const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float;
+
+  const float* src = reinterpret_cast<const float*>(src8);
+  float* AVS_RESTRICT dst = reinterpret_cast<float*>(dst8);
+  dst_pitch /= sizeof(float);
+  src_pitch /= sizeof(float);
+  const int width_mod16 = width / 16 * 16;
+
+  for (int y = 0; y < target_height; y++) {
+    const float* src_ptr = src + program->pixel_offset[y] * src_pitch;
+    int x = 0;
+    for (; x < width_mod16; x += 16)
+      process_n_pixels_v_neon_float<16>(src_ptr + x, src_pitch, current_coeff, kernel_size, dst + x);
+    for (; x < width; x += 8)
+      process_n_pixels_v_neon_float<8>(src_ptr + x, src_pitch, current_coeff, kernel_size, dst + x);
+    dst += dst_pitch;
+    current_coeff += filter_size;
+  }
+}

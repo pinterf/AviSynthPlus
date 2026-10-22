@@ -39,6 +39,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Resizers, C path, exact 16 bit horizontal: the 4-tap step of the kernel rest uses the signed pivot like the others.
 - Optimization: aarch64 NEON horizontal resizer, planar 32 bit float, any kernel size: 4 output pixels at once
   (independent fma chains), horizontal sums after a 4x4 transpose in the C order. Bit-identical to C.
+- Optimization: aarch64 NEON vertical resizer, planar 8, 10-16 bit and 32 bit float: 16 pixels per step,
+  taps in an even and an odd chain (float: fused, in the C order). Bit-identical to C. GCC compiled the C
+  version into per-pixel lane loads (8-16 bit) and accumulators kept in memory (float) on aarch64.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.
