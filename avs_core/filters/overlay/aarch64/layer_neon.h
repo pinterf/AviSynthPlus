@@ -24,7 +24,7 @@ void get_layer_planarrgb_add_functions_neon(
   layer_planarrgb_add_c_t** layer_fn,
   layer_planarrgb_add_f_c_t** layer_f_fn);
 
-// Mul / lighten / darken: NEON row kernels in this module's copies of the layer.hpp C templates.
+// Mul / mulovr / lighten / darken: NEON row kernels in this module's copies of the layer.hpp C templates.
 void get_layer_yuv_mul_functions_neon(
   bool is_chroma, bool hasAlpha,
   int placement, VideoInfo& vi, int bits_per_pixel,
@@ -43,5 +43,10 @@ void get_layer_planarrgb_mul_functions_neon(
 void get_layer_planarrgb_lighten_darken_functions_neon(bool isLighten, bool hasAlpha, bool blendAlpha, int bits_per_pixel,
   layer_planarrgb_lighten_darken_c_t** layer_fn,
   layer_planarrgb_lighten_darken_f_c_t** layer_f_fn);
+
+void get_layer_yuv_mulovr_functions_neon(
+  bool has_alpha, int placement, VideoInfo& vi, int bits_per_pixel,
+  layer_yuv_mulovr_c_t** layer_fn,
+  layer_yuv_mulovr_f_c_t** layer_f_fn);
 
 #endif  // __Layer_NEON_H__

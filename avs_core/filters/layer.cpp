@@ -2652,7 +2652,12 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
 
       layer_yuv_mulovr_c_t*   layer_fn   = nullptr;
       layer_yuv_mulovr_f_c_t* layer_f_fn = nullptr;
-      get_layer_yuv_mulovr_functions(hasAlpha, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
+#ifdef NEON_INTRINSICS
+      if (env->GetCPUFlags() & CPUF_ARM_NEON)
+        get_layer_yuv_mulovr_functions_neon(hasAlpha, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
+      else
+#endif
+        get_layer_yuv_mulovr_functions(hasAlpha, placement, vi, bits_per_pixel, &layer_fn, &layer_f_fn);
 
       if (layer_fn)
         layer_fn(src1p, src1p_u, src1p_v, src2p, maskp,

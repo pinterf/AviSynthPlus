@@ -674,7 +674,7 @@ Optimizations
 - add NEON optimizations for the subsampled chroma mask preparation of ``Overlay``, ``Layer`` and masked merges, 8-16 bit
 - aarch64: planar YUV <-> RGB matrix conversions vectorized (GCC auto-vectorization of the C path)
 - add NEON optimizations for the horizontal and vertical resizers, planar 8-16 bit and 32 bit float
-- add NEON optimizations for ``Layer`` mul (10-16 bit), lighten and darken (10-16 bit and 32 bit float), planar RGB(A) and YUV(A)
+- add NEON optimizations for ``Layer`` mul and (YUV) mulovr (10-16 bit), lighten and darken (10-16 bit and 32 bit float), planar RGB(A) and YUV(A)
 - (filter graph) avoid MTGuard and CacheGuard creation if a filter returns one of its clip parameter unaltered.
 - Add some avx2 stuff to Invert (no really gain, filter is too simple) and some Layer subfilter.
 - "Layer", "Overlay", "Merge": unify three separate masked-merge kernel families into shared

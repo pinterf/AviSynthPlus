@@ -93,7 +93,7 @@ void get_layer_yuv_masked_add_functions_neon(
 }
 
 // ---------------------------------------------------------------------------
-// NEON Layer mul / lighten / darken dispatchers: this TU's copies of the C templates,
+// NEON Layer mul / mulovr / lighten / darken dispatchers: this TU's copies of the C templates,
 // with the NEON row kernels (10-16 bit, float lighten/darken) and the NEON rowprep.
 // ---------------------------------------------------------------------------
 void get_layer_yuv_mul_functions_neon(
@@ -125,4 +125,12 @@ void get_layer_planarrgb_lighten_darken_functions_neon(bool isLighten, bool hasA
   layer_planarrgb_lighten_darken_f_c_t** layer_f_fn)
 {
   get_layer_planarrgb_lighten_darken_functions(isLighten, hasAlpha, blendAlpha, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+void get_layer_yuv_mulovr_functions_neon(
+  bool has_alpha, int placement, VideoInfo& vi, int bits_per_pixel,
+  layer_yuv_mulovr_c_t** layer_fn,
+  layer_yuv_mulovr_f_c_t** layer_f_fn)
+{
+  get_layer_yuv_mulovr_functions(has_alpha, placement, vi, bits_per_pixel, layer_fn, layer_f_fn);
 }

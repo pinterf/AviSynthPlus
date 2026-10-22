@@ -47,6 +47,8 @@ struct LayerRowKernelsC {
   template<typename pixel_t, bool chroma, bool has_alpha, bool blend_alpha>
   static int planarrgb_mul(pixel_t*, pixel_t*, pixel_t*, pixel_t*, const pixel_t*, const pixel_t*, const pixel_t*,
     const pixel_t*, const pixel_t*, int, int, int, int, MagicDiv) { return 0; }
+  template<typename pixel_t, bool lumaonly, bool has_alpha, bool update_luma>
+  static int yuv_mulovr(pixel_t*, pixel_t*, pixel_t*, const pixel_t*, const pixel_t*, int, int, int, int, MagicDiv) { return 0; }
 };
 #  define LAYER_ROW_KERNELS  LayerRowKernelsC
 #endif
@@ -800,7 +802,10 @@ static void layer_yuv_mulovr_c(
     if constexpr (has_alpha)
       mask_ptr = LAYER_ROWPREP_FN<maskMode, pixel_t, true>(maskp, mask_pitch, cwidth, mask_buffer);
 
-    for (int x = 0; x < cwidth; ++x) {
+    // SIMD row kernel: does pixels [0, x) and returns x; 0 when there is none (C build). The C loop does the rest.
+    int x = LAYER_ROW_KERNELS::yuv_mulovr<pixel_t, lumaonly, has_alpha, maskMode == MASK444>(
+      dstp, dstp_u, dstp_v, ovr_y_ptr, mask_ptr, cwidth, opacity_i, max_pixel_value, half, magic);
+    for (; x < cwidth; ++x) {
       const uint32_t alpha_eff = has_alpha
         ? magic_div_rt<pixel_t>((uint32_t)mask_ptr[x] * opacity_i + half, magic)
         : (uint32_t)opacity_i;

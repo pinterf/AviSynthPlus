@@ -32,7 +32,7 @@
 // which is not derived from or based on Avisynth, such as 3rd-party filters,
 // import and export plugins, or graphical user interfaces.
 
-// NEON row kernels for the Layer mul / lighten / darken C templates (layer.hpp, LAYER_ROW_KERNELS),
+// NEON row kernels for the Layer mul / mulovr / lighten / darken C templates (layer.hpp, LAYER_ROW_KERNELS),
 // included by layer_neon.cpp only.
 // 10-16 bit integer and 32 bit float; 8 bit returns 0 (the C loop, vectorized by GCC/Clang).
 // The C loops compile to scalar code there: the 16 bit magic division needs a 32x32->64 multiply,
@@ -145,10 +145,20 @@ static AVS_FORCEINLINE float32x4_t luma4_f(float32x4_t b, float32x4_t g, float32
 
 } // namespace layer_neon_detail
 
+// The YUV kernels are kept out of line: their callers' row loops call the mask row preparation, and
+// across calls only the low 64 bits of v8-v15 are preserved. Inlined, GCC hoists the 128 bit constants
+// out of the row loop, spills them across the calls, and reloads them in the pixel loop. Out of line,
+// they are set up once per row call. One call per row.
+#if defined(_MSC_VER) && !defined(__clang__)
+#  define LAYER_NEON_ROW_NOINLINE __declspec(noinline)
+#else
+#  define LAYER_NEON_ROW_NOINLINE __attribute__((noinline))
+#endif
+
 struct LayerRowKernelsNeon {
   // layer_yuv_mul_c_inner: one plane, alpha from the prepared mask row or the flat opacity
   template<typename pixel_t, bool is_chroma, bool has_alpha>
-  static int yuv_mul(pixel_t* dstp, const pixel_t* ovrp, const pixel_t* effective_mask_ptr, int width,
+  LAYER_NEON_ROW_NOINLINE static int yuv_mul(pixel_t* dstp, const pixel_t* ovrp, const pixel_t* effective_mask_ptr, int width,
     int opacity_i, int max_pixel_value, int half, MagicDiv magic)
   {
     using namespace layer_neon_detail;
@@ -176,7 +186,7 @@ struct LayerRowKernelsNeon {
 
   // layer_yuv_lighten_darken_c, one chroma row: decision on the prepared ovr/src rows, blend U, V (and Y for 444)
   template<int mode, typename pixel_t, bool lumaonly, bool has_alpha, bool update_luma>
-  static int yuv_lighten_darken(pixel_t* dstp, pixel_t* dstp_u, pixel_t* dstp_v,
+  LAYER_NEON_ROW_NOINLINE static int yuv_lighten_darken(pixel_t* dstp, pixel_t* dstp_u, pixel_t* dstp_v,
     const pixel_t* ovrp, const pixel_t* ovrp_u, const pixel_t* ovrp_v,
     const pixel_t* ovr_ptr, const pixel_t* src_ptr, const pixel_t* effective_mask_ptr,
     int cwidth, int opacity_i, int thresh, int max_pixel_value, int half, MagicDiv magic)
@@ -213,7 +223,7 @@ struct LayerRowKernelsNeon {
 
   // layer_yuv_lighten_darken_f_c, one chroma row
   template<int mode, bool lumaonly, bool has_alpha, bool update_luma>
-  static int yuv_lighten_darken_f(float* dstp, float* dstp_u, float* dstp_v,
+  LAYER_NEON_ROW_NOINLINE static int yuv_lighten_darken_f(float* dstp, float* dstp_u, float* dstp_v,
     const float* ovrp, const float* ovrp_u, const float* ovrp_v,
     const float* ovr_ptr, const float* src_ptr, const float* effective_mask_ptr,
     int cwidth, float opacity, float thresh)
@@ -357,6 +367,61 @@ struct LayerRowKernelsNeon {
       return wmod8;
     }
   }
+
+  // layer_yuv_mulovr_c, one chroma row: darken toward black / neutral chroma by the overlay luma.
+  // darken_factor and inv_keep stay 32 bit like in C: for an out-of-range overlay (> max) max - ovr wraps,
+  // and darken_factor can exceed 16 bits. The last blend is uint32 arithmetic, the same modulo 2^32.
+  template<typename pixel_t, bool lumaonly, bool has_alpha, bool update_luma>
+  LAYER_NEON_ROW_NOINLINE static int yuv_mulovr(pixel_t* dstp, pixel_t* dstp_u, pixel_t* dstp_v,
+    const pixel_t* ovr_y_ptr, const pixel_t* mask_ptr,
+    int cwidth, int opacity_i, int max_pixel_value, int half, MagicDiv magic)
+  {
+    using namespace layer_neon_detail;
+    if constexpr (sizeof(pixel_t) != 2)
+      return 0;
+    else {
+      const MagicNeon m(magic);
+      const uint32x4_t half_v = vdupq_n_u32(half);
+      const uint32x4_t max_v = vdupq_n_u32(max_pixel_value);
+      const uint32_t half_pix = (uint32_t)(max_pixel_value / 2); // integer chroma neutral
+      const uint16x8_t opacity_v = vdupq_n_u16((uint16_t)opacity_i);
+      const uint16_t maxv = (uint16_t)max_pixel_value;
+      const int wmod8 = cwidth / 8 * 8;
+      for (int x = 0; x < wmod8; x += 8) {
+        uint16x8_t alpha = opacity_v;
+        if constexpr (has_alpha)
+          alpha = mask_alpha8_u16(vld1q_u16(mask_ptr + x), (uint16_t)opacity_i, half_v, m);
+        const uint16x8_t ovr = vld1q_u16(ovr_y_ptr + x);
+        // darken_factor = magic_div_rt(alpha * (max - ovr) + half), as half + alpha * max - alpha * ovr
+        uint32x4_t d_lo = vmlal_n_u16(half_v, vget_low_u16(alpha), maxv);
+        uint32x4_t d_hi = vmlal_high_n_u16(half_v, alpha, maxv);
+        d_lo = magic_div_neon(vmlsl_u16(d_lo, vget_low_u16(alpha), vget_low_u16(ovr)), m);
+        d_hi = magic_div_neon(vmlsl_high_u16(d_hi, alpha, ovr), m);
+        const uint32x4_t keep_lo = vsubq_u32(max_v, d_lo); // inv_keep
+        const uint32x4_t keep_hi = vsubq_u32(max_v, d_hi);
+        if constexpr (!lumaonly) {
+          // (pixel_t)magic_div_rt(dst * inv_keep + half_pix * darken_factor + half)
+          const uint32x4_t n_lo = vmlaq_n_u32(half_v, d_lo, half_pix);
+          const uint32x4_t n_hi = vmlaq_n_u32(half_v, d_hi, half_pix);
+          const uint16x8_t u = vld1q_u16(dstp_u + x);
+          const uint16x8_t v = vld1q_u16(dstp_v + x);
+          vst1q_u16(dstp_u + x, magic_div_narrow(vmlaq_u32(n_lo, vmovl_u16(vget_low_u16(u)), keep_lo),
+            vmlaq_u32(n_hi, vmovl_high_u16(u), keep_hi), m));
+          vst1q_u16(dstp_v + x, magic_div_narrow(vmlaq_u32(n_lo, vmovl_u16(vget_low_u16(v)), keep_lo),
+            vmlaq_u32(n_hi, vmovl_high_u16(v), keep_hi), m));
+        }
+        if constexpr (update_luma) {
+          // (pixel_t)magic_div_rt(dst * inv_keep + half)
+          const uint16x8_t yv = vld1q_u16(dstp + x);
+          vst1q_u16(dstp + x, magic_div_narrow(vmlaq_u32(half_v, vmovl_u16(vget_low_u16(yv)), keep_lo),
+            vmlaq_u32(half_v, vmovl_high_u16(yv), keep_hi), m));
+        }
+      }
+      return wmod8;
+    }
+  }
 };
+
+#undef LAYER_NEON_ROW_NOINLINE
 
 #endif // __Layer_Row_Kernels_NEON_H__
