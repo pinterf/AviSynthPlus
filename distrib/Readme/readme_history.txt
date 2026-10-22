@@ -63,6 +63,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   dot product extension (CPUF_ARM_DOTPROD, SetMaxCPU "dotprod"); _dp.cpp modules. Same integer totals as C.
 - Build: aarch64 dot product modules (*_dp.cpp) are compiled with -march=armv8.2-a+dotprod (MSVC /arch:armv8.2):
   FEAT_DotProd is an Armv8.2 extension, and GCC 11/12 do not provide vdotq_u32 for armv8.1-a+dotprod.
+- Optimization: aarch64 Overlay mode="multiply" with mask: the C path is vectorized by GCC (#pragma GCC ivdep;
+  7 planes were too many for its runtime alias checks). Clang already vectorized it. Output unchanged.
 - Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for
   rows narrower than the AVX2 minimum (32 / 16 pixels): 1.4x (RGB48) - 3.3x (RGB24) vs. the C path.
 - Overlay: removed the unused internal 4:2:0/4:2:2 <-> 4:4:4 converters (444convert, C/SSE2/AVX2);
