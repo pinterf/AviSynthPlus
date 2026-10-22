@@ -50,6 +50,9 @@
 #include "overlay/intel/masked_rowprep_sse41.h"
 #include "overlay/intel/masked_rowprep_avx2.h"
 #endif
+#ifdef NEON_INTRINSICS
+#include "overlay/aarch64/masked_rowprep_neon.h"
+#endif
 #include "../convert/convert_matrix.h"  // for RGB2YUV_Rec601
 #include "../convert/convert_helper.h"  // chroma location
 
@@ -174,6 +177,25 @@ static rowprep_u16_fn_t select_rowprep_u16(MaskMode mode, int64_t cpuFlags)
     default: break;
     }
   }
+#elif defined(NEON_INTRINSICS)
+  if (cpuFlags & CPUF_ARM_NEON) {
+    switch (mode) {
+    case MASK444:         return prepare_effective_mask_for_row_neon<MASK444,         uint16_t, true>;
+    case MASK411:         return prepare_effective_mask_for_row_neon<MASK411,         uint16_t, true>;
+    case MASK411_TOPLEFT: return prepare_effective_mask_for_row_neon<MASK411_TOPLEFT, uint16_t, true>;
+    case MASK420:         return prepare_effective_mask_for_row_neon<MASK420,         uint16_t, true>;
+    case MASK420_MPEG2:   return prepare_effective_mask_for_row_neon<MASK420_MPEG2,   uint16_t, true>;
+    case MASK420_TOPLEFT: return prepare_effective_mask_for_row_neon<MASK420_TOPLEFT, uint16_t, true>;
+    case MASK422:         return prepare_effective_mask_for_row_neon<MASK422,         uint16_t, true>;
+    case MASK422_MPEG2:   return prepare_effective_mask_for_row_neon<MASK422_MPEG2,   uint16_t, true>;
+    case MASK422_TOPLEFT: return prepare_effective_mask_for_row_neon<MASK422_TOPLEFT, uint16_t, true>;
+    case MASK440:         return prepare_effective_mask_for_row_neon<MASK440,         uint16_t, true>;
+    case MASK440_TOPLEFT: return prepare_effective_mask_for_row_neon<MASK440_TOPLEFT, uint16_t, true>;
+    case MASK410:         return prepare_effective_mask_for_row_neon<MASK410,         uint16_t, true>;
+    case MASK410_TOPLEFT: return prepare_effective_mask_for_row_neon<MASK410_TOPLEFT, uint16_t, true>;
+    default: break;
+    }
+  }
 #else
   (void)cpuFlags;
 #endif
@@ -225,6 +247,8 @@ Antialiaser::Antialiaser(int width, int height, const char fontname[], int size,
   if (!getalpharect_fn && (cpuFlags & CPUF_SSE4_1))
     getalpharect_fn = GetAlphaRect_select_sse41(_noaa, _interlaced);
   // nullptr means scalar fallback (called directly inside GetAlphaRect())
+#elif defined(NEON_INTRINSICS)
+  getalpharect_fn = (cpuFlags & CPUF_ARM_NEON) ? GetAlphaRect_select_neon(_noaa, _interlaced) : nullptr;
 #endif
 
   struct {
@@ -592,7 +616,7 @@ void Antialiaser::GetAlphaRect()
 {
   dirty = false;
   const int srcpitch = (w + 4 + 3) & -4;
-#ifdef INTEL_INTRINSICS
+#if defined(INTEL_INTRINSICS) || defined(NEON_INTRINSICS)
   if (getalpharect_fn) {
     getalpharect_fn(lpAntialiasBits, soa_buf, w, h, w_stride, srcpitch,
                     textcolor, halocolor, xl, yt, xr, yb);

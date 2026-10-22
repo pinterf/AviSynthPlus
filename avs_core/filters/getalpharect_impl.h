@@ -89,6 +89,10 @@ static inline int swar_popcount64(uint64_t v) {
   return (int)((v * UINT64_C(0x0101010101010101)) >> 56);
 }
 
+#ifdef NEON_INTRINSICS
+getalpharect_fn_t GetAlphaRect_select_neon(bool noaa, bool interlaced);
+#endif
+
 #ifdef INTEL_INTRINSICS
 getalpharect_fn_t GetAlphaRect_select_sse41(bool noaa, bool interlaced);
 getalpharect_fn_t GetAlphaRect_select_avx2 (bool noaa, bool interlaced);

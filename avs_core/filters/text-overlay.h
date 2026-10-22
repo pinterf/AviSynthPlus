@@ -185,7 +185,7 @@ private:
   bool bold, italic;
   bool noaa;
 
-#ifdef INTEL_INTRINSICS
+#if defined(INTEL_INTRINSICS) || defined(NEON_INTRINSICS)
   getalpharect_fn_t getalpharect_fn;
 #endif
   void GetAlphaRect();

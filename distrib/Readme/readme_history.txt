@@ -63,6 +63,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   dot product extension (CPUF_ARM_DOTPROD, SetMaxCPU "dotprod"); _dp.cpp modules. Same integer totals as C.
 - Build: aarch64 dot product modules (*_dp.cpp) are compiled with -march=armv8.2-a+dotprod (MSVC /arch:armv8.2):
   FEAT_DotProd is an Armv8.2 extension, and GCC 11/12 do not provide vdotq_u32 for armv8.1-a+dotprod.
+- Optimization: Windows ARM64 text overlay (Subtitle, ShowFrameNumber, Info, ...: GDI antialiaser): NEON
+  GetAlphaRect (the SSE4.1 pair: 8-column quick-exit, vcnt popcount) and NEON mask row preparation for
+  subsampled formats. Same result as the scalar code.
 - Optimization: planar RGB(A) <-> packed RGB24/32/48/64 C path: local plane pointers, the 8 bit loops are now
   vectorized by GCC and Clang (aarch64: ld3/ld4/st3/st4). A char store could alias the plane pointer array,
   the pointers were reloaded per pixel. Output unchanged.

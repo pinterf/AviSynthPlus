@@ -679,6 +679,7 @@ Optimizations
 - add NEON optimizations for the runtime functions ``AverageLuma/ChromaU/ChromaV/R/G/B`` and the ``xDifference``,
   ``xDifferenceFromPrevious``, ``xDifferenceToNext`` families (8-16 bit), and for the ``TemporalSoften`` scene change detection;
   8 bit with the ARM dot product extension (UDOT) when available
+- add NEON optimizations for the Windows ARM64 text overlay antialiaser (``Subtitle``, ``ShowFrameNumber``, ``Info``, ...)
 - (filter graph) avoid MTGuard and CacheGuard creation if a filter returns one of its clip parameter unaltered.
 - Add some avx2 stuff to Invert (no really gain, filter is too simple) and some Layer subfilter.
 - "Layer", "Overlay", "Merge": unify three separate masked-merge kernel families into shared
