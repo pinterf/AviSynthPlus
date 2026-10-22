@@ -3344,8 +3344,7 @@ AArch64 Versioning Scheme (v8.x-A, v9.x-A)
 AArch64 is a living standard. Key features relevant to Avisynth are introduced in minor revisions:
 
 * **ARMv8.0-A:** The baseline for AArch64. **NEON is mandatory.**
-* **ARMv8.1-A:** Introduces optional ``DOTPROD`` (Dot Product)
-* **ARMv8.2-A:** Introduces optional ``I8MM`` (8-bit Matrix Multiply).
+* **ARMv8.2-A:** Introduces optional ``DOTPROD`` (Dot Product, ``FEAT_DotProd``) and ``I8MM`` (8-bit Matrix Multiply).
 * **ARMv8.4-A:** Makes ``DOTPROD`` mandatory.
 * **ARMv8.5-A:** Introduces optional ``SVE2`` (Scalable Vector Extension 2).
 * **ARMv8.6-A:** Makes ``I8MM`` (8-bit Matrix Multiply) mandatory.
@@ -3374,20 +3373,22 @@ Avisynth ARM SIMD Tiers
     This tier represents the first major performance jump for modern video encoding and processing. It is 
     defined by the availability of specialized multiply-accumulate instructions.
 
-    * **Minimum Requirement:** ARMv8.1-A (where the **DOTPROD** feature flag became optional).
+    * **Minimum Requirement:** ARMv8.2-A (where the **DOTPROD** feature became optional; mandatory from ARMv8.4-A).
     * **Register Width:** Still fixed **128-bit** (V-registers).
-    * **x86 Analogy:** Comparable to **SSSE3** or **SSE4.1** maybe a little **AVX2**, since v8.1-A introduced other new instructions as well.
+    * **x86 Analogy:** Comparable to **SSSE3** or **SSE4.1** maybe a little **AVX2**, since v8.1-A and v8.2-A introduced other new instructions as well.
         * Unlike AVX2 which doubled the register width (128-bit to 256-bit), this ARM tier provides the *instructions* without changing the physical register width.
     * **Usable Instruction Sets:** The **DOTPROD** instructions (e.g., ``SDOT`` and ``UDOT``) for integer dot product operations.
     * **Video Processing Relevance:** Absolutely critical for accelerating modern video codecs (HEVC/VVC/AV1) by providing highly efficient paths for:
         * Motion Compensation
         * Intra-Prediction
         * Integer Matrix Operations (analogous to x86's VNNI).
-    * Compiler flags: ``-march=armv8.1-a+dotprod`` (gcc/clang-cl) or ``/arch:ARMv8.1`` (MSVC).
-      Since dotprod is a feature, if it exists, we can only be sure that an armv8.1-a system is used.
+    * Compiler flags: ``-march=armv8.2-a+dotprod`` (gcc/clang/clang-cl) or ``/arch:armv8.2`` (MSVC).
+      The armv8.2-a base is required by GCC 11/12: their ``arm_neon.h`` defines the dot product intrinsics
+      (e.g. ``vdotq_u32``) for ``arch=armv8.2-a+dotprod``, ``-march=armv8.1-a+dotprod`` fails there
+      (Clang accepts it). Dispatch on the ``CPUF_ARM_DOTPROD`` feature flag, not on an architecture version.
 
 See also:
-`The-Armv8-1-architecture-extension <https://developer.arm.com/documentation/109697/2025_12/Feature-descriptions/The-Armv8-1-architecture-extension?lang=en>`__
+`The-Armv8-2-architecture-extension <https://developer.arm.com/documentation/109697/2025_12/Feature-descriptions/The-Armv8-2-architecture-extension?lang=en>`__
 and
 `The-Armv8-4-architecture-extension <https://developer.arm.com/documentation/109697/2025_12/Feature-descriptions/The-Armv8-4-architecture-extension?lang=en>`__
 
@@ -3458,9 +3459,9 @@ The build system (via CMake) uses the file name suffix to select the appropriate
 +===================+==================================================+====================================+====================================+
 | ``*_neon.cpp``    | Baseline NEON (ASIMD)                            | Implicit (or ``-march=armv8-a``)   | ``/arch:armv8.0``                  |
 +-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
-| ``*_dp.cpp``      | Dot Product (``FEAT_DotProd``) / ARMv8.1-A       | ``-march=armv8.1-a+dotprod``       | ``/arch:armv8.1``                  |
+| ``*_dp.cpp``      | Dot Product (``FEAT_DotProd``) / ARMv8.2-A       | ``-march=armv8.2-a+dotprod``       | ``/arch:armv8.2``                  |
 +-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
-| ``*_i8mm.cpp``    | Int8 Matrix Multiply (``FEAT_I8MM``) / ARMv8.5-A | ``-march=armv8.2-a+i8mm``          | ``/arch:armv8.2``                  |
+| ``*_i8mm.cpp``    | Int8 Matrix Multiply (``FEAT_I8MM``) / ARMv8.2-A | ``-march=armv8.2-a+i8mm``          | ``/arch:armv8.2``                  |
 +-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
 | ``*_sve2.cpp``    | Scalable Vector Extension 2                      | ``-march=armv8.5-a+sve2``          | ``/arch:armv8.5``                  |
 |                   | (``FEAT_SVE2``) / ARMv8.5-A                      |                                    |                                    |
@@ -3470,6 +3471,8 @@ The build system (via CMake) uses the file name suffix to select the appropriate
 +-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
 
 .. note::
+    * ``-march=armv9.1-a+sve2.1`` is not accepted by GCC 11/12 and Clang 15 (newer compilers needed);
+      a ``*_sve2_1.cpp`` file would need a compiler version check in CMake.
     * MSVC supports the ``/arch:armvX.X`` syntax for convenience, individual features are not supported as separate flags.
     * This distinction is necessary when targeting features for Clang-cl and gcc, the allowed C++ intrinsics are stricter
       than in MSVC where if a more modern instruction is used, MSVC will compile it without error. For gcc/llvm/Clang-cl, so-called function attributes 
@@ -3480,13 +3483,16 @@ The build system (via CMake) uses the file name suffix to select the appropriate
 
 The flags above explicitly define the minimum architectural version (e.g., ``armv8.2-a``, ``armv8.5-a``) rather than just the baseline ``armv8-a`` plus the feature.
 
-* While modern compilers (GCC, Clang) are generally smart enough to know that the ``+dotprod`` feature only 
-  appeared in ``ARMv8.1-A`` (and thus implicitly set the target baseline higher), using the explicit flag (e.g., ``-march=armv8.1-a+dotprod``) 
-  provides clarity.
-* **Compiler's Internal Logic:** When a feature flag like ``+dotprod`` is used, the compiler consults its internal definition of the Arm architecture. 
-  Since ``dotprod`` instructions are not part of the ``ARMv8.0-A`` baseline, the compiler must allow *all* instructions mandated by the version where 
-  the feature first appeared (v8.1-A). Explicitly stating the version ensures all other non-feature-specific architectural improvements are also made 
-  available to the compiler.
+* The compilers do not raise the base architecture by themselves: ``+dotprod`` only adds the feature to the given base.
+  The intrinsics headers may still require a base: GCC 11/12 define the dot product intrinsics only for
+  ``arch=armv8.2-a+dotprod`` (``-march=armv8.1-a+dotprod`` fails with "target specific option mismatch"),
+  Clang checks only the feature (``__ARM_FEATURE_DOTPROD``). So state the version where the feature
+  became available (ARMv8.2-A for DotProd and I8MM, ARMv8.5-A for SVE2).
+* A file compiled for a higher base may use any instruction of that base, not only the feature's.
+  Such code runs only after the runtime feature check, and the check is for the feature, so keep these files
+  small and isolated; it is worth checking the generated code (for example the ``*_dp.cpp`` objects contain only
+  ARMv8.0 instructions plus ``udot``). Do not build them with link time optimization, which could inline them
+  into baseline code.
 
 4. Source Code and Dispatch
 ...........................
@@ -3523,14 +3529,15 @@ Raspberry Pi Feature Support
 
 For common single-board computers, the support is as follows:
 
-* **Raspberry Pi 4 (Broadcom BCM2711):** * **CPU:** Quad-core Arm Cortex-A72.
-    * **Architecture:** Supports **ARMv8.2-A**.
-    * **Extensions:** It supports the **DOTPROD** (Dot Product) extension, though it is optional there.
-    * **Category:** Belongs to **CPUF_ARM_DOTPROD**.
+* **Raspberry Pi 4 (Broadcom BCM2711):**
+    * **CPU:** Quad-core Arm Cortex-A72.
+    * **Architecture:** **ARMv8.0-A**.
+    * **Extensions:** NEON only, no **DOTPROD** (``asimddp`` is not listed in ``/proc/cpuinfo``).
+    * **Category:** Belongs to **CPUF_ARM_NEON** only.
 
 * **Raspberry Pi 5 (Broadcom BCM2712):**
     * **CPU:** Quad-core Arm Cortex-A76.
-    * **Architecture:** Supports **ARMv8.2-A** up to **ARMv8.5-A** features.
+    * **Architecture:** **ARMv8.2-A** (with some features of later revisions).
     * **SVE/SVE2 Support:** **The Cortex-A76 core does not support SVE/SVE2.** 
       It supports **DOTPROD** and other extensions that are part of the newer ARMv8.x standards.
     * **Category:** Belongs to **CPUF_ARM_DOTPROD**, but **NOT CPUF_ARM_SVE2**.
