@@ -231,6 +231,74 @@ template void extract_packed_rgb64_channel_sse2<1>(const BYTE*, BYTE*, int, int,
 template void extract_packed_rgb64_channel_sse2<2>(const BYTE*, BYTE*, int, int, int, int);
 template void extract_packed_rgb64_channel_sse2<3>(const BYTE*, BYTE*, int, int, int, int);
 
+// Packed RGB24/RGB48 channel extraction
+// SSSE3, 48 source bytes per block (16 RGB24 pixels or 8 RGB48 pixels).
+// xmm version of extract_packed_rgb_noalpha_channel_avx2
+// Row process: aligned blocks while they fit, then one unaligned block that ends exactly at width
+// Assumed width >= 16 (RGB24) / 8 (RGB48) - caller's task
+template<typename pixel_t, int channel_index, bool aligned>
+#if defined(GCC) || defined(CLANG)
+__attribute__((__target__("ssse3")))
+#endif
+static AVS_FORCEINLINE void extract_rgb_noalpha_block48_ssse3(const BYTE* s, BYTE* d)
+{
+  // 0123456789ABCDEF 0123456789ABCDEF 0123456789ABCDEF
+  // BGRBGRBGRBGRBGRB GRBGRBGRBGRBGRBG RBGRBGRBGRBGRBGR // 8 bit
+  // B G R B G R B G  R B G R B G R B  G R B G R B G R  // 16 bit
+  // 1111111111112222 2222222233333333 3333444444444444  (4x 12 byte windows)
+  __m128i mask;
+  if constexpr (sizeof(pixel_t) == 1)
+    mask = _mm_set_epi8(15, 14, 13, 12, 11, 8, 5, 2, 10, 7, 4, 1, 9, 6, 3, 0);
+  else
+    mask = _mm_set_epi8(15, 14, 13, 12, 11, 10, 5, 4, 9, 8, 3, 2, 7, 6, 1, 0);
+  __m128i v1 = load_si128<aligned>(s + 0);
+  __m128i v2 = load_si128<aligned>(s + 16);
+  __m128i v3 = load_si128<aligned>(s + 32);
+  // each pack: dword 0 = B, 1 = G, 2 = R, 3 = don't care
+  const __m128i pack_lo = _mm_shuffle_epi8(v1, mask);                          // window 1
+  const __m128i pack_hi = _mm_shuffle_epi8(_mm_alignr_epi8(v2, v1, 12), mask); // window 2
+  const __m128i pack_lo2 = _mm_shuffle_epi8(_mm_alignr_epi8(v3, v2, 8), mask); // window 3
+  const __m128i pack_hi2 = _mm_shuffle_epi8(_mm_srli_si128(v3, 4), mask);      // window 4
+  __m128i res;
+  if constexpr (channel_index == 0) // B
+    res = _mm_unpacklo_epi64(_mm_unpacklo_epi32(pack_lo, pack_hi), _mm_unpacklo_epi32(pack_lo2, pack_hi2));
+  else if constexpr (channel_index == 1) // G
+    res = _mm_unpackhi_epi64(_mm_unpacklo_epi32(pack_lo, pack_hi), _mm_unpacklo_epi32(pack_lo2, pack_hi2));
+  else // R
+    res = _mm_unpacklo_epi64(_mm_unpackhi_epi32(pack_lo, pack_hi), _mm_unpackhi_epi32(pack_lo2, pack_hi2));
+  store_si128<aligned>(d, res);
+}
+
+template<typename pixel_t, int channel_index>
+#if defined(GCC) || defined(CLANG)
+__attribute__((__target__("ssse3")))
+#endif
+void extract_packed_rgb_noalpha_channel_ssse3(
+  const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pitch, int width, int height)
+{
+  static_assert(channel_index >= 0 && channel_index <= 2,
+    "RGB24/48 have no alpha; channel_index must be 0 (B), 1 (G), or 2 (R)");
+  constexpr int pixels_per_block = (sizeof(pixel_t) == 1) ? 16 : 8; // 48 source bytes
+  const int wmod = (width / pixels_per_block) * pixels_per_block;
+  for (int y = 0; y < height; ++y) {
+    // source rows start 64-byte aligned, a block is 48 bytes: the block loads stay 16-byte aligned
+    for (int x = 0; x < wmod; x += pixels_per_block)
+      extract_rgb_noalpha_block48_ssse3<pixel_t, channel_index, true>(srcp + x * 3 * (int)sizeof(pixel_t), dstp + x * (int)sizeof(pixel_t));
+    if (wmod < width) { // overlapping last block
+      const int x = width - pixels_per_block;
+      extract_rgb_noalpha_block48_ssse3<pixel_t, channel_index, false>(srcp + x * 3 * (int)sizeof(pixel_t), dstp + x * (int)sizeof(pixel_t));
+    }
+    srcp -= src_pitch;
+    dstp += dst_pitch;
+  }
+}
+template void extract_packed_rgb_noalpha_channel_ssse3<uint8_t, 0>(const BYTE*, BYTE*, int, int, int, int);
+template void extract_packed_rgb_noalpha_channel_ssse3<uint8_t, 1>(const BYTE*, BYTE*, int, int, int, int);
+template void extract_packed_rgb_noalpha_channel_ssse3<uint8_t, 2>(const BYTE*, BYTE*, int, int, int, int);
+template void extract_packed_rgb_noalpha_channel_ssse3<uint16_t, 0>(const BYTE*, BYTE*, int, int, int, int);
+template void extract_packed_rgb_noalpha_channel_ssse3<uint16_t, 1>(const BYTE*, BYTE*, int, int, int, int);
+template void extract_packed_rgb_noalpha_channel_ssse3<uint16_t, 2>(const BYTE*, BYTE*, int, int, int, int);
+
 
 
 /**************************************

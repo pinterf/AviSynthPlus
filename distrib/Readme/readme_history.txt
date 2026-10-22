@@ -56,6 +56,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 ShowRed/Green/Blue/Alpha from packed RGB32/64 to planar RGBA: the C path is vectorized
   by GCC (#pragma GCC ivdep; 4 destination planes were too many for its runtime alias checks). The other
   ShowXxx paths were already vectorized (GCC/Clang). Output unchanged.
+- Optimization: ExtractR/G/B and PlaneToY("R"/"G"/"B") from RGB24/48: SSSE3 path for CPUs without AVX2 and for
+  rows narrower than the AVX2 minimum (32 / 16 pixels): 1.4x (RGB48) - 3.3x (RGB24) vs. the C path.
 - Overlay: removed the unused internal 4:2:0/4:2:2 <-> 4:4:4 converters (444convert, C/SSE2/AVX2);
   Overlay converts through ConvertToYUV444 with the chroma placement since the placement-aware rework.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload

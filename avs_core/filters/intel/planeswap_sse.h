@@ -65,4 +65,12 @@ void extract_packed_rgb32_channel_sse2(const BYTE* srcp, BYTE* dstp, int src_pit
 template<int channel_index>
 void extract_packed_rgb64_channel_sse2(const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pitch, int width, int height);
 
+// Packed RGB24 (uint8_t) / RGB48 (uint16_t) single-channel extraction, channel_index 0..2 (B, G, R).
+// Requires width >= 16 (RGB24) / 8 (RGB48).
+template<typename pixel_t, int channel_index>
+#if defined(GCC) || defined(CLANG)
+__attribute__((__target__("ssse3"))) // GCC takes the target from the first declaration of a template
+#endif
+void extract_packed_rgb_noalpha_channel_ssse3(const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pitch, int width, int height);
+
 #endif  // __Planeswap_SSE_H__
