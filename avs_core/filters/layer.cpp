@@ -1153,6 +1153,11 @@ static void packed_to_planarrgb(uint8_t* dstp_r, uint8_t* dstp_g, uint8_t* dstp_
   srcp += (height - 1) * src_pitch;
 
   for (int i = 0; i < height; ++i) {
+    // 4 destination planes (with alpha): too many pointer pairs for GCC's runtime alias checks, the loop stayed
+    // scalar on aarch64. Safe: j reads source pixel j and writes element j of each plane only.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC ivdep
+#endif
     for (int j = 0; j < width; ++j) {
       const int pixel = reinterpret_cast<const pixel_t*>(srcp)[j * source_rgb_step + channel];
       reinterpret_cast<pixel_t*>(dstp_g)[j] =

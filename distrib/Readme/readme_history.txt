@@ -53,6 +53,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   preparation. Bit-identical to C.
 - Optimization: aarch64 NEON ExtractR/G/B/A and PlaneToY("R"/"G"/"B"/"A") from packed RGB24/32/48/64:
   de-interleaving loads (vld3/vld4), 16 (8 bit) or 8 (16 bit) pixels per step.
+- Optimization: aarch64 ShowRed/Green/Blue/Alpha from packed RGB32/64 to planar RGBA: the C path is vectorized
+  by GCC (#pragma GCC ivdep; 4 destination planes were too many for its runtime alias checks). The other
+  ShowXxx paths were already vectorized (GCC/Clang). Output unchanged.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.
