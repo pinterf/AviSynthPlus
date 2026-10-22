@@ -190,28 +190,39 @@ template<typename pixel_t, int src_numcomponents, bool targetHasAlpha>
 static void convert_rgb_to_rgbp_c(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height) {
   constexpr int bits_per_pixel = sizeof(pixel_t) == 1 ? 8 : 16;
   constexpr int max_pixel_value = (1 << bits_per_pixel) - 1;
+  // Local plane pointers: written through dstp[] directly, an 8 bit (char) store may alias the pointer
+  // array itself, the pointers were reloaded per pixel and the loop was not vectorized.
+  BYTE* dstp_g = dstp[0];
+  BYTE* dstp_b = dstp[1];
+  BYTE* dstp_r = dstp[2];
+  BYTE* dstp_a = targetHasAlpha ? dstp[3] : nullptr;
   for (int y = height; y > 0; --y) {
+    const pixel_t* s = reinterpret_cast<const pixel_t*>(srcp);
+    pixel_t* g = reinterpret_cast<pixel_t*>(dstp_g);
+    pixel_t* b = reinterpret_cast<pixel_t*>(dstp_b);
+    pixel_t* r = reinterpret_cast<pixel_t*>(dstp_r);
+    pixel_t* a = reinterpret_cast<pixel_t*>(dstp_a);
     int x;
     for (x = 0; x < width; ++x) {
-      pixel_t B = reinterpret_cast<const pixel_t*>(srcp)[x * src_numcomponents + 0];
-      pixel_t G = reinterpret_cast<const pixel_t*>(srcp)[x * src_numcomponents + 1];
-      pixel_t R = reinterpret_cast<const pixel_t*>(srcp)[x * src_numcomponents + 2];
+      pixel_t B = s[x * src_numcomponents + 0];
+      pixel_t G = s[x * src_numcomponents + 1];
+      pixel_t R = s[x * src_numcomponents + 2];
       pixel_t A = 0;
       if constexpr (targetHasAlpha)
-        A = (src_numcomponents == 4) ? reinterpret_cast<const pixel_t*>(srcp)[x * src_numcomponents + 3] : max_pixel_value;
-      reinterpret_cast<pixel_t*>(dstp[0])[x] = G;
-      reinterpret_cast<pixel_t*>(dstp[1])[x] = B;
-      reinterpret_cast<pixel_t*>(dstp[2])[x] = R;
+        A = (src_numcomponents == 4) ? s[x * src_numcomponents + 3] : max_pixel_value;
+      g[x] = G;
+      b[x] = B;
+      r[x] = R;
       if constexpr (targetHasAlpha)
-        reinterpret_cast<pixel_t*>(dstp[3])[x] = A;
+        a[x] = A;
     }
 
     srcp -= src_pitch; // source packed RGB is upside down
-    dstp[0] += dst_pitch[0];
-    dstp[1] += dst_pitch[1];
-    dstp[2] += dst_pitch[2];
+    dstp_g += dst_pitch[0];
+    dstp_b += dst_pitch[1];
+    dstp_r += dst_pitch[2];
     if constexpr (targetHasAlpha)
-      dstp[3] += dst_pitch[3];
+      dstp_a += dst_pitch[3];
   }
 }
 
@@ -325,31 +336,42 @@ static void convert_rgbp_to_rgb_c(const BYTE *(&srcp)[4], BYTE * dstp, int (&src
   constexpr int bits_per_pixel = sizeof(pixel_t) == 1 ? 8 : 16;
   constexpr int max_pixel_value = (1 << bits_per_pixel) - 1;
 
+  // Local plane pointers: read through srcp[] directly, an 8 bit (char) store may alias the pointer
+  // array itself, the pointers were reloaded per pixel and the loop was not vectorized.
+  const BYTE* srcp_g = srcp[0];
+  const BYTE* srcp_b = srcp[1];
+  const BYTE* srcp_r = srcp[2];
+  const BYTE* srcp_a = hasSrcAlpha ? srcp[3] : nullptr;
   for (int y = 0; y < height; y++) {
+    const pixel_t* g = reinterpret_cast<const pixel_t*>(srcp_g);
+    const pixel_t* b = reinterpret_cast<const pixel_t*>(srcp_b);
+    const pixel_t* r = reinterpret_cast<const pixel_t*>(srcp_r);
+    const pixel_t* a = reinterpret_cast<const pixel_t*>(srcp_a);
+    pixel_t* d = reinterpret_cast<pixel_t*>(dstp);
     int x;
     for (x = 0; x < width; ++x) {
-      const pixel_t G = reinterpret_cast<const pixel_t *>(srcp[0])[x];
-      const pixel_t B = reinterpret_cast<const pixel_t *>(srcp[1])[x];
-      const pixel_t R = reinterpret_cast<const pixel_t *>(srcp[2])[x];
-      reinterpret_cast<pixel_t *>(dstp)[x*target_numcomponents+0] = B;
-      reinterpret_cast<pixel_t *>(dstp)[x*target_numcomponents+1] = G;
-      reinterpret_cast<pixel_t *>(dstp)[x*target_numcomponents+2] = R;
+      const pixel_t G = g[x];
+      const pixel_t B = b[x];
+      const pixel_t R = r[x];
+      d[x*target_numcomponents+0] = B;
+      d[x*target_numcomponents+1] = G;
+      d[x*target_numcomponents+2] = R;
       if constexpr (target_numcomponents == 4) { // either from A channel or default transparent constant
         pixel_t A;
         if constexpr (hasSrcAlpha)
-          A = reinterpret_cast<const pixel_t*>(srcp[3])[x];
+          A = a[x];
         else
           A = max_pixel_value; // 255/65535
-        reinterpret_cast<pixel_t *>(dstp)[x*target_numcomponents + 3] = A;
+        d[x*target_numcomponents + 3] = A;
       }
     }
 
     dstp -= dst_pitch; // source packed RGB is upside down
-    srcp[0] += src_pitch[0];
-    srcp[1] += src_pitch[1];
-    srcp[2] += src_pitch[2];
+    srcp_g += src_pitch[0];
+    srcp_b += src_pitch[1];
+    srcp_r += src_pitch[2];
     if constexpr (hasSrcAlpha)
-      srcp[3] += src_pitch[3];
+      srcp_a += src_pitch[3];
   }
 }
 
