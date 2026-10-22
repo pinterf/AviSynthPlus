@@ -56,6 +56,8 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Optimization: aarch64 ShowRed/Green/Blue/Alpha from packed RGB32/64 to planar RGBA: the C path is vectorized
   by GCC (#pragma GCC ivdep; 4 destination planes were too many for its runtime alias checks). The other
   ShowXxx paths were already vectorized (GCC/Clang). Output unchanged.
+- Overlay: removed the unused internal 4:2:0/4:2:2 <-> 4:4:4 converters (444convert, C/SSE2/AVX2);
+  Overlay converts through ConvertToYUV444 with the chroma placement since the placement-aware rework.
 - Fix: SetMaxCPU limited the CPU flags of the whole process until the DLL was unloaded: a script reload
   in VirtualDub, with a new ScriptEnvironment, kept the earlier limit (#440). Since 3d7c1a8e (2025-05)
   the limit is stored per ScriptEnvironment; now documented, and the unused singleton setter removed.

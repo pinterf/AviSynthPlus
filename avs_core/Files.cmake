@@ -60,9 +60,6 @@ IF(ENABLE_NEON_SIMD)
   FILE(GLOB Overlay_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
     "filters/overlay/aarch64/*.cpp"
     "filters/overlay/aarch64/*.h")
-  #not removing yet, unlike for Intel, no SIMD replacement
-  #LIST(REMOVE_ITEM AvsCore_Sources "filters/overlay/444convert.cpp"
-  #                                 "filters/overlay/444convert.h")
   LIST(APPEND AvsCore_Sources "${Overlay_Cpu_Sources}")
 ENDIF()
 

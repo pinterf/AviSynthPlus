@@ -40,7 +40,6 @@
 #include <avisynth.h>
 #include <avs/minmax.h>
 #include <avs/alignment.h>
-#include "444convert.h"
 #include "blend_common.h"
 
 class ImageOverlayInternal {
@@ -157,6 +156,8 @@ public:
         //          created with a 4:4:4 working format.
         //      maskChroma (the BYTE* member) and its ~ImageOverlayInternal check
         //      are preserved below so the historical code compiles.
+        //   The converter functions themselves were removed with 444convert.cpp/.h
+        //   (unused since Overlay converts with ConvertToYUV444, see overlay.cpp).
         // -------------------------------------------------------------------
 #if 0
         // 4:2:0 former path

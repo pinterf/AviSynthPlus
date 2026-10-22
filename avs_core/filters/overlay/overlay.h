@@ -38,7 +38,6 @@
 #define __Overlay_h
 
 #include <avisynth.h>
-#include "444convert.h"
 #include "overlayfunctions.h"
 #include "blend_common.h"
 
