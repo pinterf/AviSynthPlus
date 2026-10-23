@@ -3,6 +3,7 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <cstdlib>
 #ifdef INTEL_INTRINSICS
 #include <mmintrin.h>
 #endif
