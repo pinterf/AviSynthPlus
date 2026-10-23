@@ -65,17 +65,7 @@
 
 #include <arm_neon.h>
 
-// --- scalar reference for the row ends, the same formulas as focus.cpp ---
-
-static AVS_FORCEINLINE uint8_t af_pixel_8(int left, int center, int right, int center_weight, int outer_weight)
-{
-  return ScaledPixelClip((int)(center * center_weight + (left + right) * outer_weight));
-}
-
-static AVS_FORCEINLINE uint16_t af_pixel_16(int left, int center, int right, int center_weight, int outer_weight, int max_pixel_value)
-{
-  return ScaledPixelClipEx((int64_t)center * center_weight + (int64_t)(left + right) * outer_weight, max_pixel_value);
-}
+// --- scalar reference for the row ends: integer af_kernel_int (focus.h), the same as focus.cpp ---
 
 static AVS_FORCEINLINE float af_pixel_f(float left, float center, float right, float center_weight, float outer_weight)
 {
@@ -102,9 +92,8 @@ static AVS_FORCEINLINE uint8x16_t af_block_8(uint8x16_t left, uint8x16_t center,
 
 void af_horizontal_planar_neon(BYTE* dstp, size_t height, size_t pitch, size_t row_size, size_t half_amount)
 {
-  const int16x8_t ow15 = vdupq_n_s16(static_cast<int16_t>(af_outer_weight_q15(half_amount)));
-  const int center_weight = af_center_weight_int(half_amount);
-  const int outer_weight = af_outer_weight_int(half_amount);
+  const int ow15_i = af_outer_weight_q15(half_amount);
+  const int16x8_t ow15 = vdupq_n_s16(static_cast<int16_t>(ow15_i));
   const size_t width = row_size;
 
   for (size_t y = 0; y < height; y++) {
@@ -129,7 +118,7 @@ void af_horizontal_planar_neon(BYTE* dstp, size_t height, size_t pitch, size_t r
     for (; x < width; x++) {
       const int center = p[x];
       const int right = x + 1 < width ? p[x + 1] : center;
-      p[x] = af_pixel_8(left_orig, center, right, center_weight, outer_weight);
+      p[x] = static_cast<uint8_t>(af_kernel_int(left_orig, center, right, ow15_i, 255));
       left_orig = static_cast<uint8_t>(center);
     }
     dstp += pitch;
@@ -169,8 +158,6 @@ static void af_horizontal_planar_uint16_t_neon_impl(BYTE* dstp8, size_t height, 
   const int16x8_t maxv_16 = vdupq_n_s16(static_cast<int16_t>(max_pixel_value));
   const int32x4_t ow15_32 = vdupq_n_s32(ow15_i);
   const int32x4_t maxv_32 = vdupq_n_s32(max_pixel_value);
-  const int center_weight = af_center_weight_int(half_amount);
-  const int outer_weight = af_outer_weight_int(half_amount);
   const size_t width = row_size / sizeof(uint16_t);
 
   auto block = [&](uint16x8_t left, uint16x8_t cur, uint16x8_t right) {
@@ -203,7 +190,7 @@ static void af_horizontal_planar_uint16_t_neon_impl(BYTE* dstp8, size_t height, 
     for (; x < width; x++) {
       const int center = p[x];
       const int right = x + 1 < width ? p[x + 1] : center;
-      p[x] = af_pixel_16(left_orig, center, right, center_weight, outer_weight, max_pixel_value);
+      p[x] = static_cast<uint16_t>(af_kernel_int(left_orig, center, right, ow15_i, max_pixel_value));
       left_orig = static_cast<uint16_t>(center);
     }
     dstp8 += pitch;

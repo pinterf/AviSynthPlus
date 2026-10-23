@@ -48,10 +48,27 @@
 // amountd is 1/3..2 (Blur 1.58 .. Sharpen 1.0), so outer_weight_15 is -16384..10923: fits int16, and for
 // 16 bit pixels |left + right - 2*center| * |outer_weight_15| + 0x4000 < int32_max (2^31).
 static inline int af_outer_weight_q15(int64_t half_amount) { return (int)((32768 - half_amount + 1) >> 1); }
-// The same as a linear kernel in the 16 bit fixed point used with ScaledPixelClip/Ex:
-// (center * (65536 - 4*outer_weight_15) + (left + right) * 2*outer_weight_15 + 32768) >> 16 == the pivot form above, exactly
-static inline int af_center_weight_int(int64_t half_amount) { return 65536 - 4 * af_outer_weight_q15(half_amount); }
-static inline int af_outer_weight_int(int64_t half_amount) { return 2 * af_outer_weight_q15(half_amount); }
+
+// The integer kernel above for the C code and the C row ends of the SIMD paths, clamped to 0..max_pixel_value.
+static AVS_FORCEINLINE int af_kernel_int(int left, int center, int right, int outer_weight_15, int max_pixel_value) {
+  const int result = center + (((left + right - 2 * center) * outer_weight_15 + 0x4000) >> 15);
+  return result < 0 ? 0 : result > max_pixel_value ? max_pixel_value : result;
+}
+
+// In-place horizontal row, 8-16 bit. left: the original pixel left of dstp (at the row start: the first pixel).
+// static: the SIMD sources are compiled with other target flags, each gets its own copy.
+template<typename pixel_t>
+static AVS_FORCEINLINE void af_horizontal_planar_process_line_c(pixel_t left, BYTE* dstp8, size_t row_size, int outer_weight_15, int max_pixel_value) {
+  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
+  const size_t width = row_size / sizeof(pixel_t);
+  size_t x;
+  for (x = 0; x < width - 1; ++x) {
+    const pixel_t temp = (pixel_t)af_kernel_int(left, dstp[x], dstp[x + 1], outer_weight_15, max_pixel_value);
+    left = dstp[x];
+    dstp[x] = temp;
+  }
+  dstp[x] = (pixel_t)af_kernel_int(left, dstp[x], dstp[x], outer_weight_15, max_pixel_value); // right edge: right = itself
+}
 
 template<typename pixel_t, bool packedRGB3264>
 int64_t calculate_sad_8_or_16_sse2(const BYTE* cur_ptr, const BYTE* other_ptr, int cur_pitch, int other_pitch, size_t rowsize, size_t height);

@@ -57,38 +57,7 @@
  ***  Impl. full 8bit MMX proc. IanB ***
  ***************************************/
 
- // for linker reasons these forceinlined functions appear in C, intel sse2 and avx2 source as well
-template<typename pixel_t>
-static AVS_FORCEINLINE void af_horizontal_planar_process_line_c(pixel_t left, BYTE* dstp8, size_t row_size, int center_weight, int outer_weight) {
-  size_t x;
-  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
-  typedef typename std::conditional < sizeof(pixel_t) == 1, int, int64_t>::type weight_t; // for calling the right ScaledPixelClip()
-  size_t width = row_size / sizeof(pixel_t);
-  for (x = 0; x < width - 1; ++x) {
-    pixel_t temp = ScaledPixelClip((weight_t)(dstp[x] * (weight_t)center_weight + (left + dstp[x + 1]) * (weight_t)outer_weight));
-    left = dstp[x];
-    dstp[x] = temp;
-  }
-  // ScaledPixelClip has 2 overloads: BYTE/uint16_t (int/int64 i)
-  dstp[x] = ScaledPixelClip((weight_t)(dstp[x] * (weight_t)center_weight + (left + dstp[x]) * (weight_t)outer_weight));
-}
-
-static AVS_FORCEINLINE void af_horizontal_planar_process_line_uint16_c(uint16_t left, BYTE* dstp8, size_t row_size, int center_weight, int outer_weight, int bits_per_pixel) {
-  size_t x;
-  typedef uint16_t pixel_t;
-  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
-  const int max_pixel_value = (1 << bits_per_pixel) - 1; // clamping on 10-12-14-16 bitdepth
-  typedef std::conditional < sizeof(pixel_t) == 1, int, int64_t>::type weight_t; // for calling the right ScaledPixelClip()
-  size_t width = row_size / sizeof(pixel_t);
-  for (x = 0; x < width - 1; ++x) {
-    pixel_t temp = (pixel_t)ScaledPixelClipEx((weight_t)(dstp[x] * (weight_t)center_weight + (left + dstp[x + 1]) * (weight_t)outer_weight), max_pixel_value);
-    left = dstp[x];
-    dstp[x] = temp;
-  }
-  // ScaledPixelClip has 2 overloads: BYTE/uint16_t (int/int64 i)
-  dstp[x] = ScaledPixelClipEx((weight_t)(dstp[x] * (weight_t)center_weight + (left + dstp[x]) * (weight_t)outer_weight), max_pixel_value);
-}
-
+// for linker reasons this forceinlined function appears in C and intel sse2 source as well (8-16 bit: focus.h)
 static AVS_FORCEINLINE void af_horizontal_planar_process_line_float_c(float left, float* dstp, size_t row_size, float center_weight, float outer_weight) {
   size_t x;
   size_t width = row_size / sizeof(float);
@@ -705,8 +674,6 @@ void af_horizontal_yuy2_sse2(BYTE* dstp, const BYTE* srcp, size_t dst_pitch, siz
 void af_horizontal_planar_sse2(BYTE* dstp, size_t height, size_t pitch, size_t width, size_t amount) {
   size_t mod16_width = (width / 16) * 16;
   size_t sse_loop_limit = width == mod16_width ? mod16_width - 16 : mod16_width;
-  int center_weight_c = af_center_weight_int(amount); // C tail: same arithmetic as SIMD, see af_outer_weight_q15
-  int outer_weight_c = af_outer_weight_int(amount);
 
   const int outer_weight_15 = af_outer_weight_q15(amount);
   __m128i weights = _mm_set1_epi32((0x4000 << 16) | (outer_weight_15 & 0xFFFF)); // madd pairs (d, 1) . (outer_weight_15, 0x4000), 0x4000: rounder
@@ -748,7 +715,7 @@ void af_horizontal_planar_sse2(BYTE* dstp, size_t height, size_t pitch, size_t w
       _mm_store_si128(reinterpret_cast<__m128i*>(dstp+mod16_width-16), result);
     } else { //some stuff left
       BYTE l = _mm_cvtsi128_si32(left) & 0xFF;
-      af_horizontal_planar_process_line_c<uint8_t>(l, dstp+mod16_width, width-mod16_width, center_weight_c, outer_weight_c);
+      af_horizontal_planar_process_line_c<uint8_t>(l, dstp+mod16_width, width-mod16_width, af_outer_weight_q15(amount), 255);
 
     }
 
@@ -762,8 +729,6 @@ __attribute__((__target__("ssse3")))
 void af_horizontal_planar_ssse3(BYTE* dstp, size_t height, size_t pitch, size_t width, size_t amount) {
   size_t mod16_width = (width / 16) * 16;
   size_t sse_loop_limit = width == mod16_width ? mod16_width - 16 : mod16_width;
-  int center_weight_c = af_center_weight_int(amount); // C tail: same arithmetic as SIMD, see af_outer_weight_q15
-  int outer_weight_c = af_outer_weight_int(amount);
 
   __m128i weights = _mm_set1_epi16((short)af_outer_weight_q15(amount)); // outer_weight_15
   __m128i zero = _mm_setzero_si128();
@@ -804,7 +769,7 @@ void af_horizontal_planar_ssse3(BYTE* dstp, size_t height, size_t pitch, size_t 
       _mm_store_si128(reinterpret_cast<__m128i*>(dstp+mod16_width-16), result);
     } else { //some stuff left
       BYTE l = _mm_cvtsi128_si32(left) & 0xFF;
-      af_horizontal_planar_process_line_c<uint8_t>(l, dstp+mod16_width, width-mod16_width, center_weight_c, outer_weight_c);
+      af_horizontal_planar_process_line_c<uint8_t>(l, dstp+mod16_width, width-mod16_width, af_outer_weight_q15(amount), 255);
 
     }
 
@@ -815,8 +780,6 @@ void af_horizontal_planar_ssse3(BYTE* dstp, size_t height, size_t pitch, size_t 
 void af_horizontal_planar_uint16_t_sse2(BYTE* dstp, size_t height, size_t pitch, size_t row_size, size_t amount, int bits_per_pixel) {
   size_t mod16_width = (row_size / 16) * 16;
   size_t sse_loop_limit = row_size == mod16_width ? mod16_width - 16 : mod16_width;
-  int center_weight_c = af_center_weight_int(amount); // C tail: same arithmetic as SIMD, see af_outer_weight_q15
-  int outer_weight_c = af_outer_weight_int(amount);
 
   __m128i weights = _mm_set1_epi32(af_outer_weight_q15(amount)); // outer_weight_15
   const __m128i limit = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // clamp for 10-14 bits
@@ -862,7 +825,7 @@ void af_horizontal_planar_uint16_t_sse2(BYTE* dstp, size_t height, size_t pitch,
     }
     else { //some stuff left
       uint16_t l = _mm_cvtsi128_si32(left) & 0xFFFF;
-      af_horizontal_planar_process_line_uint16_c(l, dstp + mod16_width, row_size - mod16_width, center_weight_c, outer_weight_c, bits_per_pixel);
+      af_horizontal_planar_process_line_c<uint16_t>(l, dstp + mod16_width, row_size - mod16_width, af_outer_weight_q15(amount), (1 << bits_per_pixel) - 1);
     }
 
     dstp += pitch;
@@ -876,8 +839,6 @@ void af_horizontal_planar_uint16_t_sse41(BYTE* dstp, size_t height, size_t pitch
 {
   size_t mod16_width = (row_size / 16) * 16;
   size_t sse_loop_limit = row_size == mod16_width ? mod16_width - 16 : mod16_width;
-  int center_weight_c = af_center_weight_int(amount); // C tail: same arithmetic as SIMD, see af_outer_weight_q15
-  int outer_weight_c = af_outer_weight_int(amount);
 
   __m128i weights = _mm_set1_epi32(af_outer_weight_q15(amount)); // outer_weight_15
   const __m128i limit = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // clamp for 10-14 bits
@@ -923,7 +884,7 @@ void af_horizontal_planar_uint16_t_sse41(BYTE* dstp, size_t height, size_t pitch
     }
     else { //some stuff left
       uint16_t l = _mm_cvtsi128_si32(left) & 0xFFFF;
-      af_horizontal_planar_process_line_uint16_c(l, dstp + mod16_width, row_size - mod16_width, center_weight_c, outer_weight_c, bits_per_pixel);
+      af_horizontal_planar_process_line_c<uint16_t>(l, dstp + mod16_width, row_size - mod16_width, af_outer_weight_q15(amount), (1 << bits_per_pixel) - 1);
     }
 
     dstp += pitch;
