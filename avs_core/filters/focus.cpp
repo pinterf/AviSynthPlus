@@ -245,54 +245,47 @@ AdjustFocusH::AdjustFocusH(double _amount, PClip _child)
 }
 
 
-// --------------------------------------
-// Blur/Sharpen Horizontal RGB32 C++ Code
-// --------------------------------------
+// ---------------------------------------------------
+// Blur/Sharpen Horizontal RGB24/32/48/64 C++ Code
+// ---------------------------------------------------
 
-template<typename pixel_t, typename weight_t>
-static AVS_FORCEINLINE void af_horizontal_rgb32_process_line_c(pixel_t b_left, pixel_t g_left, pixel_t r_left, pixel_t a_left, pixel_t *dstp, size_t width, weight_t center_weight, weight_t outer_weight) {
-  size_t x;
-  for (x = 0; x < width-1; ++x)
+// Not in-place (like the SSE2 versions): src -> dst, each output only from source pixels, so the row is one
+// flat loop over the components, vectorized by GCC and Clang. The in-place version carried the original
+// left neighbour from pixel to pixel and stayed scalar. num_comp: components per pixel (3 or 4).
+// First and last pixel: the missing neighbour is the pixel itself.
+// Same pivot (Q15) arithmetic as the SIMD paths (see af_outer_weight_q15): fits int32 for 16 bit too,
+// so GCC vectorizes it.
+template<typename pixel_t, int num_comp>
+static void af_horizontal_packed_rgb_c(BYTE* dstp8, const BYTE* srcp8, size_t dst_pitch8, size_t src_pitch8, size_t height, size_t width, int half_amount) {
+  const int outer_weight_15 = af_outer_weight_q15(half_amount);
+  constexpr int max_pixel_value = sizeof(pixel_t) == 1 ? 255 : 65535;
+  auto kernel = [=](int left, int center, int right) {
+    return (pixel_t)clamp(center + (((left + right - 2 * center) * outer_weight_15 + 0x4000) >> 15), 0, max_pixel_value);
+  };
+
+  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
+  const pixel_t* srcp = reinterpret_cast<const pixel_t*>(srcp8);
+  const size_t dst_pitch = dst_pitch8 / sizeof(pixel_t);
+  const size_t src_pitch = src_pitch8 / sizeof(pixel_t);
+  const size_t count = width * num_comp;
+
+  for (size_t y = height; y > 0; --y)
   {
-    pixel_t b = ScaledPixelClip((weight_t)(dstp[x*4+0] * center_weight + (b_left + dstp[x*4+4]) * outer_weight));
-    b_left = dstp[x*4+0];
-    dstp[x*4+0] = b;
-    pixel_t g = ScaledPixelClip((weight_t)(dstp[x*4+1] * center_weight + (g_left + dstp[x*4+5]) * outer_weight));
-    g_left = dstp[x*4+1];
-    dstp[x*4+1] = g;
-    pixel_t r = ScaledPixelClip((weight_t)(dstp[x*4+2] * center_weight + (r_left + dstp[x*4+6]) * outer_weight));
-    r_left = dstp[x*4+2];
-    dstp[x*4+2] = r;
-    pixel_t a = ScaledPixelClip((weight_t)(dstp[x*4+3] * center_weight + (a_left + dstp[x*4+7]) * outer_weight));
-    a_left = dstp[x*4+3];
-    dstp[x*4+3] = a;
+    if (width == 1) {
+      for (int c = 0; c < num_comp; c++)
+        dstp[c] = kernel(srcp[c], srcp[c], srcp[c]);
+    }
+    else {
+      for (int c = 0; c < num_comp; c++) // first pixel: left neighbour = itself
+        dstp[c] = kernel(srcp[c], srcp[c], srcp[c + num_comp]);
+      for (size_t i = num_comp; i < count - num_comp; i++)
+        dstp[i] = kernel(srcp[i - num_comp], srcp[i], srcp[i + num_comp]);
+      for (size_t i = count - num_comp; i < count; i++) // last pixel: right neighbour = itself
+        dstp[i] = kernel(srcp[i - num_comp], srcp[i], srcp[i]);
+    }
+    dstp += dst_pitch;
+    srcp += src_pitch;
   }
-  dstp[x*4+0] = ScaledPixelClip((weight_t)(dstp[x*4+0] * center_weight + (b_left + dstp[x*4+0]) * outer_weight));
-  dstp[x*4+1] = ScaledPixelClip((weight_t)(dstp[x*4+1] * center_weight + (g_left + dstp[x*4+1]) * outer_weight));
-  dstp[x*4+2] = ScaledPixelClip((weight_t)(dstp[x*4+2] * center_weight + (r_left + dstp[x*4+2]) * outer_weight));
-  dstp[x*4+3] = ScaledPixelClip((weight_t)(dstp[x*4+3] * center_weight + (a_left + dstp[x*4+3]) * outer_weight));
-}
-
-template<typename pixel_t>
-static void af_horizontal_rgb32_64_c(BYTE* dstp8, size_t height, size_t pitch8, size_t width, int half_amount) {
-  typedef typename std::conditional < sizeof(pixel_t) == 1, int, int64_t>::type weight_t;
-  // kernel:[(1-1/2^_amount)/2, 1/2^_amount, (1-1/2^_amount)/2], same arithmetic as the SIMD paths
-  weight_t center_weight = af_center_weight_int(half_amount);
-  weight_t outer_weight = af_outer_weight_int(half_amount);
-
-  pixel_t* dstp = reinterpret_cast<pixel_t *>(dstp8);
-  size_t pitch = pitch8 / sizeof(pixel_t);
-
-  for (size_t y = height; y>0; --y)
-  {
-    pixel_t b_left = dstp[0];
-    pixel_t g_left = dstp[1];
-    pixel_t r_left = dstp[2];
-    pixel_t a_left = dstp[3];
-    af_horizontal_rgb32_process_line_c<pixel_t, weight_t>(b_left, g_left, r_left, a_left, dstp, width, center_weight, outer_weight);
-    dstp += pitch;
-  }
-
 }
 
 
@@ -330,42 +323,6 @@ static void af_horizontal_yuy2_c(BYTE* p, int height, int pitch, int width, int 
   }
 }
 
-
-// --------------------------------------
-// Blur/Sharpen Horizontal RGB24 C++ Code
-// --------------------------------------
-
-template<typename pixel_t>
-static void af_horizontal_rgb24_48_c(BYTE* dstp8, int height, int pitch8, int width, int half_amount) {
-  typedef typename std::conditional < sizeof(pixel_t) == 1, int, int64_t>::type weight_t;
-  // kernel:[(1-1/2^_amount)/2, 1/2^_amount, (1-1/2^_amount)/2], same arithmetic as the SIMD paths
-  weight_t center_weight = af_center_weight_int(half_amount);
-  weight_t outer_weight = af_outer_weight_int(half_amount);
-
-  pixel_t *dstp = reinterpret_cast<pixel_t *>(dstp8);
-  int pitch = pitch8 / sizeof(pixel_t);
-  for (int y = height; y>0; --y)
-  {
-    pixel_t bb = dstp[0];
-    pixel_t gg = dstp[1];
-    pixel_t rr = dstp[2];
-    int x;
-    for (x = 0; x < width-1; ++x)
-    {
-      // ScaledPixelClip has 2 overloads: BYTE/uint16_t (int/int64 i)
-      pixel_t b = ScaledPixelClip((weight_t)(dstp[x*3+0] * center_weight + (bb + dstp[x*3+3]) * outer_weight));
-      bb = dstp[x*3+0]; dstp[x*3+0] = b;
-      pixel_t g = ScaledPixelClip((weight_t)(dstp[x*3+1] * center_weight + (gg + dstp[x*3+4]) * outer_weight));
-      gg = dstp[x*3+1]; dstp[x*3+1] = g;
-      pixel_t r = ScaledPixelClip((weight_t)(dstp[x*3+2] * center_weight + (rr + dstp[x*3+5]) * outer_weight));
-      rr = dstp[x*3+2]; dstp[x*3+2] = r;
-    }
-    dstp[x*3+0] = ScaledPixelClip((weight_t)(dstp[x*3+0] * center_weight + (bb + dstp[x*3+0]) * outer_weight));
-    dstp[x*3+1] = ScaledPixelClip((weight_t)(dstp[x*3+1] * center_weight + (gg + dstp[x*3+1]) * outer_weight));
-    dstp[x*3+2] = ScaledPixelClip((weight_t)(dstp[x*3+2] * center_weight + (rr + dstp[x*3+2]) * outer_weight));
-    dstp += pitch;
-  }
-}
 
 // -------------------------------------
 // Blur/Sharpen Horizontal YV12 C++ Code
@@ -560,19 +517,17 @@ PVideoFrame __stdcall AdjustFocusH::GetFrame(int n, IScriptEnvironment* env)
       else
 #endif
       {
-        copy_frame(src, dst, env, planesYUVA, 1);
         if (pixelsize == 1)
-          af_horizontal_rgb32_64_c<uint8_t>(dst->GetWritePtr(), vi.height, dst->GetPitch(), vi.width, half_amount);
+          af_horizontal_packed_rgb_c<uint8_t, 4>(dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(), vi.height, vi.width, half_amount);
         else
-          af_horizontal_rgb32_64_c<uint16_t>(dst->GetWritePtr(), vi.height, dst->GetPitch(), vi.width, half_amount);
+          af_horizontal_packed_rgb_c<uint16_t, 4>(dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(), vi.height, vi.width, half_amount);
       }
     }
     else if (vi.IsRGB24() || vi.IsRGB48()) {
-      copy_frame(src, dst, env, planesYUVA, 1);
       if (pixelsize == 1)
-        af_horizontal_rgb24_48_c<uint8_t>(dst->GetWritePtr(), vi.height, dst->GetPitch(), vi.width, half_amount);
+        af_horizontal_packed_rgb_c<uint8_t, 3>(dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(), vi.height, vi.width, half_amount);
       else
-        af_horizontal_rgb24_48_c<uint16_t>(dst->GetWritePtr(), vi.height, dst->GetPitch(), vi.width, half_amount);
+        af_horizontal_packed_rgb_c<uint16_t, 3>(dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(), vi.height, vi.width, half_amount);
     }
   }
 
