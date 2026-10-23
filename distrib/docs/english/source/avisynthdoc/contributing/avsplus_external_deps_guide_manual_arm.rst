@@ -5,6 +5,18 @@ Building AviSynth+'s external dependencies for Windows on ARM
 .. toctree::
     :maxdepth: 3
 
+Related documents:
+
+* :doc:`compiling_avsplus` — the general build guide, including GCC
+  cross-compilation from Linux.
+* :doc:`avsplus_external_deps_guide_manual` — the same dependencies (DevIL,
+  SoundTouch) built with Visual Studio for x86/x64.
+* :doc:`release_build_automation` — the automated Windows dev build, whose
+  ARM64 variant uses the same llvm-mingw toolchain, cross-compiled from a
+  Windows host.
+* :doc:`posix` — building AviSynth+ natively on Linux, macOS and BSD.
+* :doc:`contributing_with_git` — git primer for contributors.
+
 .. contents:: Table of contents
 
 

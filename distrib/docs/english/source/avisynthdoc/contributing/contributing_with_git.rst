@@ -12,6 +12,17 @@ you can refer to the `Pro Git book`_.
 .. toctree::
     :maxdepth: 3
 
+Related documents:
+
+* :doc:`compiling_avsplus` — building AviSynth+ on Windows (and
+  cross-compiling from Linux).
+* :doc:`posix` — building and using AviSynth+ on Linux, macOS and BSD.
+* :doc:`avsplus_external_deps_guide_manual` — building DevIL and SoundTouch
+  with Visual Studio.
+* :doc:`avsplus_external_deps_guide_manual_arm` — Windows on ARM
+  dependencies and toolchain.
+* :doc:`release_build_automation` — the automated Windows dev build.
+
 .. contents:: Table of contents
 
 

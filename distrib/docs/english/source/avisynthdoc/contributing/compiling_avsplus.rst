@@ -13,6 +13,17 @@ already be installed, and msys2's bin directory should have been added to Window
 .. toctree::
     :maxdepth: 3
 
+Related documents:
+
+* :doc:`avsplus_external_deps_guide_manual` — building DevIL and SoundTouch
+  with Visual Studio.
+* :doc:`avsplus_external_deps_guide_manual_arm` — the Windows on ARM
+  dependencies and toolchain (llvm-mingw, cross-compiled from Linux/WSL2).
+* :doc:`release_build_automation` — the automated multi-configuration
+  Windows dev build (``build_release.bat``).
+* :doc:`posix` — building and using AviSynth+ on Linux, macOS and BSD.
+* :doc:`contributing_with_git` — git primer for contributors.
+
 .. contents:: Table of contents
 
 
