@@ -1,4 +1,17 @@
 avisynth-build/*
+
+# Windows dev build scripts (avisynth-build-win) are tracked; the output is not
+avisynth-build-win/*
+!avisynth-build-win/build_release.bat
+!avisynth-build-win/build_info.cmake
+!avisynth-build-win/helpers/
+avisynth-build-win/helpers/*
+!avisynth-build-win/helpers/makesoundtouch.bat
+!avisynth-build-win/toolchains/
+!avisynth-build-win/release-sample/
+avisynth-build-win/release-sample/*
+!avisynth-build-win/release-sample/README.txt
+*.bak
 CMakeCache.txt
 CMakeFiles/*
 distrib/docs/english/build/

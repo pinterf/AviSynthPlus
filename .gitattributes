@@ -1,6 +1,10 @@
 # Set the default behavior, in case people don't have core.autocrlf set.
 * text eol=lf
 
+# Windows batch files need CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 distrib/**/*.css linguist-documentation
 
 distrib/**/*.htm linguist-documentation
